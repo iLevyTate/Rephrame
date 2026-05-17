@@ -1,0 +1,3132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1a1715">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Reframe">
+<title>Reframe — A CBT Journal</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%231a1715'/%3E%3Ctext x='50' y='70' font-family='Georgia,serif' font-size='62' font-weight='500' font-style='italic' fill='%23b8552c' text-anchor='middle'%3Er%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+/* ──────────────────────────────────────────────────────────────────
+   TOKENS
+   ────────────────────────────────────────────────────────────────── */
+:root {
+  --ink:        #1a1715;
+  --ink-2:      #221e1b;
+  --ink-3:      #2a2521;
+  --ink-4:      #36302a;
+  --paper:      #f5efe6;
+  --paper-2:    #ebe3d5;
+  --paper-3:    #ddd0b8;
+  --paper-4:    #c9b896;
+
+  --on-ink:        #f5efe6;
+  --on-ink-soft:   #c9bdac;
+  --on-ink-mute:   #8a7d6c;
+  --on-ink-faint:  #5a4f43;
+
+  --on-paper:        #1a1715;
+  --on-paper-soft:   #4a3f33;
+  --on-paper-mute:   #6a5a47;
+  --on-paper-faint:  #8a7860;
+
+  --copper:        #b8552c;
+  --copper-light:  #c46838;
+  --copper-deep:   #8c4520;
+  --copper-glow:   rgba(184, 85, 44, 0.14);
+  --copper-soft:   rgba(184, 85, 44, 0.08);
+  --copper-line:   rgba(184, 85, 44, 0.32);
+
+  --rule-paper:    rgba(106, 90, 71, 0.18);
+  --rule-paper-2:  rgba(106, 90, 71, 0.32);
+  --rule-ink:      rgba(245, 239, 230, 0.08);
+  --rule-ink-2:    rgba(245, 239, 230, 0.16);
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.25);
+  --shadow-2: 0 4px 14px rgba(0,0,0,0.32);
+  --shadow-3: 0 12px 36px rgba(0,0,0,0.48);
+
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 48px;
+
+  --r-1: 2px; --r-2: 4px; --r-3: 8px; --r-4: 12px; --r-full: 999px;
+
+  --display: 'Fraunces', 'Iowan Old Style', Baskerville, Georgia, serif;
+  --body:    'Manrope', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --app-max: 720px;
+  --nav-h: 68px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; padding: 0; }
+input, textarea, select { font: inherit; }
+:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; border-radius: var(--r-2); }
+::selection { background: var(--copper-glow); color: var(--copper-deep); }
+
+html { -webkit-tap-highlight-color: transparent; }
+body {
+  background: var(--ink);
+  color: var(--on-ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'kern', 'liga', 'calt';
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+.display { font-family: var(--display); letter-spacing: -0.015em; }
+.mono    { font-family: var(--mono); }
+.italic  { font-style: italic; }
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(184,85,44,0.045) 0%, transparent 45%),
+    radial-gradient(circle at 82% 78%, rgba(184,85,44,0.035) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,0.015) 0%, transparent 70%);
+  z-index: 0;
+}
+
+.app {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.container {
+  max-width: var(--app-max);
+  margin: 0 auto;
+  padding: 0 20px;
+  width: 100%;
+}
+@media (min-width: 768px) {
+  .container { padding: 0 32px; }
+}
+
+main {
+  flex: 1;
+  padding: 0 0 calc(var(--nav-h) + env(safe-area-inset-bottom) + 32px) 0;
+}
+
+.topbar {
+  padding: 28px 0 24px 0;
+  position: relative;
+}
+@media (min-width: 768px) { .topbar { padding: 36px 0 28px 0; } }
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.brand-mark {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 28px;
+  color: var(--copper);
+  line-height: 1;
+}
+.brand-name {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+.brand-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--on-ink-mute);
+}
+
+.topbar-actions { display: flex; gap: 8px; }
+.icon-pill {
+  width: 36px; height: 36px;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  border-radius: var(--r-full);
+  color: var(--on-ink-soft);
+  background: var(--ink-2);
+  border: 1px solid var(--rule-ink);
+  transition: all 0.15s var(--ease);
+}
+.icon-pill:hover { color: var(--copper); border-color: var(--copper-line); }
+.icon-pill svg { width: 16px; height: 16px; }
+
+.page-header {
+  margin-bottom: 24px;
+}
+.page-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--copper);
+  margin-bottom: 8px;
+}
+.page-title {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 32px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+@media (min-width: 768px) {
+  .page-title { font-size: 40px; }
+}
+.page-sub {
+  margin: 8px 0 0 0;
+  font-size: 14px;
+  color: var(--on-ink-soft);
+  max-width: 480px;
+  line-height: 1.6;
+}
+
+.bottom-nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 20;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom)) 12px;
+  background: linear-gradient(to top, var(--ink) 60%, rgba(26,23,21,0.85) 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid var(--rule-ink);
+}
+.bottom-nav-inner {
+  max-width: var(--app-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px 8px 6px;
+  border-radius: var(--r-3);
+  color: var(--on-ink-mute);
+  transition: all 0.2s var(--ease);
+  position: relative;
+}
+.nav-item:hover { color: var(--on-ink-soft); }
+.nav-item.active { color: var(--copper); }
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 50%; transform: translateX(-50%);
+  width: 24px; height: 2px;
+  background: var(--copper);
+  border-radius: 0 0 2px 2px;
+}
+.nav-item svg { width: 20px; height: 20px; stroke-width: 1.6; }
+.nav-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: var(--r-1);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: all 0.18s var(--ease);
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--copper);
+  color: var(--paper);
+}
+.btn-primary:hover { background: var(--copper-light); transform: translateY(-1px); box-shadow: var(--shadow-2); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--on-ink-soft);
+  border: 1px solid var(--rule-ink-2);
+  padding: 10px 16px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.btn-ghost:hover { color: var(--copper); border-color: var(--copper-line); background: var(--copper-soft); }
+
+.kicker {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--on-ink-mute);
+}
+
+.journal-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+@media (min-width: 560px) {
+  .journal-toolbar { flex-direction: row; align-items: center; }
+}
+.search-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.search-box svg {
+  position: absolute;
+  left: 12px; top: 50%;
+  transform: translateY(-50%);
+  width: 14px; height: 14px;
+  color: var(--on-ink-mute);
+}
+.search-input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  background: var(--ink-2);
+  color: var(--on-ink);
+  border: 1px solid var(--rule-ink);
+  border-radius: var(--r-2);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s var(--ease);
+}
+.search-input:focus { border-color: var(--copper-line); }
+.search-input::placeholder { color: var(--on-ink-faint); }
+
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  margin-bottom: 20px;
+}
+.filter-chips::-webkit-scrollbar { display: none; }
+.filter-chip {
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border: 1px solid var(--rule-ink-2);
+  color: var(--on-ink-soft);
+  border-radius: var(--r-full);
+  white-space: nowrap;
+  transition: all 0.15s var(--ease);
+  flex-shrink: 0;
+}
+.filter-chip:hover { color: var(--copper); border-color: var(--copper-line); }
+.filter-chip.active { background: var(--copper); color: var(--paper); border-color: var(--copper); }
+
+.date-group {
+  margin-bottom: 28px;
+}
+.date-group-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+.date-group-label .kicker { color: var(--on-ink-mute); font-size: 10px; }
+.date-group-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--rule-ink-2), transparent);
+}
+
+.entry-stack { display: flex; flex-direction: column; gap: 12px; }
+
+.entry-card {
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-2);
+  overflow: hidden;
+  transition: box-shadow 0.2s var(--ease);
+  position: relative;
+}
+.entry-card:hover { box-shadow: var(--shadow-2); }
+.entry-card.expanded { box-shadow: var(--shadow-2); }
+
+.entry-card-head {
+  padding: 16px 18px;
+  cursor: pointer;
+  user-select: none;
+}
+.entry-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.entry-meta-num {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 500;
+}
+.entry-meta-dot { color: var(--on-paper-faint); font-family: var(--mono); font-size: 10px; }
+.entry-meta-time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--on-paper-faint);
+}
+.entry-card-trigger {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.entry-card-trigger.empty { color: var(--on-paper-faint); font-style: italic; }
+
+.entry-tags-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.felt-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--on-paper-soft);
+}
+.felt-pill .felt-emo { color: var(--on-paper); font-weight: 600; }
+.intensity-mini {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 6px;
+  background: var(--copper-glow);
+  color: var(--copper-deep);
+  border-radius: var(--r-full);
+  font-weight: 600;
+}
+.dist-chip {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--rule-paper-2);
+  color: var(--on-paper-soft);
+  border-radius: var(--r-full);
+  font-weight: 500;
+}
+.dist-more {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--on-paper-faint);
+}
+.pivot-indicator {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--on-paper-faint);
+}
+.pivot-indicator.done { color: #4a7c4a; }
+.pivot-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.entry-body {
+  padding: 0 18px 18px 18px;
+  animation: slideDown 0.3s var(--ease-out);
+  border-top: 1px solid var(--rule-paper);
+  margin-top: 4px;
+  padding-top: 16px;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.detail-row { margin-bottom: 18px; }
+.detail-row:last-child { margin-bottom: 0; }
+.detail-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+  margin-bottom: 5px;
+}
+.detail-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--on-paper);
+}
+.detail-text.italic { font-style: italic; color: var(--on-paper-soft); }
+.detail-text.muted { color: var(--on-paper-mute); }
+.evidence-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 480px) {
+  .evidence-split { grid-template-columns: 1fr 1fr; }
+}
+.socratic-quote {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--copper);
+  background: var(--copper-soft);
+  border-radius: 0 var(--r-1) var(--r-1) 0;
+}
+.entry-pivot {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.entry-pivot-content { flex: 1; min-width: 0; }
+.entry-pivot-text { transition: opacity 0.2s, text-decoration-color 0.2s; }
+.entry-pivot-text.done { text-decoration: line-through; opacity: 0.55; }
+.pivot-toggle-large {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-full);
+  background: var(--paper-2);
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+  flex-shrink: 0;
+}
+.pivot-toggle-large:hover { background: var(--paper-3); }
+.pivot-toggle-large input { width: 14px; height: 14px; accent-color: var(--copper); margin: 0; cursor: pointer; }
+.pivot-toggle-large span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+  font-weight: 500;
+}
+.entry-card-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  border-top: 1px solid var(--rule-paper);
+  background: var(--paper-2);
+}
+.entry-card-actions-time {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--on-paper-mute);
+}
+.entry-card-actions-buttons { display: flex; gap: 4px; }
+.action-btn {
+  padding: 6px 10px;
+  border-radius: var(--r-1);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--on-paper-mute);
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.action-btn:hover { background: rgba(0,0,0,0.06); color: var(--on-paper); }
+.action-btn.danger:hover { color: var(--copper-deep); }
+.action-btn.primary { color: var(--copper); }
+
+.empty-state {
+  text-align: center;
+  padding: 60px 24px;
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-2);
+}
+.empty-state-mark {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 64px;
+  font-weight: 500;
+  color: var(--copper);
+  line-height: 1;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+.empty-state-title {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 500;
+  margin: 0 0 12px 0;
+  letter-spacing: -0.01em;
+}
+.empty-state-body {
+  font-size: 14px;
+  color: var(--on-paper-soft);
+  max-width: 380px;
+  margin: 0 auto 24px auto;
+  line-height: 1.65;
+}
+.empty-state-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.empty-state .btn-ghost {
+  color: var(--on-paper-mute);
+  border-color: var(--rule-paper-2);
+}
+.empty-state .btn-ghost:hover { color: var(--copper-deep); border-color: var(--copper); background: var(--copper-glow); }
+
+.resume-banner {
+  background: linear-gradient(135deg, var(--copper-soft) 0%, var(--paper-2) 100%);
+  color: var(--on-paper);
+  border-radius: var(--r-2);
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--copper-line);
+}
+.resume-banner-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.resume-banner-icon {
+  color: var(--copper);
+  flex-shrink: 0;
+}
+.resume-banner-text {
+  font-size: 13px;
+  min-width: 0;
+}
+.resume-banner-text strong { font-weight: 600; }
+.resume-banner-text .preview {
+  display: block;
+  color: var(--on-paper-mute);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.resume-banner-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.resume-banner-actions .action-btn { color: var(--copper); font-weight: 600; }
+
+.capture-shell {
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-2);
+  overflow: hidden;
+  box-shadow: var(--shadow-2);
+  animation: fadeUp 0.35s var(--ease-out);
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.capture-progress {
+  padding: 20px 24px 16px 24px;
+  border-bottom: 1px solid var(--rule-paper);
+}
+.progress-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.progress-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+}
+.progress-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--on-paper-mute);
+}
+
+.progress-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.progress-dot {
+  flex: 1;
+  height: 3px;
+  background: var(--paper-3);
+  border-radius: var(--r-full);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.25s var(--ease);
+}
+.progress-dot.completed { background: var(--copper); }
+.progress-dot.active { background: var(--copper); }
+.progress-dot.active::after {
+  content: '';
+  position: absolute;
+  top: 50%; right: 0;
+  transform: translate(50%, -50%);
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--copper);
+  box-shadow: 0 0 0 3px var(--copper-glow);
+  animation: pulse 2s var(--ease) infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 3px var(--copper-glow); }
+  50% { box-shadow: 0 0 0 6px var(--copper-soft); }
+}
+
+.capture-screen {
+  padding: 28px 24px 20px 24px;
+  min-height: 380px;
+  animation: stepIn 0.3s var(--ease-out);
+}
+@keyframes stepIn {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (min-width: 768px) {
+  .capture-screen { padding: 36px 36px 24px 36px; }
+}
+
+.step-header { margin-bottom: 24px; }
+.step-num {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--copper);
+}
+.step-prompt {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 4px 0 8px 0;
+}
+@media (min-width: 768px) {
+  .step-prompt { font-size: 32px; }
+}
+.step-hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--on-paper-mute);
+  line-height: 1.6;
+  font-style: italic;
+}
+
+.field-group { margin-bottom: 20px; }
+.field-group:last-child { margin-bottom: 0; }
+.field-label-paper {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+  margin-bottom: 6px;
+  display: block;
+  font-weight: 500;
+}
+.field-help-paper {
+  font-size: 12px;
+  color: var(--on-paper-mute);
+  margin-top: 6px;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.input, .textarea, .select {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--paper-2);
+  color: var(--on-paper);
+  border: 1px solid transparent;
+  border-radius: var(--r-2);
+  font-size: 15px;
+  font-family: var(--body);
+  outline: none;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.input:hover, .textarea:hover, .select:hover { background: var(--paper-3); }
+.input:focus, .textarea:focus, .select:focus {
+  border-color: var(--copper);
+  background: var(--paper);
+}
+.textarea { resize: vertical; min-height: 80px; line-height: 1.55; }
+.select { cursor: pointer; }
+
+.input-large {
+  padding: 16px 18px;
+  font-size: 17px;
+  font-family: var(--display);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.field-row-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 480px) {
+  .field-row-split { grid-template-columns: 1fr 1fr; }
+}
+
+.intensity-control {
+  background: var(--paper-2);
+  border-radius: var(--r-2);
+  padding: 18px;
+}
+.intensity-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.intensity-num-big {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 36px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--copper);
+}
+.intensity-num-suffix { font-size: 16px; color: var(--on-paper-mute); }
+.intensity-band-label { text-align: right; }
+.intensity-band-name {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+}
+.intensity-band-sig {
+  font-size: 11px;
+  color: var(--on-paper-mute);
+  margin-top: 4px;
+  font-style: italic;
+}
+.intensity-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--paper-3);
+  border-radius: var(--r-full);
+  outline: none;
+}
+.intensity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--copper);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  border: 3px solid var(--paper);
+  transition: transform 0.15s var(--ease);
+}
+.intensity-slider::-webkit-slider-thumb:hover { transform: scale(1.1); }
+.intensity-slider::-moz-range-thumb {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--copper);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  border: 3px solid var(--paper);
+}
+.intensity-bands {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 0 2px;
+}
+.intensity-bands span {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--on-paper-faint);
+}
+
+.checkbox-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--on-paper-soft);
+  margin-top: 8px;
+}
+.checkbox-flag input { width: 16px; height: 16px; accent-color: var(--copper); margin: 0; }
+
+.distortion-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+@media (min-width: 480px) {
+  .distortion-grid { grid-template-columns: 1fr 1fr; }
+}
+.distortion-tile {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  background: var(--paper-2);
+  border: 1px solid transparent;
+  color: var(--on-paper);
+  transition: all 0.15s var(--ease);
+  cursor: pointer;
+  position: relative;
+}
+.distortion-tile:hover { background: var(--paper-3); }
+.distortion-tile.active {
+  background: var(--copper-glow);
+  border-color: var(--copper);
+}
+.distortion-tile-name {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.distortion-tile.active .distortion-tile-name { color: var(--copper-deep); }
+.distortion-tile-check {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--copper);
+  color: var(--paper);
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  margin-left: auto;
+}
+.distortion-tile:not(.active) .distortion-tile-check { display: none; }
+.distortion-tile-desc {
+  font-size: 11px;
+  color: var(--on-paper-mute);
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+details.ref-inline { margin-top: 12px; }
+details.ref-inline summary {
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--copper);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  padding: 6px 0;
+}
+details.ref-inline summary::-webkit-details-marker { display: none; }
+details.ref-inline summary .chev { transition: transform 0.2s var(--ease); display: inline-block; font-size: 8px; }
+details.ref-inline[open] summary .chev { transform: rotate(90deg); }
+.ref-inline-body {
+  margin-top: 8px;
+  padding: 12px 14px;
+  background: var(--paper-2);
+  border-radius: var(--r-2);
+  border-left: 2px solid var(--copper);
+  font-size: 12px;
+}
+.ref-inline-body table { width: 100%; border-collapse: collapse; }
+.ref-inline-body td { padding: 4px 0; vertical-align: top; line-height: 1.5; }
+.ref-inline-body td:first-child {
+  padding-right: 12px;
+  font-weight: 600;
+  color: var(--on-paper);
+  white-space: nowrap;
+}
+.ref-inline-body td.muted { color: var(--on-paper-mute); }
+.ref-inline-body ul { margin: 0; padding-left: 16px; color: var(--on-paper-soft); }
+.ref-inline-body ul li { margin-bottom: 2px; }
+.ref-inline-body .block { margin-bottom: 10px; }
+.ref-inline-body .block:last-child { margin-bottom: 0; }
+.ref-inline-body .block-title { font-weight: 600; color: var(--on-paper); margin-bottom: 2px; }
+.ref-inline-body .block-when { color: var(--on-paper-mute); font-size: 11px; }
+.ref-inline-body .block-template { color: var(--on-paper-soft); font-style: italic; margin-top: 2px; }
+
+.review-card {
+  background: var(--paper-2);
+  border-radius: var(--r-2);
+  padding: 20px;
+  margin-bottom: 16px;
+  border-left: 3px solid var(--copper);
+}
+.review-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.review-card-num {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+}
+.review-edit-btn {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+  padding: 4px 8px;
+  border-radius: var(--r-1);
+  transition: all 0.15s var(--ease);
+}
+.review-edit-btn:hover { color: var(--copper); background: var(--copper-soft); }
+.review-card-content {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.review-card-content.italic { font-style: italic; color: var(--on-paper-soft); }
+.review-card-content .empty { color: var(--on-paper-faint); font-style: italic; }
+.review-meta-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.review-meta-item {
+  font-size: 12px;
+  color: var(--on-paper-soft);
+}
+.review-meta-item strong { color: var(--on-paper); font-weight: 600; }
+
+.capture-footer {
+  padding: 16px 24px;
+  background: var(--paper-2);
+  border-top: 1px solid var(--rule-paper);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+@media (min-width: 768px) { .capture-footer { padding: 16px 36px; } }
+.capture-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.capture-footer .btn-back {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  font-weight: 500;
+}
+.capture-footer .btn-back:hover { color: var(--on-paper); background: rgba(0,0,0,0.04); }
+.capture-footer .btn-discard {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--on-paper-faint);
+  padding: 10px 12px;
+  font-weight: 500;
+}
+.capture-footer .btn-discard:hover { color: var(--copper-deep); }
+
+.patterns-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 600px) {
+  .patterns-grid { grid-template-columns: 1fr 1fr; }
+  .patterns-grid .span-2 { grid-column: span 2; }
+}
+.pattern-card {
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-2);
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.pattern-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.pattern-card-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+  font-weight: 600;
+}
+.pattern-card-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--on-paper-faint);
+}
+.pattern-stat-big {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 48px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.pattern-stat-big .small { font-size: 24px; color: var(--on-paper-mute); }
+.pattern-stat-label {
+  font-size: 12px;
+  color: var(--on-paper-soft);
+  margin-top: 6px;
+}
+
+.activity-grid {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.activity-dot {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  background: var(--paper-3);
+  position: relative;
+}
+.activity-dot.has { background: var(--copper); }
+.activity-dot.has-many { background: var(--copper-deep); }
+.activity-legend {
+  margin-top: 10px;
+  display: flex;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--on-paper-faint);
+}
+.activity-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+
+.bar-list { display: flex; flex-direction: column; gap: 10px; }
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bar-row-label {
+  flex: 0 0 auto;
+  width: 130px;
+  font-size: 12px;
+  color: var(--on-paper-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (min-width: 480px) {
+  .bar-row-label { width: 150px; }
+}
+.bar-track {
+  flex: 1;
+  height: 14px;
+  background: var(--paper-2);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--copper) 0%, var(--copper-light) 100%);
+  border-radius: 2px;
+  transition: width 0.4s var(--ease-out);
+}
+.bar-row-value {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--on-paper);
+  font-weight: 600;
+  min-width: 18px;
+  text-align: right;
+}
+
+.emo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+@media (min-width: 480px) {
+  .emo-grid { grid-template-columns: repeat(4, 1fr); }
+}
+.emo-tile {
+  background: var(--paper-2);
+  padding: 12px;
+  border-radius: var(--r-2);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.emo-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--copper);
+  opacity: var(--intensity, 0);
+  transition: opacity 0.4s var(--ease-out);
+}
+.emo-tile > * { position: relative; }
+.emo-tile-name {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+  font-weight: 600;
+}
+.emo-tile-count {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1;
+  margin-top: 4px;
+  color: var(--on-paper);
+}
+
+.pivot-ring-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pivot-ring {
+  flex-shrink: 0;
+  position: relative;
+}
+.pivot-ring svg { transform: rotate(-90deg); }
+.pivot-ring-track { stroke: var(--paper-2); }
+.pivot-ring-fill {
+  stroke: var(--copper);
+  transition: stroke-dashoffset 0.5s var(--ease-out);
+}
+.pivot-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.pivot-ring-pct {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--on-paper);
+}
+.pivot-ring-pct .small { font-size: 11px; color: var(--on-paper-mute); }
+.pivot-ring-detail { font-size: 12px; color: var(--on-paper-soft); line-height: 1.5; }
+.pivot-ring-detail strong { color: var(--on-paper); font-weight: 600; }
+
+.spark-wrap { margin-top: 4px; }
+.spark-axis-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--on-paper-faint);
+  margin-top: 6px;
+}
+
+.ref-section {
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-2);
+  padding: 24px;
+  margin-bottom: 16px;
+}
+.ref-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule-paper);
+}
+.ref-section-num {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 18px;
+  color: var(--copper);
+}
+.ref-section-title {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin: 0;
+  flex: 1;
+}
+.ref-section-step {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+}
+.ref-section-intro {
+  font-size: 14px;
+  color: var(--on-paper-soft);
+  margin: 0 0 18px 0;
+  line-height: 1.6;
+}
+
+.ref-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule-paper);
+}
+.ref-item:last-child { border-bottom: none; }
+.ref-item-name {
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--on-paper);
+  margin-bottom: 4px;
+}
+.ref-item-desc {
+  font-size: 13px;
+  color: var(--on-paper-soft);
+  line-height: 1.55;
+}
+.ref-item-cues {
+  font-size: 12px;
+  color: var(--on-paper-mute);
+  margin-top: 4px;
+  font-style: italic;
+}
+.ref-item-template {
+  font-size: 13px;
+  color: var(--on-paper-soft);
+  font-style: italic;
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: var(--paper-2);
+  border-left: 2px solid var(--copper);
+  border-radius: 0 var(--r-1) var(--r-1) 0;
+}
+
+.ref-table-emotion .ref-item-name { color: var(--copper-deep); }
+.ref-table-intensity { display: flex; flex-direction: column; gap: 0; }
+.ref-band-row {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule-paper);
+  align-items: baseline;
+}
+.ref-band-row:last-child { border-bottom: none; }
+.ref-band-range {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--copper);
+  font-weight: 600;
+}
+.ref-band-label {
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.ref-band-signals {
+  font-size: 12px;
+  color: var(--on-paper-mute);
+}
+
+.ref-pairs {
+  background: var(--paper-2);
+  border-radius: var(--r-2);
+  padding: 16px 20px;
+  margin-top: 16px;
+}
+.ref-pairs-head {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.ref-pairs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--on-paper-soft);
+}
+.ref-pairs li {
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ref-pairs li::before {
+  content: '+';
+  color: var(--copper);
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 500;
+}
+
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(15, 12, 10, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+  animation: fadeIn 0.2s var(--ease-out);
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-2);
+  max-width: 440px;
+  width: 100%;
+  padding: 24px;
+  box-shadow: var(--shadow-3);
+  animation: modalIn 0.25s var(--ease-out);
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal h3 {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px 0;
+}
+.modal-sub {
+  font-size: 13px;
+  color: var(--on-paper-mute);
+  margin: 0 0 20px 0;
+  line-height: 1.6;
+}
+.modal-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.modal-option {
+  text-align: left;
+  background: var(--paper-2);
+  color: var(--on-paper);
+  padding: 14px 16px;
+  border-radius: var(--r-2);
+  transition: all 0.15s var(--ease);
+  border: 1px solid transparent;
+}
+.modal-option:hover {
+  background: var(--copper-soft);
+  border-color: var(--copper-line);
+}
+.modal-option-title {
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal-option-title svg { color: var(--copper); width: 14px; height: 14px; }
+.modal-option-desc { font-size: 12px; color: var(--on-paper-mute); margin-top: 4px; line-height: 1.55; }
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.btn-modal {
+  padding: 10px 18px;
+  border-radius: var(--r-2);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s var(--ease);
+}
+.btn-modal-secondary { color: var(--on-paper-mute); }
+.btn-modal-secondary:hover { color: var(--on-paper); background: var(--paper-2); }
+.btn-modal-danger { background: var(--copper-deep); color: var(--paper); }
+.btn-modal-danger:hover { background: var(--copper); }
+
+.toast-stack {
+  position: fixed;
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.toast {
+  background: var(--paper);
+  color: var(--on-paper);
+  padding: 10px 16px;
+  border-radius: var(--r-full);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--shadow-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: toastIn 0.3s var(--ease-out);
+  border-left: 3px solid var(--copper);
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.toast svg { color: var(--copper); width: 16px; height: 16px; }
+
+.file-input { display: none; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ink-3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-4); }
+
+@media print {
+  body { background: white; color: black; }
+  body::before { display: none; }
+  .bottom-nav, .topbar-actions, .icon-pill, .entry-card-actions, .resume-banner, .journal-toolbar, .filter-chips { display: none !important; }
+  .entry-card, .ref-section, .pattern-card { box-shadow: none; border: 1px solid #ccc; }
+  main { padding-bottom: 0 !important; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="container">
+    <header class="topbar">
+      <div class="brand-row">
+        <div class="brand">
+          <span class="brand-mark">r</span>
+          <div>
+            <div class="brand-name">Reframe</div>
+            <div class="brand-sub">A CBT Journal</div>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-pill" data-action="open-import" aria-label="Import">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 2v9M4 7l4 4 4-4M2 13h12"/>
+            </svg>
+          </button>
+          <button class="icon-pill" data-action="open-export" aria-label="Export">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 13V4M4 8l4-4 4 4M2 13h12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+  </div>
+
+  <main>
+    <div class="container">
+      <div id="view"></div>
+    </div>
+  </main>
+
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <button class="nav-item" data-nav="journal">
+        <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h11a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4z"/>
+          <path d="M4 4v16"/>
+          <path d="M8 8h6M8 12h6M8 16h4"/>
+        </svg>
+        <span class="nav-label">Journal</span>
+      </button>
+      <button class="nav-item" data-nav="capture">
+        <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 4v14M4 11h14"/>
+        </svg>
+        <span class="nav-label">Capture</span>
+      </button>
+      <button class="nav-item" data-nav="patterns">
+        <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 18V10M9 18V6M14 18v-5M19 18V8"/>
+          <path d="M3 18h17"/>
+        </svg>
+        <span class="nav-label">Patterns</span>
+      </button>
+      <button class="nav-item" data-nav="reference">
+        <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4v14a2 2 0 0 0 2 2h12V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z"/>
+          <path d="M8 8h6M8 12h6"/>
+        </svg>
+        <span class="nav-label">Reference</span>
+      </button>
+    </div>
+  </nav>
+</div>
+
+<input type="file" id="import-file" accept=".json,application/json" class="file-input">
+<div class="toast-stack" id="toasts"></div>
+<div id="modal-root"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// REFERENCE DATA
+// ═══════════════════════════════════════════════════════════════════
+
+const DISTORTIONS = [
+  { name: "All-or-Nothing Thinking", desc: "Binary extremes.", cues: '"always," "never," "completely," "ruined"' },
+  { name: "Overgeneralization", desc: "One event = infinite pattern.", cues: '"every time," "nothing ever"' },
+  { name: "Mental Filtering", desc: "Fixating on one negative detail, ignoring the rest.", cues: "" },
+  { name: "Disqualifying the Positive", desc: "Dismissing good things.", cues: '"that doesn\'t count," "anyone could do that"' },
+  { name: "Mind Reading", desc: "Assuming others' thoughts.", cues: '"she probably," "they must think"' },
+  { name: "Fortune Telling", desc: "Predicting negatives as certain.", cues: '"this will definitely," "there\'s no way"' },
+  { name: "Catastrophizing", desc: "Worst case far beyond probability.", cues: '"what if," disaster language' },
+  { name: "Minimization", desc: "Shrinking positives.", cues: '"it\'s not a big deal"' },
+  { name: "Emotional Reasoning", desc: "Feelings as proof.", cues: '"I feel like a failure so I must be one"' },
+  { name: "Should Statements", desc: "Rigid rules.", cues: '"I should," "I must," "I have to"' },
+  { name: "Labeling", desc: "Fixed label from one behavior.", cues: '"I\'m a terrible partner"' },
+  { name: "Personalization", desc: "Blame for things not entirely your fault.", cues: "" },
+  { name: "Blame", desc: "Assigning all responsibility to others.", cues: "" },
+  { name: "Fallacy of Fairness", desc: "Fixation on fairness.", cues: '"it\'s not fair," "I deserve"' },
+  { name: "Fallacy of Change", desc: "Expecting others to change for your happiness.", cues: "" },
+  { name: "Control Fallacy (external)", desc: "Powerlessness.", cues: '"there\'s nothing I can do"' },
+  { name: "Control Fallacy (internal)", desc: "Overresponsibility.", cues: '"it\'s all on me to fix everything"' },
+];
+
+const COMMON_PAIRS = [
+  "Catastrophizing + Fortune Telling",
+  "Mind Reading + Personalization",
+  "All-or-Nothing + Should Statements",
+  "Emotional Reasoning + Labeling",
+];
+
+const EMOTION_FAMILIES = {
+  Anger: ["irritated", "frustrated", "resentful", "bitter", "furious", "hostile", "contemptuous"],
+  Anxiety: ["nervous", "worried", "apprehensive", "panicked", "dread", "hypervigilant"],
+  Sadness: ["disappointed", "hurt", "dejected", "grief", "hopeless", "lonely", "abandoned"],
+  Shame: ["embarrassed", "humiliated", "inadequate", "exposed", "self-conscious"],
+  Guilt: ["remorseful", "regretful", "blameworthy", "self-reproachful"],
+  Fear: ["scared", "threatened", "insecure", "vulnerable", "helpless"],
+  Jealousy: ["envious", "possessive", "excluded", "inferior"],
+  Disgust: ["repulsed", "contemptuous", "revolted"],
+};
+
+const INTENSITY_BANDS = [
+  { max: 20, label: "Mild",        signals: "Matter-of-fact tone, no vocal tension" },
+  { max: 40, label: "Moderate",    signals: "Slight edge, lingering on the topic" },
+  { max: 60, label: "Significant", signals: "Repeating the issue, vocal frustration" },
+  { max: 80, label: "High",        signals: "Raised voice, spiraling, hard to drop" },
+  { max: 100, label: "Severe",     signals: "Shutdown, crying, yelling, physical distress" },
+];
+
+const BODY_REGIONS = [
+  { region: "Head",       examples: "headache, pressure behind eyes, foggy thinking" },
+  { region: "Throat/Jaw", examples: "lump in throat, jaw clenching, voice tightening" },
+  { region: "Chest",      examples: "tightness, racing heart, heaviness, shortness of breath" },
+  { region: "Stomach",    examples: "knot, nausea, butterflies, sinking feeling" },
+  { region: "Muscles",    examples: "tension in shoulders/neck/back, restlessness" },
+  { region: "Skin",       examples: "flushing, sweating, tingling, numbness" },
+  { region: "Energy",     examples: "fatigue, heaviness, jittery, unable to sit still" },
+];
+
+const SOCRATIC_TYPES = [
+  { type: "Evidence examination",   when: "Thought stated as fact without proof",       template: "What evidence do I actually have that [thought] is true?" },
+  { type: "Alternative explanation", when: "Locked into one interpretation",            template: "Is there another way to explain why [person] did that?" },
+  { type: "Probability testing",    when: "Catastrophizing / fortune telling",          template: "How likely is [worst case] on a scale of 0–100%?" },
+  { type: "Historical testing",     when: "Treating this as a pattern",                 template: "How many times has [feared outcome] actually happened vs not?" },
+  { type: "Double standard",        when: "Harsher on self than on others",             template: "If a friend told me they did this, what would I say?" },
+  { type: "Decatastrophizing",      when: "Worst-case thinking",                        template: "If the worst case happened, what would I realistically do?" },
+  { type: "Cost-benefit",           when: "Should statements / rigid rules",            template: "What does holding this belief cost me vs give me?" },
+  { type: "Perspective broadening", when: "Tunnel vision / mental filtering",           template: "What would this look like zoomed out to the full week or year?" },
+];
+
+const REFRAME_METHODS = [
+  { method: "Growth-Oriented",             when: "Self-criticism about ability", does: "Reframes as learning without minimizing difficulty" },
+  { method: "Realism",                     when: "Catastrophizing",              does: "Replaces extreme prediction with most probable outcome" },
+  { method: "vs. Absolutes",               when: "All-or-nothing language",      does: 'Replaces "never/always" with proportional truth' },
+  { method: "Compassionate reattribution", when: "Personalized blame",           does: "Redistributes responsibility fairly" },
+  { method: "Behavioral experiment",       when: "Untested assumptions",         does: "Reframes as hypothesis to test" },
+];
+
+const STEP_TITLES = ["Trigger", "Initial Reaction", "Distortion", "Challenge", "Reframe", "Pivot", "Review"];
+const STEP_PROMPTS = [
+  "What happened?",
+  "What came up?",
+  "Which patterns showed up?",
+  "Put the thought on trial.",
+  "Write a thought you'd accept.",
+  "One concrete action.",
+  "Read it back.",
+];
+const STEP_HINTS = [
+  "Just the event. Skip interpretation for now.",
+  "The first thought, the feeling, the body.",
+  "Pick all that apply. Multiple is normal.",
+  "Both sides on the table, then one well-placed question.",
+  "Eye-roll test: would you say \"yeah, that's fair\"?",
+  "Specific enough to do today.",
+  "Make changes by tapping a section. Save when it's right.",
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// STORAGE
+// ═══════════════════════════════════════════════════════════════════
+
+const STORAGE_KEY = "reframe-journal-v1";
+const DRAFT_KEY   = "reframe-journal-draft-v1";
+
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+function loadDraft() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); }
+  catch { return null; }
+}
+function saveDraft(d) {
+  const has = d && (d.trigger || d.automaticThought || d.evidenceFor || d.evidenceAgainst || d.newThought || d.pivot || (d.distortions && d.distortions.length));
+  if (has) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+  else localStorage.removeItem(DRAFT_KEY);
+}
+function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const band = n => INTENSITY_BANDS.find(b => n <= b.max) || INTENSITY_BANDS[4];
+
+function emptyEntry() {
+  return {
+    id: "", createdAt: "",
+    trigger: "", automaticThought: "",
+    emotionFamily: "", emotionVariant: "", emotionIntensity: 40, emotionEstimated: false,
+    bodyCheck: "", bodyInferred: false,
+    distortions: [], distortionNote: "",
+    evidenceFor: "", evidenceAgainst: "",
+    socraticType: "", socraticQuestion: "",
+    reframeMethod: "", newThought: "",
+    pivot: "", pivotDone: false,
+  };
+}
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+function fmtTime(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+function fmtDateTime(iso) { return fmtDate(iso) + " · " + fmtTime(iso); }
+
+function startOfDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function daysBetween(a, b) {
+  return Math.round((startOfDay(a) - startOfDay(b)) / 86400000);
+}
+function dateGroupLabel(iso) {
+  const days = daysBetween(new Date(), new Date(iso));
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return "This week";
+  if (days < 14) return "Last week";
+  if (days < 30) return "This month";
+  if (days < 90) return "Last 3 months";
+  return "Earlier";
+}
+
+function entryToMd(e, idx) {
+  const L = [];
+  L.push("---", "", "### Entry " + (idx + 1), "");
+  L.push("**1. Trigger (Antecedent)**", "", e.trigger || "—", "");
+  L.push("**2. Initial Reaction**", "");
+  L.push('- **Automatic Thought:** "' + e.automaticThought + '"', "");
+  const emoLabel = e.emotionVariant ? (cap(e.emotionVariant) + " (" + e.emotionFamily + ")") : (e.emotionFamily || "—");
+  const estTag = e.emotionEstimated ? " *(estimated)*" : "";
+  L.push("- **Emotion:** " + emoLabel + " — **Intensity:** " + e.emotionIntensity + "/100" + estTag, "");
+  const infTag = e.bodyInferred ? " *(inferred from speech)*" : "";
+  L.push("- **Body Check:** " + (e.bodyCheck || "—") + infTag, "");
+  L.push("**3. Distortion Identified**", "");
+  L.push(e.distortions.length ? e.distortions.map(d => "**" + d + "**").join(" + ") : "—", "");
+  if (e.distortionNote) L.push(e.distortionNote, "");
+  L.push("**4. Challenge (The Trial)**", "");
+  L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
+  L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
+  L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
+  L.push("**5. Reframe**", "");
+  L.push("- **Method:** " + (e.reframeMethod || "—"), "");
+  L.push('- **New Thought:** "' + e.newThought + '"', "");
+  L.push("**6. The Pivot**", "", e.pivot || "—", "");
+  return L.join("\n");
+}
+
+function download(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function toast(message) {
+  const stack = document.getElementById("toasts");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.innerHTML = `
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3 3 7-7"/></svg>
+    <span>${esc(message)}</span>`;
+  stack.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = "0";
+    el.style.transform = "translateY(8px)";
+    el.style.transition = "all 0.3s var(--ease)";
+    setTimeout(() => el.remove(), 300);
+  }, 2400);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+
+const state = {
+  entries: loadEntries(),
+  draft: loadDraft() || emptyEntry(),
+  editingId: null,
+  view: "journal",
+  captureStep: 1,
+  search: "",
+  filter: "",
+  expandedIds: new Set(),
+  modal: null,
+};
+
+function setState(patch) {
+  Object.assign(state, patch);
+  render();
+}
+
+function setView(v) {
+  state.view = v;
+  if (v === "capture" && state.editingId === null && !hasDraftContent(state.draft)) {
+    state.captureStep = 1;
+  }
+  render();
+}
+
+function hasDraftContent(d) {
+  return !!(d.trigger || d.automaticThought || d.evidenceFor || d.evidenceAgainst || d.newThought || d.pivot || d.distortions.length);
+}
+
+function persist() { saveEntries(state.entries); }
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════════
+
+function render() {
+  document.querySelectorAll(".nav-item").forEach(b => {
+    b.classList.toggle("active", b.dataset.nav === state.view);
+  });
+
+  const view = document.getElementById("view");
+  if (state.view === "journal")        view.innerHTML = renderJournal();
+  else if (state.view === "capture")   view.innerHTML = renderCapture();
+  else if (state.view === "patterns")  view.innerHTML = renderPatterns();
+  else if (state.view === "reference") view.innerHTML = renderReference();
+
+  if (state.view === "journal")      bindJournal();
+  else if (state.view === "capture") bindCapture();
+
+  renderModal();
+}
+
+function renderJournal() {
+  const entries = state.entries;
+  const hasDraft = hasDraftContent(state.draft) && !state.editingId;
+
+  if (entries.length === 0) {
+    return `
+      <div class="page-header">
+        <div class="page-eyebrow">Personal</div>
+        <h1 class="page-title display">Journal</h1>
+      </div>
+      ${hasDraft ? renderResumeBanner() : ""}
+      <div class="empty-state">
+        <div class="empty-state-mark">r</div>
+        <h2 class="empty-state-title display">A quiet start.</h2>
+        <p class="empty-state-body">Capture a triggering thought when it happens. Walk it through six steps. End on an action. Your entries live in this browser only.</p>
+        <div class="empty-state-actions">
+          <button class="btn btn-primary" data-action="goto-capture">Begin first entry</button>
+          <button class="btn btn-ghost" data-action="open-import">Import backup</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const q = state.search.toLowerCase().trim();
+  let filtered = entries;
+  if (state.filter) filtered = filtered.filter(e => e.distortions.includes(state.filter));
+  if (q) {
+    filtered = filtered.filter(e =>
+      (e.trigger + " " + e.automaticThought + " " + e.newThought + " " + e.pivot + " " + e.distortions.join(" ")).toLowerCase().includes(q)
+    );
+  }
+
+  const usedDistortions = Array.from(new Set(entries.flatMap(e => e.distortions))).sort();
+
+  const groups = [];
+  const seen = new Map();
+  filtered.forEach(e => {
+    const label = dateGroupLabel(e.createdAt);
+    if (!seen.has(label)) {
+      seen.set(label, { label, entries: [] });
+      groups.push(seen.get(label));
+    }
+    seen.get(label).entries.push(e);
+  });
+
+  return `
+    <div class="page-header">
+      <div class="page-eyebrow">${entries.length} ${entries.length === 1 ? "entry" : "entries"}</div>
+      <h1 class="page-title display">Journal</h1>
+    </div>
+
+    ${hasDraft ? renderResumeBanner() : ""}
+
+    <div class="journal-toolbar">
+      <div class="search-box">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="7" cy="7" r="4.5"/>
+          <path d="M10.5 10.5l3 3"/>
+        </svg>
+        <input type="text" class="search-input" placeholder="Search entries…" value="${esc(state.search)}" data-action="search">
+      </div>
+    </div>
+
+    ${usedDistortions.length > 0 ? `
+      <div class="filter-chips">
+        <button class="filter-chip ${state.filter === "" ? "active" : ""}" data-action="filter" data-value="">All</button>
+        ${usedDistortions.map(d => `
+          <button class="filter-chip ${state.filter === d ? "active" : ""}" data-action="filter" data-value="${esc(d)}">${esc(d)}</button>
+        `).join("")}
+      </div>
+    ` : ""}
+
+    ${filtered.length === 0 ? `
+      <div class="empty-state" style="margin-top: 20px;">
+        <h2 class="empty-state-title display" style="font-size: 20px;">Nothing matches that.</h2>
+        <p class="empty-state-body">Try clearing the search or the filter.</p>
+      </div>
+    ` : groups.map(g => `
+      <div class="date-group">
+        <div class="date-group-label">
+          <span class="kicker">${esc(g.label)}</span>
+          <span class="date-group-rule"></span>
+        </div>
+        <div class="entry-stack">
+          ${g.entries.map(e => renderEntryCard(e, entries.indexOf(e))).join("")}
+        </div>
+      </div>
+    `).join("")}
+  `;
+}
+
+function renderResumeBanner() {
+  const preview = state.draft.trigger || state.draft.automaticThought || "(unfinished entry)";
+  return `
+    <div class="resume-banner">
+      <div class="resume-banner-info">
+        <svg class="resume-banner-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 10a7 7 0 1 0 14 0 7 7 0 0 0-14 0z"/>
+          <path d="M10 6v4l3 2"/>
+        </svg>
+        <div class="resume-banner-text">
+          <strong>Draft in progress</strong>
+          <span class="preview">${esc(preview.slice(0, 60))}${preview.length > 60 ? "…" : ""}</span>
+        </div>
+      </div>
+      <div class="resume-banner-actions">
+        <button class="action-btn" data-action="resume-draft">Resume</button>
+        <button class="action-btn" data-action="discard-draft">Discard</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderEntryCard(entry, index) {
+  const expanded = state.expandedIds.has(entry.id);
+  const emoLabel = entry.emotionVariant ? cap(entry.emotionVariant) : entry.emotionFamily;
+
+  return `
+    <article class="entry-card ${expanded ? "expanded" : ""}">
+      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
+        <div class="entry-meta-row">
+          <span class="entry-meta-num">No. ${String(index + 1).padStart(2, "0")}</span>
+          <span class="entry-meta-dot">·</span>
+          <span class="entry-meta-time">${esc(fmtTime(entry.createdAt))}</span>
+          ${entry.pivotDone ? `
+            <span class="pivot-indicator done" style="margin-left: auto;">
+              <span class="pivot-dot"></span> Pivoted
+            </span>
+          ` : ""}
+        </div>
+        <h3 class="entry-card-trigger display ${entry.trigger ? "" : "empty"}">
+          ${entry.trigger ? esc(entry.trigger) : "(no trigger)"}
+        </h3>
+        <div class="entry-tags-row">
+          ${emoLabel ? `
+            <span class="felt-pill">
+              Felt <span class="felt-emo">${esc(emoLabel)}</span>
+              <span class="intensity-mini">${entry.emotionIntensity}</span>
+            </span>
+          ` : ""}
+          ${entry.distortions.slice(0, 2).map(d => `<span class="dist-chip">${esc(d)}</span>`).join("")}
+          ${entry.distortions.length > 2 ? `<span class="dist-more">+${entry.distortions.length - 2}</span>` : ""}
+        </div>
+      </div>
+      ${expanded ? renderEntryDetails(entry) : ""}
+    </article>
+  `;
+}
+
+function renderEntryDetails(entry) {
+  return `
+    <div class="entry-body">
+      <div class="detail-row">
+        <div class="detail-label">1 · Automatic Thought</div>
+        <p class="detail-text italic">"${esc(entry.automaticThought)}"</p>
+      </div>
+      ${entry.bodyCheck ? `
+        <div class="detail-row">
+          <div class="detail-label">2 · Body Check</div>
+          <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(inferred from speech)</span>` : ""}</p>
+        </div>
+      ` : ""}
+      ${entry.distortionNote ? `
+        <div class="detail-row">
+          <div class="detail-label">3 · Distortion note</div>
+          <p class="detail-text">${esc(entry.distortionNote)}</p>
+        </div>
+      ` : ""}
+      <div class="detail-row">
+        <div class="detail-label">4 · Evidence</div>
+        <div class="evidence-split">
+          <div>
+            <div class="detail-label" style="margin-bottom: 4px;">For</div>
+            <p class="detail-text">${esc(entry.evidenceFor) || "—"}</p>
+          </div>
+          <div>
+            <div class="detail-label" style="margin-bottom: 4px;">Against</div>
+            <p class="detail-text">${esc(entry.evidenceAgainst) || "—"}</p>
+          </div>
+        </div>
+        ${entry.socraticQuestion ? `
+          <div class="socratic-quote">
+            <div class="detail-label" style="color: var(--copper-deep); margin-bottom: 2px;">Socratic${entry.socraticType ? " · " + esc(entry.socraticType) : ""}</div>
+            <p class="detail-text italic">"${esc(entry.socraticQuestion)}"</p>
+          </div>
+        ` : ""}
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">5 · Reframe${entry.reframeMethod ? " · " + esc(entry.reframeMethod) : ""}</div>
+        <p class="detail-text italic">"${esc(entry.newThought)}"</p>
+      </div>
+      <div class="detail-row entry-pivot">
+        <div class="entry-pivot-content">
+          <div class="detail-label" style="color: var(--copper);">6 · The Pivot</div>
+          <p class="detail-text entry-pivot-text ${entry.pivotDone ? "done" : ""}">${esc(entry.pivot) || "—"}</p>
+        </div>
+        <label class="pivot-toggle-large">
+          <input type="checkbox" data-action="toggle-pivot" data-id="${entry.id}" ${entry.pivotDone ? "checked" : ""}>
+          <span>Done</span>
+        </label>
+      </div>
+    </div>
+    <div class="entry-card-actions">
+      <span class="entry-card-actions-time">${esc(fmtDateTime(entry.createdAt))}</span>
+      <div class="entry-card-actions-buttons">
+        <button class="action-btn primary" data-action="edit" data-id="${entry.id}">Edit</button>
+        <button class="action-btn danger" data-action="delete" data-id="${entry.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderCapture() {
+  const totalSteps = 7;
+  const step = state.captureStep;
+  const d = state.draft;
+
+  return `
+    <div class="page-header">
+      <div class="page-eyebrow">${state.editingId ? "Editing" : "Capture"}</div>
+      <h1 class="page-title display">${state.editingId ? "Refine entry" : "New entry"}</h1>
+    </div>
+
+    <div class="capture-shell">
+      <div class="capture-progress">
+        <div class="progress-top">
+          <span class="progress-title">${esc(STEP_TITLES[step - 1])}</span>
+          <span class="progress-count">${step} of ${totalSteps}</span>
+        </div>
+        <div class="progress-track">
+          ${Array.from({ length: totalSteps }, (_, i) => {
+            const n = i + 1;
+            const cls = n < step ? "completed" : n === step ? "active" : "";
+            return `<button class="progress-dot ${cls}" data-action="goto-step" data-step="${n}" aria-label="Step ${n}"></button>`;
+          }).join("")}
+        </div>
+      </div>
+
+      <div class="capture-screen">
+        <div class="step-header">
+          <div class="step-num">Step ${step === 7 ? "—" : step}</div>
+          <h2 class="step-prompt display">${esc(STEP_PROMPTS[step - 1])}</h2>
+          <p class="step-hint">${esc(STEP_HINTS[step - 1])}</p>
+        </div>
+
+        ${renderCaptureStep(step, d)}
+      </div>
+
+      <div class="capture-footer">
+        <div class="capture-footer-left">
+          ${step > 1 ? `<button class="btn-back" data-action="prev-step">← Back</button>` : ""}
+          <button class="btn-discard" data-action="discard-capture">Discard</button>
+        </div>
+        ${step < totalSteps
+          ? `<button class="btn btn-primary" data-action="next-step" ${canAdvance(step, d) ? "" : "disabled"}>Continue →</button>`
+          : `<button class="btn btn-primary" data-action="save-entry">${state.editingId ? "Save changes" : "Save entry"}</button>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function canAdvance(step, d) {
+  if (step === 1) return d.trigger.trim().length > 0;
+  if (step === 2) return d.automaticThought.trim().length > 0;
+  return true;
+}
+
+function renderCaptureStep(step, d) {
+  switch (step) {
+    case 1: return `
+      <div class="field-group">
+        <textarea class="textarea input-large" data-field="trigger" rows="3" autofocus placeholder="Broke a chair at the pedicure place…">${esc(d.trigger)}</textarea>
+      </div>
+    `;
+
+    case 2: return `
+      <div class="field-group">
+        <label class="field-label-paper">Automatic Thought</label>
+        <textarea class="textarea input-large" data-field="automaticThought" rows="3" placeholder="Everyone saw that. They all think I'm a huge clumsy idiot.">${esc(d.automaticThought)}</textarea>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-paper">Emotion</label>
+        <div class="field-row-split">
+          <select class="select" data-field="emotionFamily">
+            <option value="">— family —</option>
+            ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${f}" ${d.emotionFamily === f ? "selected" : ""}>${f}</option>`).join("")}
+          </select>
+          <select class="select" data-field="emotionVariant" ${!d.emotionFamily ? "disabled" : ""}>
+            <option value="">— variant —</option>
+            ${(d.emotionFamily ? EMOTION_FAMILIES[d.emotionFamily] : []).map(v => `<option value="${v}" ${d.emotionVariant === v ? "selected" : ""}>${v}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <div class="intensity-control">
+          <div class="intensity-head">
+            <div>
+              <span class="intensity-num-big">${d.emotionIntensity}<span class="intensity-num-suffix">/100</span></span>
+            </div>
+            <div class="intensity-band-label">
+              <div class="intensity-band-name display">${esc(band(d.emotionIntensity).label)}</div>
+              <div class="intensity-band-sig">${esc(band(d.emotionIntensity).signals)}</div>
+            </div>
+          </div>
+          <input type="range" min="0" max="100" value="${d.emotionIntensity}" data-field="emotionIntensity" class="intensity-slider">
+          <div class="intensity-bands">
+            <span>Mild</span><span>Mod</span><span>Sig</span><span>High</span><span>Severe</span>
+          </div>
+          <label class="checkbox-flag">
+            <input type="checkbox" data-field="emotionEstimated" ${d.emotionEstimated ? "checked" : ""}>
+            <span>Mark as estimated</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-paper">Body Check</label>
+        <textarea class="textarea" data-field="bodyCheck" rows="2" placeholder="Face flushing, urge to flee…">${esc(d.bodyCheck)}</textarea>
+        <label class="checkbox-flag">
+          <input type="checkbox" data-field="bodyInferred" ${d.bodyInferred ? "checked" : ""}>
+          <span>Inferred from speech, not directly felt</span>
+        </label>
+        <details class="ref-inline">
+          <summary><span class="chev">▸</span> Body region reference</summary>
+          <div class="ref-inline-body">
+            <table>
+              ${BODY_REGIONS.map(b => `<tr><td>${b.region}</td><td class="muted">${esc(b.examples)}</td></tr>`).join("")}
+            </table>
+          </div>
+        </details>
+      </div>
+    `;
+
+    case 3: return `
+      <div class="field-group">
+        <div class="distortion-grid">
+          ${DISTORTIONS.map(dist => {
+            const active = d.distortions.includes(dist.name);
+            return `
+              <button class="distortion-tile ${active ? "active" : ""}" data-action="toggle-distortion" data-name="${esc(dist.name)}">
+                <div class="distortion-tile-name">
+                  <span>${esc(dist.name)}</span>
+                  <span class="distortion-tile-check">✓</span>
+                </div>
+                <div class="distortion-tile-desc">${esc(dist.desc)}</div>
+              </button>
+            `;
+          }).join("")}
+        </div>
+        <details class="ref-inline">
+          <summary><span class="chev">▸</span> Common pairs</summary>
+          <div class="ref-inline-body">
+            <ul>${COMMON_PAIRS.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+          </div>
+        </details>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-paper">Distortion note (optional)</label>
+        <textarea class="textarea" data-field="distortionNote" rows="2" placeholder="Assumed others judged me and attached a fixed label…">${esc(d.distortionNote)}</textarea>
+      </div>
+    `;
+
+    case 4: return `
+      <div class="field-group">
+        <label class="field-label-paper">Evidence FOR the thought</label>
+        <textarea class="textarea" data-field="evidenceFor" rows="3">${esc(d.evidenceFor)}</textarea>
+      </div>
+      <div class="field-group">
+        <label class="field-label-paper">Evidence AGAINST the thought</label>
+        <textarea class="textarea" data-field="evidenceAgainst" rows="3">${esc(d.evidenceAgainst)}</textarea>
+      </div>
+      <div class="field-group">
+        <label class="field-label-paper">Socratic question type</label>
+        <select class="select" data-field="socraticType">
+          <option value="">— pick one —</option>
+          ${SOCRATIC_TYPES.map(s => `<option value="${esc(s.type)}" ${d.socraticType === s.type ? "selected" : ""}>${esc(s.type)}</option>`).join("")}
+        </select>
+        ${d.socraticType ? `<div class="field-help-paper">${esc(SOCRATIC_TYPES.find(s => s.type === d.socraticType)?.when || "")}</div>` : ""}
+      </div>
+      <div class="field-group">
+        <label class="field-label-paper">Socratic question</label>
+        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="If I saw a stranger break a chair, would I think they're an idiot?">${esc(d.socraticQuestion)}</textarea>
+        <details class="ref-inline">
+          <summary><span class="chev">▸</span> All question types</summary>
+          <div class="ref-inline-body">
+            ${SOCRATIC_TYPES.map(s => `
+              <div class="block">
+                <div class="block-title">${esc(s.type)}</div>
+                <div class="block-when">When: ${esc(s.when)}</div>
+                <div class="block-template">"${esc(s.template)}"</div>
+              </div>
+            `).join("")}
+          </div>
+        </details>
+      </div>
+    `;
+
+    case 5: return `
+      <div class="field-group">
+        <label class="field-label-paper">Method</label>
+        <select class="select" data-field="reframeMethod">
+          <option value="">— pick one —</option>
+          ${REFRAME_METHODS.map(r => `<option value="${esc(r.method)}" ${d.reframeMethod === r.method ? "selected" : ""}>${esc(r.method)}</option>`).join("")}
+        </select>
+        ${d.reframeMethod ? `<div class="field-help-paper">${esc(REFRAME_METHODS.find(r => r.method === d.reframeMethod)?.does || "")}</div>` : ""}
+      </div>
+      <div class="field-group">
+        <label class="field-label-paper">New Thought</label>
+        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="That was embarrassing, and wanting to leave makes sense. But a chair breaking says more about the chair than about me.">${esc(d.newThought)}</textarea>
+        <div class="field-help-paper">Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.</div>
+        <details class="ref-inline">
+          <summary><span class="chev">▸</span> All reframe methods</summary>
+          <div class="ref-inline-body">
+            ${REFRAME_METHODS.map(r => `
+              <div class="block">
+                <div class="block-title">${esc(r.method)}</div>
+                <div class="block-when">When: ${esc(r.when)} · ${esc(r.does)}</div>
+              </div>
+            `).join("")}
+          </div>
+        </details>
+      </div>
+    `;
+
+    case 6: return `
+      <div class="field-group">
+        <textarea class="textarea input-large" data-field="pivot" rows="4" placeholder='Send a text: "Sorry I bailed earlier — I was embarrassed. I should have stayed."'>${esc(d.pivot)}</textarea>
+        <div class="field-help-paper">A single concrete action you can do today. The smaller and more specific, the better.</div>
+      </div>
+    `;
+
+    case 7: return renderReview(d);
+  }
+  return "";
+}
+
+function renderReview(d) {
+  const emoLabel = d.emotionVariant ? (cap(d.emotionVariant) + " · " + d.emotionFamily) : d.emotionFamily;
+  return `
+    <div class="review-card">
+      <div class="review-card-head">
+        <span class="review-card-num">1 · Trigger</span>
+        <button class="review-edit-btn" data-action="goto-step" data-step="1">Edit</button>
+      </div>
+      <div class="review-card-content">${d.trigger ? esc(d.trigger) : '<span class="empty">missing</span>'}</div>
+    </div>
+
+    <div class="review-card">
+      <div class="review-card-head">
+        <span class="review-card-num">2 · Initial Reaction</span>
+        <button class="review-edit-btn" data-action="goto-step" data-step="2">Edit</button>
+      </div>
+      <div class="review-card-content italic">"${esc(d.automaticThought)}"</div>
+      <div class="review-meta-row">
+        ${emoLabel ? `<div class="review-meta-item"><strong>${esc(emoLabel)}</strong> · ${d.emotionIntensity}/100${d.emotionEstimated ? " (estimated)" : ""}</div>` : ""}
+        ${d.bodyCheck ? `<div class="review-meta-item">Body: ${esc(d.bodyCheck)}${d.bodyInferred ? " (inferred)" : ""}</div>` : ""}
+      </div>
+    </div>
+
+    <div class="review-card">
+      <div class="review-card-head">
+        <span class="review-card-num">3 · Distortion</span>
+        <button class="review-edit-btn" data-action="goto-step" data-step="3">Edit</button>
+      </div>
+      <div class="review-card-content">
+        ${d.distortions.length ? d.distortions.map(x => `<strong>${esc(x)}</strong>`).join(" + ") : '<span class="empty">none selected</span>'}
+        ${d.distortionNote ? `<div style="margin-top: 6px; font-size: 13px; color: var(--on-paper-mute);">${esc(d.distortionNote)}</div>` : ""}
+      </div>
+    </div>
+
+    <div class="review-card">
+      <div class="review-card-head">
+        <span class="review-card-num">4 · Challenge</span>
+        <button class="review-edit-btn" data-action="goto-step" data-step="4">Edit</button>
+      </div>
+      <div class="review-card-content">
+        <div class="review-meta-item"><strong>For:</strong> ${d.evidenceFor ? esc(d.evidenceFor) : '<span class="empty">—</span>'}</div>
+        <div class="review-meta-item" style="margin-top: 4px;"><strong>Against:</strong> ${d.evidenceAgainst ? esc(d.evidenceAgainst) : '<span class="empty">—</span>'}</div>
+        ${d.socraticQuestion ? `<div class="italic" style="margin-top: 8px; color: var(--on-paper-soft);">"${esc(d.socraticQuestion)}"</div>` : ""}
+      </div>
+    </div>
+
+    <div class="review-card">
+      <div class="review-card-head">
+        <span class="review-card-num">5 · Reframe${d.reframeMethod ? " · " + esc(d.reframeMethod) : ""}</span>
+        <button class="review-edit-btn" data-action="goto-step" data-step="5">Edit</button>
+      </div>
+      <div class="review-card-content italic">"${d.newThought ? esc(d.newThought) : '<span class="empty">missing</span>'}"</div>
+    </div>
+
+    <div class="review-card">
+      <div class="review-card-head">
+        <span class="review-card-num">6 · The Pivot</span>
+        <button class="review-edit-btn" data-action="goto-step" data-step="6">Edit</button>
+      </div>
+      <div class="review-card-content">${d.pivot ? esc(d.pivot) : '<span class="empty">missing</span>'}</div>
+    </div>
+  `;
+}
+
+function renderPatterns() {
+  const entries = state.entries;
+  if (entries.length === 0) {
+    return `
+      <div class="page-header">
+        <div class="page-eyebrow">Insight</div>
+        <h1 class="page-title display">Patterns</h1>
+      </div>
+      <div class="empty-state">
+        <div class="empty-state-mark">∿</div>
+        <h2 class="empty-state-title display">Patterns emerge with use.</h2>
+        <p class="empty-state-body">Once you've logged a few entries, this view will show you the distortions, emotions, and intensities that recur for you.</p>
+      </div>
+    `;
+  }
+
+  const total = entries.length;
+  const pivotsDone = entries.filter(e => e.pivotDone).length;
+  const pivotPct = Math.round((pivotsDone / total) * 100);
+
+  const distCounts = {};
+  entries.forEach(e => e.distortions.forEach(d => distCounts[d] = (distCounts[d] || 0) + 1));
+  const sortedDist = Object.entries(distCounts).sort((a, b) => b[1] - a[1]).slice(0, 7);
+  const maxDist = sortedDist[0]?.[1] || 1;
+
+  const emoCounts = {};
+  Object.keys(EMOTION_FAMILIES).forEach(f => emoCounts[f] = 0);
+  entries.forEach(e => { if (e.emotionFamily) emoCounts[e.emotionFamily] = (emoCounts[e.emotionFamily] || 0) + 1; });
+  const maxEmo = Math.max(...Object.values(emoCounts), 1);
+
+  const today = startOfDay(new Date());
+  const dayCounts = new Array(30).fill(0);
+  entries.forEach(e => {
+    const dayIdx = 29 - daysBetween(today, new Date(e.createdAt));
+    if (dayIdx >= 0 && dayIdx < 30) dayCounts[dayIdx]++;
+  });
+  const last30Total = dayCounts.reduce((a, b) => a + b, 0);
+  const activeDays = dayCounts.filter(c => c > 0).length;
+
+  const recent = entries.slice(0, 20).reverse();
+  const sparkW = 280, sparkH = 50, pad = 4;
+  const sparkPath = recent.length > 1
+    ? recent.map((e, i) => {
+        const x = pad + (i / (recent.length - 1)) * (sparkW - 2 * pad);
+        const y = pad + ((100 - e.emotionIntensity) / 100) * (sparkH - 2 * pad);
+        return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      }).join(" ")
+    : "";
+  const sparkArea = recent.length > 1
+    ? `${sparkPath} L ${pad + (sparkW - 2 * pad)} ${sparkH - pad} L ${pad} ${sparkH - pad} Z`
+    : "";
+
+  const R = 32, C = 2 * Math.PI * R;
+  const offset = C - (pivotPct / 100) * C;
+
+  const topDist = sortedDist[0]?.[0] || "—";
+
+  return `
+    <div class="page-header">
+      <div class="page-eyebrow">Insight</div>
+      <h1 class="page-title display">Patterns</h1>
+      <p class="page-sub">A quiet read of what's recurring in your reframes.</p>
+    </div>
+
+    <div class="patterns-grid">
+
+      <div class="pattern-card">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">Total entries</span>
+        </div>
+        <div class="pattern-stat-big display">${total}</div>
+        <div class="pattern-stat-label">${activeDays} active ${activeDays === 1 ? "day" : "days"} in last 30</div>
+      </div>
+
+      <div class="pattern-card">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">Pivot completion</span>
+        </div>
+        <div class="pivot-ring-wrap">
+          <div class="pivot-ring" style="width: 72px; height: 72px;">
+            <svg width="72" height="72" viewBox="0 0 72 72">
+              <circle class="pivot-ring-track" cx="36" cy="36" r="${R}" fill="none" stroke-width="5"/>
+              <circle class="pivot-ring-fill" cx="36" cy="36" r="${R}" fill="none" stroke-width="5"
+                stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" stroke-linecap="round"/>
+            </svg>
+            <div class="pivot-ring-label">
+              <div class="pivot-ring-pct display">${pivotPct}<span class="small">%</span></div>
+            </div>
+          </div>
+          <div class="pivot-ring-detail">
+            <strong>${pivotsDone}</strong> of ${total}<br>pivots done
+          </div>
+        </div>
+      </div>
+
+      <div class="pattern-card span-2">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">Last 30 days</span>
+          <span class="pattern-card-meta">${last30Total} ${last30Total === 1 ? "entry" : "entries"}</span>
+        </div>
+        <div class="activity-grid">
+          ${dayCounts.map(c => {
+            const cls = c === 0 ? "" : c === 1 ? "has" : "has-many";
+            return `<div class="activity-dot ${cls}" title="${c} ${c === 1 ? "entry" : "entries"}"></div>`;
+          }).join("")}
+        </div>
+        <div class="activity-legend">
+          <span class="activity-legend-item"><span class="activity-dot"></span> Quiet</span>
+          <span class="activity-legend-item"><span class="activity-dot has"></span> One entry</span>
+          <span class="activity-legend-item"><span class="activity-dot has-many"></span> Multiple</span>
+        </div>
+      </div>
+
+      <div class="pattern-card span-2">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">Most common distortions</span>
+          <span class="pattern-card-meta">${esc(topDist)} leads</span>
+        </div>
+        <div class="bar-list">
+          ${sortedDist.length === 0 ? `<div class="pattern-stat-label">No distortions logged yet.</div>` :
+            sortedDist.map(([name, count]) => `
+              <div class="bar-row">
+                <div class="bar-row-label">${esc(name)}</div>
+                <div class="bar-track"><div class="bar-fill" style="width: ${(count / maxDist) * 100}%"></div></div>
+                <div class="bar-row-value">${count}</div>
+              </div>
+            `).join("")
+          }
+        </div>
+      </div>
+
+      <div class="pattern-card span-2">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">Emotion families</span>
+          <span class="pattern-card-meta">${Object.values(emoCounts).reduce((a,b)=>a+b,0)} tagged</span>
+        </div>
+        <div class="emo-grid">
+          ${Object.entries(emoCounts).map(([fam, count]) => `
+            <div class="emo-tile" style="--intensity: ${count > 0 ? 0.06 + (count / maxEmo) * 0.18 : 0}">
+              <div class="emo-tile-name">${fam}</div>
+              <div class="emo-tile-count display">${count}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+
+      ${recent.length > 1 ? `
+        <div class="pattern-card span-2">
+          <div class="pattern-card-head">
+            <span class="pattern-card-title">Intensity, last ${recent.length} entries</span>
+            <span class="pattern-card-meta">oldest → newest</span>
+          </div>
+          <div class="spark-wrap">
+            <svg viewBox="0 0 ${sparkW} ${sparkH}" width="100%" height="${sparkH}" preserveAspectRatio="none" style="display: block;">
+              <defs>
+                <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--copper)" stop-opacity="0.3"/>
+                  <stop offset="100%" stop-color="var(--copper)" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="${sparkArea}" fill="url(#sparkGrad)"/>
+              <path d="${sparkPath}" fill="none" stroke="var(--copper)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              ${recent.map((e, i) => {
+                const x = pad + (i / (recent.length - 1)) * (sparkW - 2 * pad);
+                const y = pad + ((100 - e.emotionIntensity) / 100) * (sparkH - 2 * pad);
+                return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="var(--copper)"/>`;
+              }).join("")}
+            </svg>
+            <div class="spark-axis-row">
+              <span>0</span><span>50</span><span>100</span>
+            </div>
+          </div>
+        </div>
+      ` : ""}
+
+    </div>
+  `;
+}
+
+function renderReference() {
+  return `
+    <div class="page-header">
+      <div class="page-eyebrow">In-app handbook</div>
+      <h1 class="page-title display">Reference</h1>
+      <p class="page-sub">The cognitive distortions, emotion families, and reframing methods that drive the six-step workflow. Browseable anytime, not just while capturing.</p>
+    </div>
+
+    <div class="ref-section">
+      <div class="ref-section-head">
+        <span class="ref-section-num">3</span>
+        <h2 class="ref-section-title display">Cognitive Distortions</h2>
+        <span class="ref-section-step">Step 3</span>
+      </div>
+      <p class="ref-section-intro">Patterns of thinking that warp interpretation. Identify which ones are showing up before you challenge the thought.</p>
+      ${DISTORTIONS.map(d => `
+        <div class="ref-item">
+          <div class="ref-item-name">${esc(d.name)}</div>
+          <div class="ref-item-desc">${esc(d.desc)}</div>
+          ${d.cues ? `<div class="ref-item-cues">Cues: ${esc(d.cues)}</div>` : ""}
+        </div>
+      `).join("")}
+      <div class="ref-pairs">
+        <div class="ref-pairs-head">Common pairs</div>
+        <ul>${COMMON_PAIRS.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+      </div>
+    </div>
+
+    <div class="ref-section">
+      <div class="ref-section-head">
+        <span class="ref-section-num">2</span>
+        <h2 class="ref-section-title display">Emotions</h2>
+        <span class="ref-section-step">Step 2</span>
+      </div>
+      <p class="ref-section-intro">Eight families, with more precise variants. Use the closest match.</p>
+      ${Object.entries(EMOTION_FAMILIES).map(([fam, variants]) => `
+        <div class="ref-item ref-table-emotion">
+          <div class="ref-item-name">${fam}</div>
+          <div class="ref-item-desc">${variants.join(" · ")}</div>
+        </div>
+      `).join("")}
+    </div>
+
+    <div class="ref-section">
+      <div class="ref-section-head">
+        <span class="ref-section-num">2</span>
+        <h2 class="ref-section-title display">Intensity Scale</h2>
+        <span class="ref-section-step">Step 2</span>
+      </div>
+      <p class="ref-section-intro">If uncertain, estimate conservatively and mark as estimated.</p>
+      <div class="ref-table-intensity">
+        ${INTENSITY_BANDS.map((b, i) => {
+          const minR = i === 0 ? 0 : INTENSITY_BANDS[i - 1].max + 1;
+          return `
+            <div class="ref-band-row">
+              <div class="ref-band-range">${minR}–${b.max}</div>
+              <div>
+                <div class="ref-band-label">${b.label}</div>
+                <div class="ref-band-signals">${esc(b.signals)}</div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+
+    <div class="ref-section">
+      <div class="ref-section-head">
+        <span class="ref-section-num">2</span>
+        <h2 class="ref-section-title display">Body Check</h2>
+        <span class="ref-section-step">Step 2</span>
+      </div>
+      <p class="ref-section-intro">Where emotion lives in the body. If you don't directly feel it but speech patterns suggest it, mark as <em>inferred from speech</em>.</p>
+      ${BODY_REGIONS.map(b => `
+        <div class="ref-item">
+          <div class="ref-item-name">${esc(b.region)}</div>
+          <div class="ref-item-desc">${esc(b.examples)}</div>
+        </div>
+      `).join("")}
+    </div>
+
+    <div class="ref-section">
+      <div class="ref-section-head">
+        <span class="ref-section-num">4</span>
+        <h2 class="ref-section-title display">Socratic Questions</h2>
+        <span class="ref-section-step">Step 4</span>
+      </div>
+      <p class="ref-section-intro">Match the question to the primary distortion. If multiple, target the one driving the most intensity.</p>
+      ${SOCRATIC_TYPES.map(s => `
+        <div class="ref-item">
+          <div class="ref-item-name">${esc(s.type)}</div>
+          <div class="ref-item-desc">When: ${esc(s.when)}</div>
+          <div class="ref-item-template">"${esc(s.template)}"</div>
+        </div>
+      `).join("")}
+    </div>
+
+    <div class="ref-section">
+      <div class="ref-section-head">
+        <span class="ref-section-num">5</span>
+        <h2 class="ref-section-title display">Reframing Methods</h2>
+        <span class="ref-section-step">Step 5</span>
+      </div>
+      <p class="ref-section-intro">Quality test: would you say "yeah, that's fair," or roll your eyes? If eye-roll, make it less positive.</p>
+      ${REFRAME_METHODS.map(r => `
+        <div class="ref-item">
+          <div class="ref-item-name">${esc(r.method)}</div>
+          <div class="ref-item-desc"><strong>When:</strong> ${esc(r.when)}. ${esc(r.does)}.</div>
+        </div>
+      `).join("")}
+      <div class="ref-pairs" style="margin-top: 20px;">
+        <div class="ref-pairs-head" style="color: var(--copper-deep);">Do NOT use</div>
+        <ul style="list-style: none; padding-left: 0;">
+          <li style="display: block; padding: 4px 0; color: var(--on-paper-soft);">Toxic positivity</li>
+          <li style="display: block; padding: 4px 0; color: var(--on-paper-soft);">Dismissal ("it's not that bad")</li>
+          <li style="display: block; padding: 4px 0; color: var(--on-paper-soft);">Hollow affirmation ("you're amazing!")</li>
+          <li style="display: block; padding: 4px 0; color: var(--on-paper-soft);">Unsupported thought replacement</li>
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+function renderModal() {
+  const root = document.getElementById("modal-root");
+  root.innerHTML = "";
+  if (!state.modal) return;
+
+  let inner = "";
+  if (state.modal === "export") {
+    inner = `
+      <h3 class="display">Export</h3>
+      <p class="modal-sub">Markdown matches your spec'd entry format. JSON is for backup or re-import on another device.</p>
+      <div class="modal-options">
+        <button class="modal-option" data-action="export-md">
+          <div class="modal-option-title">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v10h10V3z"/><path d="M5 6h6M5 9h4"/></svg>
+            Markdown (.md)
+          </div>
+          <div class="modal-option-desc">Entry N format with all six steps, ready to paste into Obsidian</div>
+        </button>
+        <button class="modal-option" data-action="export-json">
+          <div class="modal-option-title">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 4l-2 4 2 4M11 4l2 4-2 4"/></svg>
+            JSON (.json)
+          </div>
+          <div class="modal-option-desc">Structured data, re-importable across devices</div>
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="close-modal">Close</button>
+      </div>
+    `;
+  } else if (state.modal === "import") {
+    inner = `
+      <h3 class="display">Import backup</h3>
+      <p class="modal-sub">Load a previously exported JSON file. Choose how to handle entries that already exist here.</p>
+      <div class="modal-options">
+        <button class="modal-option" data-action="import-merge">
+          <div class="modal-option-title">Merge with current</div>
+          <div class="modal-option-desc">Add imported entries, skip duplicates by ID</div>
+        </button>
+        <button class="modal-option" data-action="import-replace">
+          <div class="modal-option-title">Replace everything</div>
+          <div class="modal-option-desc">Wipe current entries and use the import as-is</div>
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
+      </div>
+    `;
+  } else if (state.modal === "discard-draft") {
+    inner = `
+      <h3 class="display">Discard draft?</h3>
+      <p class="modal-sub">The unfinished entry will be lost. This can't be undone.</p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="close-modal">Keep</button>
+        <button class="btn-modal btn-modal-danger" data-action="confirm-discard-draft">Discard</button>
+      </div>
+    `;
+  } else if (state.modal && state.modal.type === "delete") {
+    inner = `
+      <h3 class="display">Delete entry?</h3>
+      <p class="modal-sub">This can't be undone. Consider exporting first if you might want it back.</p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
+        <button class="btn-modal btn-modal-danger" data-action="confirm-delete" data-id="${state.modal.id}">Delete</button>
+      </div>
+    `;
+  }
+
+  root.innerHTML = `<div class="modal-overlay" data-action="close-modal"><div class="modal" onclick="event.stopPropagation()">${inner}</div></div>`;
+  bindModal();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EVENTS
+// ═══════════════════════════════════════════════════════════════════
+
+function bindJournal() {
+  document.querySelectorAll('[data-action="toggle-expand"]').forEach(el => {
+    el.addEventListener("click", () => {
+      const id = el.dataset.id;
+      if (state.expandedIds.has(id)) state.expandedIds.delete(id);
+      else state.expandedIds.add(id);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="toggle-pivot"]').forEach(el => {
+    el.addEventListener("click", e => e.stopPropagation());
+    el.addEventListener("change", () => {
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (entry) {
+        entry.pivotDone = !entry.pivotDone;
+        persist();
+        render();
+        toast(entry.pivotDone ? "Pivot marked complete" : "Pivot unmarked");
+      }
+    });
+  });
+  document.querySelectorAll('[data-action="edit"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (entry) {
+        state.draft = { ...entry };
+        state.editingId = entry.id;
+        state.captureStep = 7;
+        setView("capture");
+      }
+    });
+  });
+  document.querySelectorAll('[data-action="delete"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      setState({ modal: { type: "delete", id: el.dataset.id } });
+    });
+  });
+  document.querySelectorAll('[data-action="filter"]').forEach(el => {
+    el.addEventListener("click", () => setState({ filter: el.dataset.value }));
+  });
+  const search = document.querySelector('[data-action="search"]');
+  if (search) search.addEventListener("input", () => { state.search = search.value; renderJournalListOnly(); });
+
+  document.querySelectorAll('[data-action="resume-draft"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.captureStep = 1;
+      setView("capture");
+    });
+  });
+  document.querySelectorAll('[data-action="discard-draft"]').forEach(el => {
+    el.addEventListener("click", () => setState({ modal: "discard-draft" }));
+  });
+  document.querySelectorAll('[data-action="goto-capture"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.draft = emptyEntry();
+      state.editingId = null;
+      state.captureStep = 1;
+      setView("capture");
+    });
+  });
+}
+
+function renderJournalListOnly() {
+  const view = document.getElementById("view");
+  const focused = document.activeElement;
+  const isSearch = focused && focused.classList.contains("search-input");
+  const cursorPos = isSearch ? focused.selectionStart : null;
+  view.innerHTML = renderJournal();
+  bindJournal();
+  if (isSearch) {
+    const newInput = document.querySelector(".search-input");
+    if (newInput) {
+      newInput.focus();
+      if (cursorPos !== null) newInput.setSelectionRange(cursorPos, cursorPos);
+    }
+  }
+}
+
+function bindCapture() {
+  document.querySelectorAll('[data-field]').forEach(el => {
+    const field = el.dataset.field;
+    const handler = () => {
+      let v;
+      if (el.type === "checkbox") v = el.checked;
+      else if (el.type === "range") v = parseInt(el.value, 10);
+      else v = el.value;
+      state.draft[field] = v;
+      if (field === "emotionFamily") state.draft.emotionVariant = "";
+      saveDraft(state.draft);
+
+      if (field === "emotionIntensity") {
+        const b = band(v);
+        const num = document.querySelector(".intensity-num-big");
+        if (num) num.innerHTML = v + '<span class="intensity-num-suffix">/100</span>';
+        const bn = document.querySelector(".intensity-band-name");
+        if (bn) bn.textContent = b.label;
+        const bs = document.querySelector(".intensity-band-sig");
+        if (bs) bs.textContent = b.signals;
+        return;
+      }
+      if (["emotionFamily", "socraticType", "reframeMethod"].includes(field)) render();
+
+      const cont = document.querySelector('[data-action="next-step"]');
+      if (cont) {
+        if (canAdvance(state.captureStep, state.draft)) cont.removeAttribute("disabled");
+        else cont.setAttribute("disabled", "");
+      }
+    };
+    el.addEventListener("input", handler);
+    el.addEventListener("change", handler);
+  });
+
+  document.querySelectorAll('[data-action="toggle-distortion"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      const name = btn.dataset.name;
+      const has = state.draft.distortions.includes(name);
+      state.draft.distortions = has
+        ? state.draft.distortions.filter(d => d !== name)
+        : [...state.draft.distortions, name];
+      saveDraft(state.draft);
+      btn.classList.toggle("active");
+    });
+  });
+
+  document.querySelectorAll('[data-action="goto-step"]').forEach(el => {
+    el.addEventListener("click", () => {
+      const step = parseInt(el.dataset.step, 10);
+      if (step > state.captureStep) {
+        for (let s = state.captureStep; s < step; s++) {
+          if (!canAdvance(s, state.draft)) { toast("Complete step " + s + " first"); return; }
+        }
+      }
+      state.captureStep = step;
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  const next = document.querySelector('[data-action="next-step"]');
+  if (next) next.addEventListener("click", () => {
+    if (state.captureStep === 4 && state.draft.socraticType && !state.draft.socraticQuestion.trim()) {
+      const t = SOCRATIC_TYPES.find(s => s.type === state.draft.socraticType);
+      if (t) state.draft.socraticQuestion = t.template;
+    }
+    state.captureStep++;
+    saveDraft(state.draft);
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  const prev = document.querySelector('[data-action="prev-step"]');
+  if (prev) prev.addEventListener("click", () => {
+    state.captureStep--;
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  const save = document.querySelector('[data-action="save-entry"]');
+  if (save) save.addEventListener("click", () => {
+    const now = new Date().toISOString();
+    if (state.editingId) {
+      state.entries = state.entries.map(e => e.id === state.editingId
+        ? { ...state.draft, id: state.editingId, updatedAt: now }
+        : e);
+      toast("Entry updated");
+    } else {
+      state.entries = [{ ...state.draft, id: newId(), createdAt: now }, ...state.entries];
+      toast("Entry saved");
+    }
+    persist();
+    clearDraft();
+    state.draft = emptyEntry();
+    state.editingId = null;
+    state.captureStep = 1;
+    setView("journal");
+  });
+
+  const discard = document.querySelector('[data-action="discard-capture"]');
+  if (discard) discard.addEventListener("click", () => {
+    if (hasDraftContent(state.draft)) setState({ modal: "discard-draft" });
+    else {
+      state.draft = emptyEntry();
+      state.editingId = null;
+      state.captureStep = 1;
+      clearDraft();
+      setView("journal");
+    }
+  });
+}
+
+function bindModal() {
+  document.querySelectorAll('[data-action="close-modal"]').forEach(el => {
+    el.addEventListener("click", e => {
+      if (e.currentTarget === e.target || el.tagName === "BUTTON") {
+        setState({ modal: null });
+      }
+    });
+  });
+  const md = document.querySelector('[data-action="export-md"]');
+  if (md) md.addEventListener("click", () => {
+    const content = state.entries.length === 0
+      ? "*No reframeable thoughts detected.*"
+      : state.entries.map((e, i) => entryToMd(e, i)).join("\n");
+    download(content, "reframes-" + new Date().toISOString().slice(0, 10) + ".md", "text/markdown");
+    setState({ modal: null });
+    toast("Markdown exported");
+  });
+  const json = document.querySelector('[data-action="export-json"]');
+  if (json) json.addEventListener("click", () => {
+    download(JSON.stringify(state.entries, null, 2), "reframes-" + new Date().toISOString().slice(0, 10) + ".json", "application/json");
+    setState({ modal: null });
+    toast("JSON exported");
+  });
+  const mergeBtn = document.querySelector('[data-action="import-merge"]');
+  if (mergeBtn) mergeBtn.addEventListener("click", () => triggerImport("merge"));
+  const replaceBtn = document.querySelector('[data-action="import-replace"]');
+  if (replaceBtn) replaceBtn.addEventListener("click", () => triggerImport("replace"));
+
+  const del = document.querySelector('[data-action="confirm-delete"]');
+  if (del) del.addEventListener("click", () => {
+    const id = del.dataset.id;
+    state.entries = state.entries.filter(e => e.id !== id);
+    persist();
+    setState({ modal: null });
+    toast("Entry deleted");
+  });
+
+  const discardDraft = document.querySelector('[data-action="confirm-discard-draft"]');
+  if (discardDraft) discardDraft.addEventListener("click", () => {
+    clearDraft();
+    state.draft = emptyEntry();
+    state.editingId = null;
+    state.captureStep = 1;
+    setState({ modal: null });
+    setView("journal");
+    toast("Draft discarded");
+  });
+}
+
+function triggerImport(mode) {
+  const input = document.getElementById("import-file");
+  input.dataset.mode = mode;
+  input.click();
+}
+
+document.getElementById("import-file").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const mode = e.target.dataset.mode;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = JSON.parse(reader.result);
+      if (!Array.isArray(imported)) throw new Error("Not a valid backup");
+      if (mode === "replace") {
+        state.entries = imported;
+      } else {
+        const existing = new Set(state.entries.map(x => x.id));
+        const adds = imported.filter(x => !existing.has(x.id));
+        state.entries = [...adds, ...state.entries];
+      }
+      persist();
+      setState({ modal: null });
+      toast("Imported " + imported.length + " entries");
+    } catch (err) {
+      alert("Couldn't read that file: " + err.message);
+    }
+    e.target.value = "";
+  };
+  reader.readAsText(file);
+});
+
+document.querySelectorAll(".nav-item").forEach(b => {
+  b.addEventListener("click", () => {
+    const v = b.dataset.nav;
+    if (v === "capture") {
+      if (!state.editingId && !hasDraftContent(state.draft)) {
+        const d = loadDraft();
+        if (d) state.draft = d;
+        state.captureStep = 1;
+      }
+    }
+    setView(v);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+});
+document.querySelectorAll('[data-action="open-export"]').forEach(b =>
+  b.addEventListener("click", () => setState({ modal: "export" })));
+document.querySelectorAll('[data-action="open-import"]').forEach(b =>
+  b.addEventListener("click", () => setState({ modal: "import" })));
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    if (state.modal) setState({ modal: null });
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    if (state.view === "capture") {
+      if (state.captureStep < 7) {
+        const next = document.querySelector('[data-action="next-step"]');
+        if (next && !next.hasAttribute("disabled")) next.click();
+      } else {
+        const save = document.querySelector('[data-action="save-entry"]');
+        if (save) save.click();
+      }
+    }
+  }
+});
+
+render();
+</script>
+</body>
+</html>
