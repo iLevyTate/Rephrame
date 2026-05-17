@@ -2,10 +2,28 @@
   const isFileProtocol = location.protocol === 'file:';
 
   // Inline fallback icon for file:// where the manifest can't fetch external
-  // PNGs/SVGs. The brand: copper "r" on dark ink, same as the in-app mark.
+  // PNGs/SVGs. Matches icons/icon-512.svg exactly — same italic Fraunces r,
+  // copper gradient, framing rule with ball-terminal caps.
   const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-    <rect width="512" height="512" rx="96" fill="#1a1715"/>
-    <text x="256" y="370" font-family="Georgia,serif" font-size="340" font-weight="500" font-style="italic" fill="#b8552c" text-anchor="middle">r</text>
+    <defs>
+      <radialGradient id="bg" cx="50%" cy="38%" r="78%">
+        <stop offset="0%" stop-color="#2a221d"/>
+        <stop offset="55%" stop-color="#1d1916"/>
+        <stop offset="100%" stop-color="#120f0e"/>
+      </radialGradient>
+      <linearGradient id="mark" gradientUnits="userSpaceOnUse" x1="100" y1="80" x2="430" y2="420">
+        <stop offset="0%" stop-color="#e9885a"/>
+        <stop offset="42%" stop-color="#c46838"/>
+        <stop offset="78%" stop-color="#a14d24"/>
+        <stop offset="100%" stop-color="#7a3a1a"/>
+      </linearGradient>
+    </defs>
+    <rect width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
+    <circle cx="170" cy="170" r="180" fill="#b8552c" opacity="0.06"/>
+    <text x="262" y="368" font-family="Fraunces,Georgia,serif" font-size="340" font-weight="500" font-style="italic" fill="url(#mark)" text-anchor="middle" letter-spacing="-6">r</text>
+    <line x1="166" y1="404" x2="346" y2="404" stroke="url(#mark)" stroke-width="6" stroke-linecap="round" opacity="0.85"/>
+    <circle cx="166" cy="404" r="3.5" fill="#b8552c" opacity="0.9"/>
+    <circle cx="346" cy="404" r="3.5" fill="#b8552c" opacity="0.9"/>
   </svg>`;
   const iconUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(iconSvg);
 

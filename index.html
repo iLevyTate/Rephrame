@@ -117,6 +117,23 @@ body::before {
     radial-gradient(circle at 50% 50%, rgba(255,255,255,0.015) 0%, transparent 70%);
   z-index: 0;
 }
+/* Paper-grain texture — an SVG feTurbulence noise at ultra-low opacity,
+   fixed in place so it doesn't move while content scrolls. Adds tactile
+   warmth without affecting legibility. Falls back invisibly if the data
+   URI fails to decode. */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+}
+html[data-theme="light"] body::after {
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+}
 
 .app {
   position: relative;
@@ -162,9 +179,31 @@ main {
   font-family: var(--display);
   font-style: italic;
   font-weight: 500;
-  font-size: 28px;
+  font-size: 32px;
+  /* Gradient-filled italic r — same copper progression as the icon, so the
+     topbar mark visually rhymes with the favicon and the launcher icon.
+     -webkit-text-fill-color fallback for old WebKit; `color` is the safety
+     net for environments where background-clip:text isn't supported. */
+  background: linear-gradient(135deg, #e9885a 0%, #b8552c 55%, #7a3a1a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
   color: var(--copper);
   line-height: 1;
+  letter-spacing: -0.02em;
+  position: relative;
+  padding-right: 2px;
+}
+/* Tiny framing rule beneath the mark, scaled-down version of the icon's
+   underline. Two ball-terminal pseudo-dots echo the icon's caps. */
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  left: 2px; right: 4px; bottom: -4px;
+  height: 1.5px;
+  background: linear-gradient(to right, transparent, var(--copper) 18%, var(--copper) 82%, transparent);
+  border-radius: 2px;
+  opacity: 0.7;
 }
 .brand-name {
   font-family: var(--display);
@@ -424,13 +463,22 @@ main {
 .entry-card {
   background: var(--paper);
   color: var(--on-paper);
-  border-radius: var(--r-2);
+  border-radius: var(--r-3);
   overflow: hidden;
-  transition: box-shadow 0.2s var(--ease);
+  /* Two-layer shadow: a tight, sharp inner shadow for crisp edges + a soft,
+     diffuse outer shadow for atmosphere. Cheaper than a blur filter and
+     much more "physical" than a single shadow. */
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.10), 0 6px 18px rgba(0, 0, 0, 0.20);
+  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
   position: relative;
 }
-.entry-card:hover { box-shadow: var(--shadow-2); }
-.entry-card.expanded { box-shadow: var(--shadow-2); }
+.entry-card:hover {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 12px 32px rgba(0, 0, 0, 0.28);
+  transform: translateY(-1px);
+}
+.entry-card.expanded {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.14), 0 16px 40px rgba(0, 0, 0, 0.32);
+}
 
 .entry-card-head {
   padding: 16px 18px;
@@ -637,16 +685,57 @@ main {
   color: var(--on-paper);
   border-radius: var(--r-2);
 }
+/* Empty-state mark: full hero treatment of the brand mark. Same gradient
+   r + framing rule as the icon. The flex column groups r and rule into
+   a single visual unit. */
 .empty-state-mark {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0 auto 18px;
+  line-height: 1;
+}
+.empty-state-mark::before {
+  content: 'r';
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 88px;
+  background: linear-gradient(135deg, #e9885a 0%, #b8552c 55%, #7a3a1a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--copper);
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  /* Faint warm glow behind the mark — same trick as the icon's radial
+     bloom but achieved via text-shadow at small render cost. */
+  text-shadow: 0 0 32px rgba(184, 85, 44, 0.25);
+}
+.empty-state-mark::after {
+  content: '';
+  display: block;
+  width: 56px;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--copper) 12%, var(--copper) 88%, transparent);
+  border-radius: 2px;
+  opacity: 0.75;
+}
+/* Patterns empty state uses a different glyph (∿) — neutralise the ::before
+   r and ::after rule there so the wave displays as-is. */
+.empty-state-mark.empty-state-mark--alt {
   font-family: var(--display);
   font-style: italic;
   font-size: 64px;
   font-weight: 500;
   color: var(--copper);
-  line-height: 1;
-  margin-bottom: 12px;
   opacity: 0.5;
+  display: block;
+  text-align: center;
 }
+.empty-state-mark.empty-state-mark--alt::before,
+.empty-state-mark.empty-state-mark--alt::after { content: none; display: none; }
 .empty-state-title {
   font-family: var(--display);
   font-size: 24px;
@@ -1978,7 +2067,13 @@ html[data-theme="light"] .nudge-banner strong { color: var(--on-paper); }
 html[data-theme="light"] .resume-banner .preview,
 html[data-theme="light"] .nudge-banner .preview { color: var(--on-paper-mute); }
 
-html[data-theme="light"] .empty-state-mark { color: var(--copper-deep); }
+/* In light mode the gradient still reads well — the only thing we need
+   to tweak is the soft glow, which would be invisible on paper without
+   slightly more opacity. */
+html[data-theme="light"] .empty-state-mark::before {
+  text-shadow: 0 0 28px rgba(184, 85, 44, 0.18);
+}
+html[data-theme="light"] .empty-state-mark--alt { color: var(--copper-deep); }
 html[data-theme="light"] .empty-state-title { color: var(--on-paper); }
 html[data-theme="light"] .empty-state-body { color: var(--on-paper-soft); }
 html[data-theme="light"] .empty-safety { color: var(--on-paper-mute); }
@@ -3439,7 +3534,7 @@ function renderJournal() {
       </div>
       ${hasDraft ? renderResumeBanner() : ""}
       <div class="empty-state">
-        <div class="empty-state-mark">r</div>
+        <div class="empty-state-mark" aria-hidden="true"></div>
         <h2 class="empty-state-title display">A quiet start.</h2>
         <p class="empty-state-body">Capture a triggering thought when it happens. Walk it through six steps. Re-rate after the reframe so you can see the work shift the dial. End on one small action. Everything lives in this browser only.</p>
         <div class="empty-state-actions">
@@ -4141,7 +4236,7 @@ function renderPatterns() {
         <h1 class="page-title display">Patterns</h1>
       </div>
       <div class="empty-state">
-        <div class="empty-state-mark">∿</div>
+        <div class="empty-state-mark empty-state-mark--alt" aria-hidden="true">∿</div>
         <h2 class="empty-state-title display">Patterns emerge with use.</h2>
         <p class="empty-state-body">Once you've logged a few entries, this view will show you the distortions, emotions, and intensities that recur for you.</p>
       </div>

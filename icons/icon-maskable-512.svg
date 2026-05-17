@@ -1,20 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Reframe">
+  <title>Reframe</title>
   <defs>
-    <linearGradient id="mark" x1="20%" y1="20%" x2="80%" y2="90%">
-      <stop offset="0%" stop-color="#c46838"/>
-      <stop offset="60%" stop-color="#b8552c"/>
-      <stop offset="100%" stop-color="#8c4520"/>
+    <linearGradient id="mark" gradientUnits="userSpaceOnUse" x1="180" y1="160" x2="360" y2="380">
+      <stop offset="0%"   stop-color="#e9885a"/>
+      <stop offset="42%"  stop-color="#c46838"/>
+      <stop offset="78%"  stop-color="#a14d24"/>
+      <stop offset="100%" stop-color="#7a3a1a"/>
     </linearGradient>
   </defs>
-  <!-- Maskable: fill the full 512x512 safe-zone with solid background.
-       Mark stays inside the inner 80% safe area to survive OS masking. -->
+  <!-- Maskable: solid full-bleed background, no decorative bloom. The mark
+       is centered both geometrically and optically within the inner 80%
+       safe zone (51,51) → (461,461) so it survives circular / squircle /
+       teardrop OS masks without going off-center. Scaled smaller than the
+       hero icon so there's breathing room after the crop. -->
   <rect width="512" height="512" fill="#1a1715"/>
-  <text x="256" y="340"
-        font-family="Georgia, 'Iowan Old Style', Baskerville, serif"
-        font-size="260"
-        font-weight="500"
-        font-style="italic"
-        fill="url(#mark)"
-        text-anchor="middle"
-        letter-spacing="-6">r</text>
+
+  <text x="256" y="330"
+        font-family="Fraunces, 'Iowan Old Style', Baskerville, Georgia, serif"
+        font-size="240" font-weight="500" font-style="italic"
+        fill="url(#mark)" text-anchor="middle" letter-spacing="-4">r</text>
+
+  <line x1="196" y1="360" x2="316" y2="360"
+        stroke="url(#mark)" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="196" cy="360" r="3" fill="#b8552c" opacity="0.9"/>
+  <circle cx="316" cy="360" r="3" fill="#b8552c" opacity="0.9"/>
 </svg>
