@@ -1598,6 +1598,216 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 .file-input { display: none; }
 
 /* ──────────────────────────────────────────────────────────────────
+   TIER 2: coping cards, view chips, star, pivot follow-up
+   ────────────────────────────────────────────────────────────────── */
+
+/* Coping cards strip */
+.coping-strip { margin-bottom: 28px; }
+.coping-strip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+.coping-strip-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+}
+.coping-strip-meta {
+  font-size: 11px;
+  color: var(--on-ink-mute);
+  font-family: var(--mono);
+}
+.coping-scroller {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 2px 12px 2px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.coping-scroller::-webkit-scrollbar { height: 6px; }
+.coping-card {
+  flex: 0 0 280px;
+  scroll-snap-align: start;
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-3);
+  padding: 16px;
+  cursor: pointer;
+  border: 1px solid var(--rule-paper);
+  box-shadow: var(--shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  position: relative;
+  text-align: left;
+}
+.coping-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+.coping-card:focus-visible { outline: 2px solid var(--copper); outline-offset: 3px; }
+.coping-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--on-paper-mute);
+}
+.coping-card-star { color: var(--copper); font-size: 14px; }
+.coping-card-date { font-family: var(--mono); letter-spacing: 0.05em; }
+.coping-card-quote {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--on-paper);
+  margin: 0;
+  font-style: italic;
+  /* Clamp long reframes so cards stay uniform height-wise. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.coping-card-trigger {
+  font-size: 12px;
+  color: var(--on-paper-soft);
+  line-height: 1.5;
+  margin: 0;
+}
+.coping-card-trigger .muted { color: var(--on-paper-faint); }
+.coping-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+.coping-card-dist {
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  background: var(--paper-2);
+  border-radius: var(--r-full);
+  color: var(--on-paper-mute);
+}
+
+/* View-scope chips above the search */
+.view-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 0 0 12px;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.view-chips::-webkit-scrollbar { height: 4px; }
+.view-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--r-full);
+  background: var(--ink-2);
+  border: 1px solid var(--rule-ink);
+  color: var(--on-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.15s var(--ease);
+}
+.view-chip:hover { color: var(--copper); border-color: var(--copper-line); }
+.view-chip.active {
+  background: var(--copper-soft);
+  border-color: var(--copper);
+  color: var(--copper);
+}
+.view-chip-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--ink-3);
+  border-radius: var(--r-full);
+  color: var(--on-ink-mute);
+}
+.view-chip.active .view-chip-count {
+  background: var(--copper);
+  color: var(--ink);
+}
+
+/* Star/favorite button on each entry card */
+.entry-fav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--r-full);
+  color: var(--on-paper-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  margin-left: 4px;
+  flex-shrink: 0;
+  transition: all 0.15s var(--ease);
+}
+.entry-fav-btn:hover {
+  color: var(--copper);
+  background: var(--copper-soft);
+  border-color: var(--copper-line);
+}
+.entry-fav-btn.active {
+  color: var(--copper);
+  background: rgba(184, 85, 44, 0.10);
+  border-color: var(--copper-line);
+}
+.entry-fav-btn svg { width: 14px; height: 14px; }
+.entry-card.is-favorite { background: linear-gradient(to right, rgba(184, 85, 44, 0.03), transparent 40%), var(--paper); }
+.entry-card.is-favorite.is-quick { /* favorite takes visual precedence over quick-border */ }
+
+/* Pivot follow-up reflection */
+.pivot-followup {
+  background: linear-gradient(to right, var(--copper-soft), transparent 80%);
+  border-radius: var(--r-3);
+  padding: 12px 14px;
+  margin-top: 12px;
+}
+.pivot-followup-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--copper);
+}
+.pivot-followup-when {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--on-paper-faint);
+}
+.pivot-reflection-input {
+  background: var(--paper);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-2);
+  padding: 10px 12px;
+  width: 100%;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--on-paper);
+}
+.pivot-reflection-input:focus {
+  outline: 2px solid var(--copper);
+  outline-offset: 1px;
+  border-color: var(--copper);
+}
+
+/* ──────────────────────────────────────────────────────────────────
    TIER 1: belief slider, deltas, rerate, quick-capture, safety
    ────────────────────────────────────────────────────────────────── */
 
@@ -1681,7 +1891,7 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 .delta-tag.flat { background: var(--ink-3); color: var(--on-ink-mute); }
 
 /* Entry-card flag pills (Quick / Sample) */
-.entry-meta-flags { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.entry-meta-flags { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 .entry-flag {
   display: inline-flex;
   align-items: center;
@@ -2040,12 +2250,15 @@ const SAMPLE_ENTRY = {
   reframeMethod: "Compassionate reattribution",
   newThought: "A chair gave out under me. That was embarrassing and the urge to leave makes sense. But \"clumsy idiot\" is a label I'd never put on a friend in the same spot. The chair was the problem.",
   pivot: "Text the salon tomorrow morning to apologize and ask about rebooking. Specifically: \"Hi — I'm the one whose chair broke today. Sorry I left so quickly. I'd love to finish the appointment if you can rebook me this week.\"",
-  pivotDone: false,
+  pivotDone: true,
+  pivotDoneAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
+  pivotReflection: "Sent the text. They replied within an hour, were warm about it, and even joked that the chair had been wobbling for weeks. Rebooked for Saturday. The dread before sending was way worse than anything that actually happened — same pattern as last time.",
   beliefBefore: 85,
   beliefAfter: 30,
   emotionIntensityAfter: 35,
   isQuick: false,
   isSample: true,
+  isFavorite: true,
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2082,6 +2295,8 @@ function normalizeEntry(e) {
     newThought: e.newThought || "",
     pivot: e.pivot || "",
     pivotDone: !!e.pivotDone,
+    pivotDoneAt: e.pivotDoneAt || "",         // ISO timestamp the pivot was marked done
+    pivotReflection: e.pivotReflection || "", // "What happened?" follow-up
     // Re-rating fields. null = not yet rated.
     beliefBefore: typeof e.beliefBefore === "number" ? e.beliefBefore : null,
     beliefAfter: typeof e.beliefAfter === "number" ? e.beliefAfter : null,
@@ -2089,6 +2304,7 @@ function normalizeEntry(e) {
     // Provenance flags.
     isQuick: !!e.isQuick,         // entered via the quick-capture path; needs finishing
     isSample: !!e.isSample,       // pre-loaded demo entry the user can delete
+    isFavorite: !!e.isFavorite,   // pinned as a coping card
   };
 }
 
@@ -2133,9 +2349,9 @@ function emptyEntry() {
     evidenceFor: "", evidenceAgainst: "",
     socraticType: "", socraticQuestion: "",
     reframeMethod: "", newThought: "",
-    pivot: "", pivotDone: false,
+    pivot: "", pivotDone: false, pivotDoneAt: "", pivotReflection: "",
     beliefBefore: null, beliefAfter: null, emotionIntensityAfter: null,
-    isQuick: false, isSample: false,
+    isQuick: false, isSample: false, isFavorite: false,
   };
 }
 
@@ -2201,7 +2417,13 @@ function entryToMd(e, idx) {
     L.push("- **Emotion intensity (after):** " + e.emotionIntensityAfter + "/100 (Δ " + (e.emotionIntensityAfter - e.emotionIntensity) + ")", "");
   }
   L.push("**6. The Pivot**", "", e.pivot || "—", "");
-  if (e.pivotDone) L.push("", "*Pivot completed.*", "");
+  if (e.pivotDone) {
+    L.push("", "*Pivot completed" + (e.pivotDoneAt ? " — " + fmtDateTime(e.pivotDoneAt) : "") + ".*", "");
+    if (e.pivotReflection) {
+      L.push("**What happened**", "", e.pivotReflection, "");
+    }
+  }
+  if (e.isFavorite) L.push("", "★ *Coping card — pinned.*", "");
   return L.join("\n");
 }
 
@@ -2241,7 +2463,8 @@ const state = {
   view: "journal",
   captureStep: 1,
   search: "",
-  filter: "",
+  filter: "",             // distortion-name filter
+  viewFilter: "all",      // scope: all | favorites | unfinished | week | pivoted | pending
   expandedIds: new Set(),
   modal: null,
   // Working buffer for the quick-capture modal so the textarea + slider can
@@ -2290,6 +2513,53 @@ function render() {
   renderModal();
 }
 
+// Scope filter applied to the journal list. Each branch is a separate
+// concept so adding "this month" or "high intensity" later is a one-line
+// edit instead of a state-shape change.
+function applyViewFilter(entries, key) {
+  if (key === "favorites")  return entries.filter(e => e.isFavorite);
+  if (key === "unfinished") return entries.filter(e => e.isQuick);
+  if (key === "week")       return entries.filter(e => daysBetween(new Date(), new Date(e.createdAt)) < 7);
+  if (key === "pivoted")    return entries.filter(e => e.pivotDone);
+  if (key === "pending")    return entries.filter(e => e.pivot && !e.pivotDone);
+  return entries;
+}
+
+// Coping cards: horizontal carousel of favorited entries surfaced at the
+// top of the Journal so the user can re-read the reframes that have landed
+// for them. Tapping a card jumps to and expands the underlying entry.
+function renderCopingCards(favorites) {
+  return `
+    <section class="coping-strip" aria-label="Coping cards">
+      <div class="coping-strip-head">
+        <span class="coping-strip-eyebrow">Coping cards</span>
+        <span class="coping-strip-meta">${favorites.length} ${favorites.length === 1 ? "pinned reframe" : "pinned reframes"}</span>
+      </div>
+      <div class="coping-scroller">
+        ${favorites.map(e => {
+          const hasDelta = e.beliefBefore !== null && e.beliefBefore !== undefined &&
+                          e.beliefAfter  !== null && e.beliefAfter  !== undefined;
+          const bDelta = hasDelta ? (e.beliefAfter - e.beliefBefore) : null;
+          return `
+            <article class="coping-card" data-action="jump-to-entry" data-id="${e.id}" tabindex="0" role="button" aria-label="Open coping card">
+              <div class="coping-card-head">
+                <span class="coping-card-star" aria-hidden="true">★</span>
+                <span class="coping-card-date">${esc(fmtDate(e.createdAt))}</span>
+              </div>
+              <p class="coping-card-quote display">${esc(e.newThought) || '<span class="muted">(no reframe yet)</span>'}</p>
+              ${e.trigger ? `<p class="coping-card-trigger"><span class="muted">For when:</span> ${esc(e.trigger.slice(0, 120))}${e.trigger.length > 120 ? "…" : ""}</p>` : ""}
+              <div class="coping-card-foot">
+                ${hasDelta ? `<span class="delta-tag ${bDelta < 0 ? "good" : "flat"}">belief ${bDelta > 0 ? "+" : ""}${bDelta}</span>` : ""}
+                ${e.distortions.slice(0, 2).map(d => `<span class="coping-card-dist">${esc(d)}</span>`).join("")}
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderJournal() {
   const entries = state.entries;
   const hasDraft = hasDraftContent(state.draft) && !state.editingId;
@@ -2319,15 +2589,36 @@ function renderJournal() {
   }
 
   const q = state.search.toLowerCase().trim();
+
+  // Counts driving the view-filter chips. We hide chips that would resolve to
+  // zero entries — a dead chip is a confusing chip.
+  const counts = {
+    all: entries.length,
+    favorites: entries.filter(e => e.isFavorite).length,
+    unfinished: entries.filter(e => e.isQuick).length,
+    week: entries.filter(e => daysBetween(new Date(), new Date(e.createdAt)) < 7).length,
+    pivoted: entries.filter(e => e.pivotDone).length,
+    pending: entries.filter(e => e.pivot && !e.pivotDone).length,
+  };
+
   let filtered = entries;
+  filtered = applyViewFilter(filtered, state.viewFilter);
   if (state.filter) filtered = filtered.filter(e => e.distortions.includes(state.filter));
   if (q) {
-    filtered = filtered.filter(e =>
-      (e.trigger + " " + e.automaticThought + " " + e.newThought + " " + e.pivot + " " + e.distortions.join(" ")).toLowerCase().includes(q)
-    );
+    filtered = filtered.filter(e => {
+      const blob = [
+        e.trigger, e.automaticThought, e.newThought, e.pivot,
+        e.pivotReflection, e.distortionNote, e.evidenceFor, e.evidenceAgainst,
+        e.socraticQuestion,
+        e.emotionFamily, e.emotionVariant,
+        e.distortions.join(" ")
+      ].join(" ").toLowerCase();
+      return blob.includes(q);
+    });
   }
 
   const usedDistortions = Array.from(new Set(entries.flatMap(e => e.distortions))).sort();
+  const favorites = entries.filter(e => e.isFavorite);
 
   const groups = [];
   const seen = new Map();
@@ -2340,6 +2631,15 @@ function renderJournal() {
     seen.get(label).entries.push(e);
   });
 
+  const viewChips = [
+    { key: "all",        label: "All",         count: counts.all,        hint: "Every entry" },
+    { key: "favorites",  label: "★ Coping",    count: counts.favorites,  hint: "Pinned reframes" },
+    { key: "unfinished", label: "⚡ Unfinished", count: counts.unfinished, hint: "Quick captures waiting" },
+    { key: "week",       label: "This week",   count: counts.week,       hint: "Last 7 days" },
+    { key: "pivoted",    label: "Pivoted",     count: counts.pivoted,    hint: "Pivot marked done" },
+    { key: "pending",    label: "Pivot due",   count: counts.pending,    hint: "Pivot written, not yet done" },
+  ].filter(c => c.key === "all" || c.count > 0);
+
   return `
     <div class="page-header">
       <div class="page-eyebrow">${entries.length} ${entries.length === 1 ? "entry" : "entries"}</div>
@@ -2348,19 +2648,29 @@ function renderJournal() {
 
     ${hasDraft ? renderResumeBanner() : ""}
 
+    ${favorites.length > 0 && state.viewFilter !== "favorites" ? renderCopingCards(favorites) : ""}
+
     <div class="journal-toolbar">
       <div class="search-box">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="7" cy="7" r="4.5"/>
           <path d="M10.5 10.5l3 3"/>
         </svg>
-        <input type="text" class="search-input" placeholder="Search entries…" value="${esc(state.search)}" data-action="search">
+        <input type="text" class="search-input" placeholder="Search thoughts, reframes, evidence…" value="${esc(state.search)}" data-action="search">
       </div>
+    </div>
+
+    <div class="view-chips" role="tablist" aria-label="Scope">
+      ${viewChips.map(c => `
+        <button class="view-chip ${state.viewFilter === c.key ? "active" : ""}" data-action="set-view-filter" data-value="${c.key}" title="${esc(c.hint)}" role="tab" aria-selected="${state.viewFilter === c.key}">
+          ${esc(c.label)}<span class="view-chip-count">${c.count}</span>
+        </button>
+      `).join("")}
     </div>
 
     ${usedDistortions.length > 0 ? `
       <div class="filter-chips">
-        <button class="filter-chip ${state.filter === "" ? "active" : ""}" data-action="filter" data-value="">All</button>
+        <button class="filter-chip ${state.filter === "" ? "active" : ""}" data-action="filter" data-value="">All distortions</button>
         ${usedDistortions.map(d => `
           <button class="filter-chip ${state.filter === d ? "active" : ""}" data-action="filter" data-value="${esc(d)}">${esc(d)}</button>
         `).join("")}
@@ -2370,7 +2680,10 @@ function renderJournal() {
     ${filtered.length === 0 ? `
       <div class="empty-state" style="margin-top: 20px;">
         <h2 class="empty-state-title display" style="font-size: 20px;">Nothing matches that.</h2>
-        <p class="empty-state-body">Try clearing the search or the filter.</p>
+        <p class="empty-state-body">Try clearing the search, the scope, or the distortion filter.</p>
+        <div class="empty-state-actions">
+          <button class="btn btn-ghost" data-action="reset-filters">Reset filters</button>
+        </div>
       </div>
     ` : groups.map(g => `
       <div class="date-group">
@@ -2425,16 +2738,21 @@ function renderEntryCard(entry, index) {
   if (entry.isSample) flagPills.push('<span class="entry-flag flag-sample">Sample</span>');
 
   return `
-    <article class="entry-card ${expanded ? "expanded" : ""} ${entry.isQuick ? "is-quick" : ""}">
+    <article class="entry-card ${expanded ? "expanded" : ""} ${entry.isQuick ? "is-quick" : ""} ${entry.isFavorite ? "is-favorite" : ""}" id="entry-${entry.id}">
       <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
         <div class="entry-meta-row">
           <span class="entry-meta-num">No. ${String(index + 1).padStart(2, "0")}</span>
           <span class="entry-meta-dot">·</span>
           <span class="entry-meta-time">${esc(fmtTime(entry.createdAt))}</span>
-          <span class="entry-meta-flags" style="margin-left: auto;">
+          <span class="entry-meta-flags">
             ${flagPills.join("")}
             ${entry.pivotDone ? `<span class="pivot-indicator done"><span class="pivot-dot"></span> Pivoted</span>` : ""}
           </span>
+          <button class="entry-fav-btn ${entry.isFavorite ? "active" : ""}" data-action="toggle-favorite" data-id="${entry.id}" aria-label="${entry.isFavorite ? "Unpin from coping cards" : "Pin as a coping card"}" title="${entry.isFavorite ? "Unpin from coping cards" : "Pin as a coping card"}">
+            <svg viewBox="0 0 16 16" fill="${entry.isFavorite ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+              <path d="M8 1.8l1.8 4 4.4.5-3.3 3 1 4.3L8 11.5l-3.9 2.1 1-4.3-3.3-3 4.4-.5z"/>
+            </svg>
+          </button>
         </div>
         <h3 class="entry-card-trigger display ${entry.trigger ? "" : "empty"}">
           ${entry.trigger ? esc(entry.trigger) : "(no trigger)"}
@@ -2515,6 +2833,15 @@ function renderEntryDetails(entry) {
           <span>Done</span>
         </label>
       </div>
+      ${entry.pivotDone ? `
+        <div class="detail-row pivot-followup">
+          <div class="detail-label pivot-followup-label">
+            <span>What happened?</span>
+            ${entry.pivotDoneAt ? `<span class="pivot-followup-when">marked done ${esc(fmtDateTime(entry.pivotDoneAt))}</span>` : ""}
+          </div>
+          <textarea class="textarea pivot-reflection-input" data-action="edit-reflection" data-id="${entry.id}" rows="3" placeholder="A line on how it went. The dread vs. the actual outcome is the part to write down — that's what teaches you the next time.">${esc(entry.pivotReflection)}</textarea>
+        </div>
+      ` : ""}
     </div>
     <div class="entry-card-actions">
       <span class="entry-card-actions-time">${esc(fmtDateTime(entry.createdAt))}</span>
@@ -3432,11 +3759,87 @@ function bindJournal() {
     el.addEventListener("change", () => {
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (entry) {
-        entry.pivotDone = !entry.pivotDone;
+        // Trust the checkbox's actual checked state rather than inverting our
+        // stored value — the browser has already applied the change by the
+        // time `change` fires, and the previous "!entry.pivotDone" pattern
+        // only worked by coincidence.
+        entry.pivotDone = el.checked;
+        // Stamp a timestamp the first time it's marked done so the entry
+        // can show "marked done {when}" next to the reflection prompt.
+        if (entry.pivotDone && !entry.pivotDoneAt) entry.pivotDoneAt = new Date().toISOString();
+        if (!entry.pivotDone) { entry.pivotDoneAt = ""; entry.pivotReflection = ""; }
+        // Keep the entry expanded so the reflection field is immediately visible.
+        state.expandedIds.add(entry.id);
         persist();
         render();
-        toast(entry.pivotDone ? "Pivot marked complete" : "Pivot unmarked");
+        toast(entry.pivotDone ? "Pivot marked done — add a note on what happened" : "Pivot unmarked");
       }
+    });
+  });
+  // Star/coping-card toggle. stopPropagation so tapping the star doesn't
+  // also toggle the card's expand/collapse.
+  document.querySelectorAll('[data-action="toggle-favorite"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (!entry) return;
+      entry.isFavorite = !entry.isFavorite;
+      persist();
+      render();
+      toast(entry.isFavorite ? "Pinned as a coping card" : "Unpinned");
+    });
+  });
+  // Pivot reflection — save on blur, no explicit save button. Persisting on
+  // every keystroke would be noisy; blur is the natural commit boundary.
+  document.querySelectorAll('[data-action="edit-reflection"]').forEach(el => {
+    el.addEventListener("click", e => e.stopPropagation());
+    el.addEventListener("blur", () => {
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (!entry) return;
+      const v = el.value;
+      if (entry.pivotReflection !== v) {
+        entry.pivotReflection = v;
+        persist();
+        if (v.trim()) toast("Reflection saved");
+      }
+    });
+  });
+  // View-scope chips (All / Favorites / Unfinished / This week / Pivoted / Pivot due).
+  document.querySelectorAll('[data-action="set-view-filter"]').forEach(el => {
+    el.addEventListener("click", () => setState({ viewFilter: el.dataset.value }));
+  });
+  document.querySelectorAll('[data-action="reset-filters"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.search = "";
+      state.filter = "";
+      state.viewFilter = "all";
+      render();
+    });
+  });
+  // Coping card → jump to underlying entry and expand it.
+  document.querySelectorAll('[data-action="jump-to-entry"]').forEach(el => {
+    const open = () => {
+      const id = el.dataset.id;
+      state.expandedIds.add(id);
+      // If the entry is filtered out by the current viewFilter, switch back to
+      // "all" so the user actually sees what they tapped.
+      if (state.viewFilter !== "all") {
+        const entry = state.entries.find(x => x.id === id);
+        if (entry && !applyViewFilter([entry], state.viewFilter).length) {
+          state.viewFilter = "all";
+        }
+      }
+      render();
+      // Defer scroll until after the re-render so getBoundingClientRect lands
+      // on the freshly-rendered card.
+      requestAnimationFrame(() => {
+        const node = document.getElementById("entry-" + id);
+        if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    };
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
     });
   });
   document.querySelectorAll('[data-action="edit"]').forEach(el => {

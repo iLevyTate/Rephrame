@@ -21,6 +21,21 @@ First-time users get an onboarding card with a "load example entry" button
 so you can see what a complete thought record looks like before writing
 your own.
 
+**Coping cards.** Tap the ★ on any entry to pin its reframe as a coping
+card. Pinned reframes surface as a horizontal carousel at the top of the
+Journal so you can re-read what's landed for you in past similar moments.
+Tap a card to jump to the full entry.
+
+**Pivot follow-up.** When you check a pivot as done, the entry expands a
+"What happened?" reflection field. The dread-vs-actual gap is the part to
+write down — it's what teaches you next time. Saved on blur, included in
+Markdown export, searchable.
+
+**Scope filters.** Above the search, chips let you narrow to All /
+★ Coping / ⚡ Unfinished / This week / Pivoted / Pivot due. Stacks with
+the per-distortion chips below the search. Reset everything via the
+"Reset filters" button in the empty results state.
+
 ## Install
 
 ### Desktop (Chrome, Edge, Brave, Arc…)
