@@ -1625,6 +1625,21 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   to { opacity: 1; transform: translateY(0); }
 }
 .toast svg { color: var(--copper); width: 16px; height: 16px; }
+.toast--action { padding-right: 6px; }
+.toast-action {
+  background: var(--copper);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--r-full);
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.toast-action:hover { background: var(--copper-light); }
+.toast-action:active { transform: scale(0.96); }
 
 .file-input { display: none; }
 
@@ -1639,6 +1654,119 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   PRIVACY LOCK: lock screen, PIN inputs, lock-now state
+   ────────────────────────────────────────────────────────────────── */
+
+body.is-locked .app,
+body.is-locked .toast-stack { display: none !important; }
+body.is-locked { overflow: hidden; }
+
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  background: var(--ink);
+  color: var(--on-ink);
+  animation: fadeIn 0.2s var(--ease-out);
+}
+html[data-theme="light"] .lock-screen { background: var(--paper); color: var(--on-paper); }
+
+.lock-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  text-align: center;
+}
+.lock-brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 auto 4px;
+}
+.lock-help {
+  font-size: 14px;
+  color: var(--on-ink-mute);
+  line-height: 1.5;
+  margin: 0;
+}
+html[data-theme="light"] .lock-help { color: var(--on-paper-mute); }
+
+.lock-form { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.lock-pin-input {
+  text-align: center;
+  letter-spacing: 0.6em;
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  padding: 14px 18px;
+  background: var(--ink-2);
+  color: var(--on-ink);
+  border: 1px solid var(--rule-ink);
+  border-radius: var(--r-3);
+  outline: none;
+  transition: border-color 0.15s var(--ease);
+}
+.lock-pin-input:focus { border-color: var(--copper); }
+html[data-theme="light"] .lock-pin-input {
+  background: var(--paper-2);
+  color: var(--on-paper);
+  border-color: var(--rule-paper);
+}
+html[data-theme="light"] .lock-pin-input:focus { border-color: var(--copper); }
+.lock-screen.has-error .lock-pin-input {
+  border-color: var(--copper-deep);
+  animation: shake 0.4s var(--ease);
+}
+@keyframes shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(3px); }
+  30%, 50%, 70% { transform: translateX(-5px); }
+  40%, 60% { transform: translateX(5px); }
+}
+.lock-error {
+  font-size: 13px;
+  color: var(--copper-light);
+  margin: 0;
+}
+html[data-theme="light"] .lock-error { color: var(--copper-deep); }
+.lock-submit { width: 100%; }
+.lock-forgot {
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* PIN-form modal (set / change / remove) */
+.pin-form { display: flex; flex-direction: column; }
+.pin-form .field-label-paper { margin-bottom: 6px; }
+.pin-input {
+  text-align: center;
+  letter-spacing: 0.5em;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+  padding: 12px 14px;
+  background: var(--paper-2);
+  color: var(--on-paper);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-2);
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s var(--ease);
+}
+.pin-input:focus { border-color: var(--copper); }
+.pin-error {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--copper-deep);
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -2736,6 +2864,40 @@ const STORAGE_KEY = "reframe-journal-v1";
 const DRAFT_KEY   = "reframe-journal-draft-v1";
 const ONBOARDED_KEY = "reframe-onboarded-v1";
 const SETTINGS_KEY = "reframe-settings-v1";
+const PIN_KEY = "reframe-pin-hash-v1";
+const UNLOCK_KEY = "reframe-unlocked";   // sessionStorage; cleared when tab closes
+
+// PIN-based soft lock. Honest about the threat model: this gates the UI so
+// casual snooping on a shared device can't read the journal, but the data
+// itself isn't encrypted — anyone who knows where localStorage lives could
+// still extract it via devtools. We deliberately do not derive an encryption
+// key from the PIN: if the user forgets it, hard-encrypted data would be
+// unrecoverable, and losing months of CBT work is a worse harm than soft
+// privacy is a benefit. This is documented in the Settings → Privacy help.
+async function hashPin(pin) {
+  const enc = new TextEncoder().encode(String(pin));
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function hasPin() { return !!localStorage.getItem(PIN_KEY); }
+async function verifyPin(pin) {
+  const stored = localStorage.getItem(PIN_KEY);
+  if (!stored) return false;
+  const h = await hashPin(pin);
+  return h === stored;
+}
+async function setStoredPin(pin) {
+  const h = await hashPin(pin);
+  localStorage.setItem(PIN_KEY, h);
+  sessionStorage.setItem(UNLOCK_KEY, "1");
+}
+function clearStoredPin() {
+  localStorage.removeItem(PIN_KEY);
+  sessionStorage.removeItem(UNLOCK_KEY);
+}
+function isUnlocked() { return sessionStorage.getItem(UNLOCK_KEY) === "1"; }
+function markUnlocked() { sessionStorage.setItem(UNLOCK_KEY, "1"); }
+function markLocked() { sessionStorage.removeItem(UNLOCK_KEY); }
 
 const DEFAULT_SETTINGS = {
   theme: "auto",             // "auto" | "light" | "dark"
@@ -2940,20 +3102,37 @@ function download(content, filename, mime) {
   URL.revokeObjectURL(url);
 }
 
-function toast(message) {
+function toast(message, opts) {
   const stack = document.getElementById("toasts");
   const el = document.createElement("div");
-  el.className = "toast";
+  el.className = "toast" + (opts && opts.action ? " toast--action" : "");
+  const lifespan = (opts && typeof opts.ms === "number") ? opts.ms : 2400;
   el.innerHTML = `
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3 3 7-7"/></svg>
-    <span>${esc(message)}</span>`;
+    <span class="toast-message">${esc(message)}</span>`;
+  if (opts && opts.action) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "toast-action";
+    btn.textContent = opts.action.label;
+    btn.addEventListener("click", () => {
+      try { opts.action.onClick(); } catch(_) {}
+      dismiss();
+    });
+    el.appendChild(btn);
+  }
   stack.appendChild(el);
-  setTimeout(() => {
+  let dismissed = false;
+  function dismiss() {
+    if (dismissed) return;
+    dismissed = true;
     el.style.opacity = "0";
     el.style.transform = "translateY(8px)";
     el.style.transition = "all 0.3s var(--ease)";
     setTimeout(() => el.remove(), 300);
-  }, 2400);
+  }
+  setTimeout(dismiss, lifespan);
+  return { dismiss };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2979,6 +3158,14 @@ const state = {
   // Print mode: when true, every entry renders expanded. Used by the
   // Print/PDF flow so the browser print dialog gets a full transcript.
   printMode: false,
+  // Locked: when a PIN is set and the current session hasn't unlocked yet,
+  // the render() function short-circuits and shows the lock screen instead
+  // of the journal. Initialized in the boot block below.
+  locked: false,
+  lockError: "",
+  // Transient buffer for the set-pin / remove-pin modal forms — keeps the
+  // ongoing PIN-entry attempt off the persistent state.
+  pinForm: { current: "", next: "", confirm: "", error: "" },
 };
 
 // Resolve "auto" against the system preference at call time so toggling the
@@ -3080,6 +3267,25 @@ function persist() { saveEntries(state.entries); }
 // ═══════════════════════════════════════════════════════════════════
 
 function render() {
+  // Lock gate. When a PIN is set and this session hasn't unlocked yet, we
+  // hide the entire app shell behind a lock screen — no journal entries,
+  // no modals, not even the bottom-nav titles — so the threat model of
+  // "someone glanced at the unlocked phone" is closed.
+  if (state.locked) {
+    document.body.classList.add("is-locked");
+    renderLockScreen();
+    // Clear any in-flight modal/view content so nothing leaks behind the
+    // lock screen via accidental z-index.
+    const view = document.getElementById("view");
+    if (view) view.innerHTML = "";
+    const mr = document.getElementById("modal-root");
+    if (mr) mr.innerHTML = "";
+    return;
+  }
+  document.body.classList.remove("is-locked");
+  const existingLock = document.getElementById("lockScreen");
+  if (existingLock) existingLock.remove();
+
   document.querySelectorAll(".nav-item").forEach(b => {
     b.classList.toggle("active", b.dataset.nav === state.view);
   });
@@ -3094,6 +3300,84 @@ function render() {
   else if (state.view === "capture") bindCapture();
 
   renderModal();
+}
+
+function renderLockScreen() {
+  let el = document.getElementById("lockScreen");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "lockScreen";
+    document.body.appendChild(el);
+  }
+  el.className = "lock-screen" + (state.lockError ? " has-error" : "");
+  el.innerHTML = `
+    <div class="lock-card">
+      <div class="lock-brand">
+        <span class="brand-mark">r</span>
+        <div>
+          <div class="brand-name">Reframe</div>
+          <div class="brand-sub">Locked</div>
+        </div>
+      </div>
+      <p class="lock-help">Enter your PIN to unlock the journal.</p>
+      <form class="lock-form" id="lockForm" autocomplete="off">
+        <input
+          id="lockPinInput"
+          class="lock-pin-input"
+          type="password"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          maxlength="8"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          aria-label="PIN"
+          aria-invalid="${state.lockError ? "true" : "false"}"
+        >
+        ${state.lockError ? `<p class="lock-error" role="alert">${esc(state.lockError)}</p>` : ""}
+        <button type="submit" class="btn btn-primary lock-submit">Unlock</button>
+      </form>
+      <button type="button" class="link-button lock-forgot" data-action="lock-forgot">Forgot PIN?</button>
+    </div>
+  `;
+  // Wire form submission. Doing this here (rather than in a bind* function)
+  // because the lock screen lives outside the normal render tree.
+  const form = document.getElementById("lockForm");
+  const input = document.getElementById("lockPinInput");
+  if (input) setTimeout(() => input.focus(), 30);
+  if (form) form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pin = (input.value || "").trim();
+    if (!pin) { state.lockError = "Enter your PIN to continue."; render(); return; }
+    const ok = await verifyPin(pin);
+    if (ok) {
+      markUnlocked();
+      state.locked = false;
+      state.lockError = "";
+      render();
+    } else {
+      state.lockError = "That PIN doesn't match. Try again.";
+      // Brief shake-feedback via a class the CSS animates, then re-render
+      // so the error message lands. Keep the input value so the user can
+      // see what they typed and correct it.
+      render();
+    }
+  });
+  el.querySelectorAll('[data-action="lock-forgot"]').forEach(b =>
+    b.addEventListener("click", () => {
+      alert([
+        "There's no PIN recovery path that preserves your entries.",
+        "",
+        "Reframe is offline and stores everything locally — there's no",
+        "server-side reset. If you've forgotten the PIN, the only way",
+        "back into the app is to clear this site's data in your browser",
+        "settings, which also deletes every entry.",
+        "",
+        "Tip: export to JSON or Markdown regularly via Settings while",
+        "the app is unlocked. That export is your recovery copy.",
+      ].join("\n"));
+    })
+  );
 }
 
 // Scope filter applied to the journal list. Each branch is a separate
@@ -3459,6 +3743,7 @@ function renderEntryDetails(entry) {
       <span class="entry-card-actions-time">${esc(fmtDateTime(entry.createdAt))}</span>
       <div class="entry-card-actions-buttons">
         ${entry.isQuick ? `<button class="action-btn primary" data-action="finish-quick" data-id="${entry.id}">Finish this entry</button>` : `<button class="action-btn primary" data-action="edit" data-id="${entry.id}">Edit</button>`}
+        <button class="action-btn" data-action="copy-entry" data-id="${entry.id}" title="Copy this entry as Markdown — for sharing with a clinician or pasting elsewhere">Copy</button>
         <button class="action-btn danger" data-action="delete" data-id="${entry.id}">Delete</button>
       </div>
     </div>
@@ -4389,6 +4674,10 @@ function renderModal() {
     `;
   } else if (state.modal === "settings") {
     inner = renderSettingsModal();
+  } else if (state.modal === "set-pin") {
+    inner = renderSetPinModal();
+  } else if (state.modal === "remove-pin") {
+    inner = renderRemovePinModal();
   } else if (state.modal === "safety") {
     inner = renderSafetyModal();
   }
@@ -4447,6 +4736,56 @@ function renderSettingsModal() {
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">Privacy lock</div>
+      ${hasPin() ? `
+        <p class="settings-section-help">A PIN gates the app on each new tab session. Stored as a SHA-256 hash on this device only. The journal itself isn't encrypted — anyone with technical access to localStorage could still read the data — but it does stop casual snooping on an unlocked phone.</p>
+        <div class="settings-data-actions">
+          <button class="settings-data-btn" data-action="open-set-pin">
+            <span class="settings-data-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
+            </span>
+            <span class="settings-data-text">
+              <span class="settings-data-title">Change PIN</span>
+              <span class="settings-data-desc">Enter the current PIN, then choose a new one</span>
+            </span>
+          </button>
+          <button class="settings-data-btn" data-action="open-remove-pin">
+            <span class="settings-data-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><path d="M5 12l3-3M8 12l-3-3"/></svg>
+            </span>
+            <span class="settings-data-text">
+              <span class="settings-data-title">Remove PIN</span>
+              <span class="settings-data-desc">Stops gating the app on new sessions</span>
+            </span>
+          </button>
+          <button class="settings-data-btn" data-action="lock-now">
+            <span class="settings-data-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/><circle cx="8" cy="10.5" r="1" fill="currentColor"/></svg>
+            </span>
+            <span class="settings-data-text">
+              <span class="settings-data-title">Lock now</span>
+              <span class="settings-data-desc">Re-enter the PIN to come back</span>
+            </span>
+          </button>
+        </div>
+      ` : `
+        <p class="settings-section-help">Optional. When set, opening Reframe on a new tab session requires entering the PIN before the journal is visible. Closes the gap between "private" and "anyone with the unlocked phone."</p>
+        <p class="settings-section-help" style="margin-top: 4px;"><strong>There's no PIN recovery.</strong> Forgetting it means clearing site data (which deletes every entry). Export to JSON regularly while unlocked.</p>
+        <div class="settings-data-actions">
+          <button class="settings-data-btn" data-action="open-set-pin">
+            <span class="settings-data-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
+            </span>
+            <span class="settings-data-text">
+              <span class="settings-data-title">Set a PIN</span>
+              <span class="settings-data-desc">4–8 digits, stored as a hash on this device only</span>
+            </span>
+          </button>
+        </div>
+      `}
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">Backup &amp; restore</div>
       <p class="settings-section-help">All entries live in this browser's localStorage. Export occasionally so you don't lose them if the browser clears site data or the PWA is uninstalled.</p>
       <div class="settings-data-actions">
@@ -4479,6 +4818,50 @@ function renderSettingsModal() {
     <div class="modal-actions">
       <button class="btn-modal btn-modal-primary" data-action="close-modal">Done</button>
     </div>
+  `;
+}
+
+function renderSetPinModal() {
+  const isChanging = hasPin();
+  const f = state.pinForm;
+  return `
+    <h3 class="display">${isChanging ? "Change PIN" : "Set a PIN"}</h3>
+    <p class="modal-sub">${isChanging
+      ? "Enter your current PIN, then choose a new one. The PIN is stored as a SHA-256 hash on this device only."
+      : "4–8 digits. Stored as a SHA-256 hash on this device. There's no recovery path — if you forget the PIN, the only way back in deletes every entry, so export to JSON regularly."
+    }</p>
+    <form id="pinSetForm" class="pin-form" autocomplete="off">
+      ${isChanging ? `
+        <label class="field-label-paper">Current PIN</label>
+        <input id="pinCurrent" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off">
+      ` : ""}
+      <label class="field-label-paper" style="margin-top: ${isChanging ? "14px" : "0"};">${isChanging ? "New PIN" : "PIN"}</label>
+      <input id="pinNew" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" autofocus>
+      <label class="field-label-paper" style="margin-top: 14px;">Confirm</label>
+      <input id="pinConfirm" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password">
+      ${f && f.error ? `<p class="pin-error" role="alert">${esc(f.error)}</p>` : ""}
+      <div class="modal-actions" style="margin-top: 16px;">
+        <button type="button" class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
+        <button type="submit" class="btn-modal btn-modal-primary">${isChanging ? "Save new PIN" : "Set PIN"}</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderRemovePinModal() {
+  const f = state.pinForm;
+  return `
+    <h3 class="display">Remove PIN</h3>
+    <p class="modal-sub">Enter your current PIN to confirm. After removal, the app will open straight to the journal on every new session.</p>
+    <form id="pinRemoveForm" class="pin-form" autocomplete="off">
+      <label class="field-label-paper">Current PIN</label>
+      <input id="pinCurrentRemove" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" autofocus>
+      ${f && f.error ? `<p class="pin-error" role="alert">${esc(f.error)}</p>` : ""}
+      <div class="modal-actions" style="margin-top: 16px;">
+        <button type="button" class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
+        <button type="submit" class="btn-modal btn-modal-danger">Remove PIN</button>
+      </div>
+    </form>
   `;
 }
 
@@ -4642,6 +5025,43 @@ function bindJournal() {
     el.addEventListener("click", e => {
       e.stopPropagation();
       setState({ modal: { type: "delete", id: el.dataset.id } });
+    });
+  });
+  // Copy a single entry as Markdown — practical for sharing one record with
+  // a clinician without exporting the whole journal. Falls back to a hidden
+  // textarea + execCommand for older WebKit / non-HTTPS contexts where
+  // navigator.clipboard isn't available.
+  document.querySelectorAll('[data-action="copy-entry"]').forEach(el => {
+    el.addEventListener("click", async e => {
+      e.stopPropagation();
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (!entry) return;
+      const idx = state.entries.indexOf(entry);
+      const md = entryToMd(entry, idx);
+      const tryFallback = () => {
+        const ta = document.createElement("textarea");
+        ta.value = md;
+        ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;";
+        document.body.appendChild(ta);
+        ta.select();
+        let ok = false;
+        try { ok = document.execCommand("copy"); } catch(_) {}
+        document.body.removeChild(ta);
+        return ok;
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(md);
+          toast("Copied as Markdown");
+        } else if (tryFallback()) {
+          toast("Copied as Markdown");
+        } else {
+          toast("Couldn't copy — try the Markdown export instead");
+        }
+      } catch(_) {
+        if (tryFallback()) toast("Copied as Markdown");
+        else toast("Couldn't copy — try the Markdown export instead");
+      }
     });
   });
   document.querySelectorAll('[data-action="filter"]').forEach(el => {
@@ -4881,6 +5301,62 @@ function bindModal() {
     el.addEventListener("click", () => setState({ modal: "import" }));
   });
 
+  // ── PIN / privacy lock controls ────────────────────────────────────
+  document.querySelectorAll('[data-action="open-set-pin"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.pinForm = { current: "", next: "", confirm: "", error: "" };
+      setState({ modal: "set-pin" });
+    });
+  });
+  document.querySelectorAll('[data-action="open-remove-pin"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.pinForm = { current: "", next: "", confirm: "", error: "" };
+      setState({ modal: "remove-pin" });
+    });
+  });
+  document.querySelectorAll('[data-action="lock-now"]').forEach(el => {
+    el.addEventListener("click", () => {
+      markLocked();
+      state.locked = true;
+      state.modal = null;
+      state.lockError = "";
+      render();
+    });
+  });
+
+  const setPinForm = document.getElementById("pinSetForm");
+  if (setPinForm) setPinForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const isChanging = hasPin();
+    const next = (document.getElementById("pinNew").value || "").trim();
+    const confirm = (document.getElementById("pinConfirm").value || "").trim();
+    const current = isChanging ? (document.getElementById("pinCurrent").value || "").trim() : "";
+    if (isChanging && !current) { state.pinForm.error = "Enter your current PIN first."; render(); return; }
+    if (!/^[0-9]{4,8}$/.test(next))   { state.pinForm.error = "PIN must be 4–8 digits."; render(); return; }
+    if (next !== confirm)             { state.pinForm.error = "The two PINs don't match."; render(); return; }
+    if (isChanging) {
+      const ok = await verifyPin(current);
+      if (!ok) { state.pinForm.error = "Current PIN is incorrect."; render(); return; }
+    }
+    await setStoredPin(next);
+    state.pinForm = { current: "", next: "", confirm: "", error: "" };
+    setState({ modal: "settings" });
+    toast(isChanging ? "PIN updated" : "PIN set");
+  });
+
+  const removePinForm = document.getElementById("pinRemoveForm");
+  if (removePinForm) removePinForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const current = (document.getElementById("pinCurrentRemove").value || "").trim();
+    if (!current) { state.pinForm.error = "Enter your current PIN to remove it."; render(); return; }
+    const ok = await verifyPin(current);
+    if (!ok) { state.pinForm.error = "Current PIN is incorrect."; render(); return; }
+    clearStoredPin();
+    state.pinForm = { current: "", next: "", confirm: "", error: "" };
+    setState({ modal: "settings" });
+    toast("PIN removed");
+  });
+
   // Theme + reminder choice cards — radiogroup pattern. Re-render so the
   // active styling moves to the newly picked card and the theme applies
   // immediately.
@@ -5040,10 +5516,33 @@ function bindModal() {
   const del = document.querySelector('[data-action="confirm-delete"]');
   if (del) del.addEventListener("click", () => {
     const id = del.dataset.id;
+    // Remember the entry and its position so Undo can put it back exactly
+    // where it was, not pinned to the top of the list.
+    const idx = state.entries.findIndex(e => e.id === id);
+    const removed = idx >= 0 ? state.entries[idx] : null;
+    if (idx < 0) { setState({ modal: null }); return; }
     state.entries = state.entries.filter(e => e.id !== id);
     persist();
     setState({ modal: null });
-    toast("Entry deleted");
+    toast("Entry deleted", {
+      ms: 6000,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          // Splice back in at the original index; clamp in case the list
+          // shrank further between delete and undo.
+          const insertAt = Math.min(idx, state.entries.length);
+          state.entries = [
+            ...state.entries.slice(0, insertAt),
+            removed,
+            ...state.entries.slice(insertAt),
+          ];
+          persist();
+          render();
+          toast("Restored");
+        },
+      },
+    });
   });
 
   const discardDraft = document.querySelector('[data-action="confirm-discard-draft"]');
@@ -5148,12 +5647,25 @@ document.addEventListener("keydown", e => {
   } catch(_) {}
 })();
 
-// First-launch onboarding: only fires when there are zero entries AND the
-// "onboarded" flag isn't set. Both gates matter — someone who imported a
-// JSON backup shouldn't see onboarding, and someone who explicitly dismissed
-// onboarding shouldn't see it again on a fresh tab.
+// Boot-time lock check. If a PIN is set and this tab session hasn't unlocked
+// it, the lock screen takes over from the first render. We don't show
+// onboarding behind the lock screen because the gate is more important than
+// a welcome card.
+(function initLock(){
+  try {
+    if (hasPin() && !isUnlocked()) {
+      state.locked = true;
+    }
+  } catch(_) {}
+})();
+
+// First-launch onboarding: only fires when there are zero entries, the
+// "onboarded" flag isn't set, AND the app isn't currently locked. All three
+// gates matter — someone with a backup or a dismissed onboarding shouldn't
+// see it, and the lock screen takes precedence.
 (function maybeShowOnboarding(){
   try {
+    if (state.locked) return;
     const onboarded = localStorage.getItem(ONBOARDED_KEY) === "1";
     if (!onboarded && state.entries.length === 0) {
       state.modal = "onboarding";

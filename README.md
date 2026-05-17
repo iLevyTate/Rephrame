@@ -49,6 +49,42 @@ option that expands every entry, opens your browser's print dialog,
 and switches to a printer-friendly layout. Pick "Save as PDF" in the
 dialog to keep an offline archival copy.
 
+**Copy a single entry.** Each expanded entry has a "Copy" button that
+puts the entry's Markdown on your clipboard — useful for pasting one
+record into a message to a clinician without exporting the whole journal.
+
+**Undo delete.** Deleting an entry now shows an "Undo" toast for 6
+seconds before it sticks. Click Undo to restore the entry to its
+original position in the list.
+
+**Privacy lock (PIN).** Optional 4–8 digit PIN gated on each new tab
+session. Stored as a SHA-256 hash on the device only. The entries
+themselves aren't encrypted — this is a soft lock that stops casual
+snooping on a shared phone, not an attacker with developer-tools
+access. There's no PIN recovery: if you forget, the only way back in
+deletes everything, so export to JSON regularly.
+
+**SW update banner.** When a new version of the app is deployed, the
+service worker installs it in the background and you'll see a "new
+version is ready — reload?" banner at the top. Your entries are
+untouched by the reload.
+
+## Live demo
+
+This repo is GitHub Pages-ready. To publish your own copy:
+
+1. Push the branch to GitHub.
+2. In the repo's **Settings → Pages**, select the branch (e.g. `main`) and
+   `/ (root)` as the source.
+3. Wait ~30 seconds. The site is live at
+   `https://<your-user>.github.io/<repo>/`.
+
+That URL is a fully working PWA — installable, offline-capable, with
+service-worker auto-updates and the in-app reload banner when a new version
+ships. The `.nojekyll` file is included so GitHub Pages serves files
+verbatim; all asset paths in `manifest.json`, `sw.js`, and the HTML are
+relative, so the app works at any subpath.
+
 ## Install
 
 ### Desktop (Chrome, Edge, Brave, Arc…)

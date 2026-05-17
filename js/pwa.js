@@ -78,11 +78,78 @@
     });
   }catch(_){ /* BroadcastChannel unavailable */ }
 
+  // Show a "new version is ready" banner when the SW has a waiting worker.
+  // Clicking Reload tells the new worker to skip waiting; the controllerchange
+  // event then triggers a single full reload so the user gets the new app.
+  let _reloadingForUpdate = false;
+  function _showUpdateBanner(reg){
+    if (document.getElementById('swUpdateBanner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'swUpdateBanner';
+    banner.className = 'sw-update-banner';
+    banner.setAttribute('role', 'status');
+    banner.style.cssText = 'position:fixed;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;z-index:9998;max-width:520px;margin:0 auto;background:#221e1b;color:#f5efe6;border:1px solid rgba(184,85,44,0.32);border-left:3px solid #b8552c;border-radius:10px;padding:12px 14px;font:14px/1.5 system-ui,sans-serif;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 12px 36px rgba(0,0,0,0.48);';
+    const text = document.createElement('div');
+    text.style.cssText = 'flex:1 1 200px;min-width:0;';
+    text.innerHTML = '<strong style="display:block;font-family:Georgia,serif;font-size:15px;color:#b8552c;">A new version is ready.</strong><span style="font-size:13px;color:#c9bdac;">Reload to pick up the latest improvements. Your entries stay where they are.</span>';
+    banner.appendChild(text);
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.style.cssText = 'background:#b8552c;color:#1a1715;border:none;border-radius:6px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;';
+    reload.textContent = 'Reload';
+    reload.onclick = () => {
+      if (!reg || !reg.waiting) { location.reload(); return; }
+      reg.waiting.postMessage({type: 'SKIP_WAITING'});
+    };
+    banner.appendChild(reload);
+    const later = document.createElement('button');
+    later.type = 'button';
+    later.style.cssText = 'background:transparent;color:#c9bdac;border:1px solid #5a4f43;border-radius:6px;padding:8px 12px;font:inherit;cursor:pointer;';
+    later.textContent = 'Later';
+    later.onclick = () => banner.remove();
+    banner.appendChild(later);
+    document.body.appendChild(banner);
+  }
+
+  function _watchForUpdate(reg){
+    if (!reg) return;
+    // If a worker is already installed and waiting at registration time
+    // (e.g. user reopened the tab between visits), surface immediately.
+    if (reg.waiting && navigator.serviceWorker.controller) _showUpdateBanner(reg);
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      if (!newWorker) return;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          _showUpdateBanner(reg);
+        }
+      });
+    });
+    // After SKIP_WAITING resolves, the new worker takes control — that fires
+    // controllerchange exactly once. We reload then; the flag guards against
+    // browsers that fire it twice (older Firefox).
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (_reloadingForUpdate) return;
+      _reloadingForUpdate = true;
+      location.reload();
+    });
+    // Re-check for updates when the tab comes back into focus. The browser
+    // does this periodically on its own (~24h), but on-focus catches the
+    // case where the user has left a tab open all week.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        reg.update().catch(()=>{});
+      }
+    });
+  }
+
   // Register the external service worker. Falls back to an inline blob SW
   // only if sw.js can't be reached (subfolder hosting quirks, etc.).
   if ('serviceWorker' in navigator && !isFileProtocol) {
-    navigator.serviceWorker.register('sw.js', {scope: './'}).then(()=>{
+    navigator.serviceWorker.register('sw.js', {scope: './'}).then((reg)=>{
       window._swRegistered = true;
+      window._swReg = reg;
+      _watchForUpdate(reg);
     }).catch((err)=>{
       console.warn('External sw.js failed, falling back to inline SW:', err);
       const swCode = `
