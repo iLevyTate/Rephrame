@@ -5,10 +5,21 @@ to your home screen and run as a local, private app. No account, no server, no
 analytics — everything lives in your browser's `localStorage`. You can import
 and export your entries as JSON for backup.
 
-The CBT workflow: capture a situation and an automatic thought, label the
-distortions you notice, gather evidence for and against, generate a balanced
-reframe, and record a small behavioral pivot. The "Patterns" tab surfaces
-recurring distortions over time. The "Reference" tab is an in-app primer.
+The CBT workflow: capture a situation and an automatic thought, rate how
+strongly you believe it, label the distortions you notice, gather evidence
+for and against, generate a balanced reframe, then re-rate — the shift in
+emotion intensity and belief is the work showing up. End on one small
+behavioral pivot. The "Patterns" tab surfaces recurring distortions, the
+average intensity drop across your entries, and a 30-day activity heatmap.
+The "Reference" tab is an in-app primer plus a crisis-resources block.
+
+When a full thought record is too much in the moment, the **⚡ icon in the
+top-right** opens a 30-second quick capture (just the thought + intensity).
+The entry lands in your journal flagged for finishing later.
+
+First-time users get an onboarding card with a "load example entry" button
+so you can see what a complete thought record looks like before writing
+your own.
 
 ## Install
 
@@ -57,10 +68,25 @@ browsers won't allow a "real" PWA install from `file://`. iOS Safari has the
 same limitation — use a local server (or host the folder somewhere private)
 if you want home-screen install.
 
+## Safety
+
+Reframe is a journaling tool, not a substitute for therapy or crisis care. If
+you can't pause and write, please reach out:
+
+- **988 Suicide & Crisis Lifeline** (US / Canada) — call or text 988
+- **Crisis Text Line** — text HOME to 741741 (US) / 85258 (UK) / 686868 (Canada)
+- **Samaritans** (UK / Ireland) — 116 123
+- International directory: iasp.info/resources/Crisis_Centres ·
+  findahelpline.com
+
+The full list is also inside the app under **Reference → If you're in
+crisis**, and reachable from a link in every empty-state and capture modal.
+
 ## Your data
 
 - Stored in `localStorage` under the keys `reframe-journal-v1` (entries) and
   `reframe-journal-draft-v1` (in-progress capture). Never sent anywhere.
+- A one-time onboarding flag lives under `reframe-onboarded-v1`.
 - The Import / Export buttons in the top-right round-trip the full journal as
   JSON. Use Export to back up, and Import (Replace or Merge) to restore on a
   new device.

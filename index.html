@@ -1597,6 +1597,233 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 
 .file-input { display: none; }
 
+/* ──────────────────────────────────────────────────────────────────
+   TIER 1: belief slider, deltas, rerate, quick-capture, safety
+   ────────────────────────────────────────────────────────────────── */
+
+.belief-control {
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-3);
+  padding: 14px 16px;
+}
+.belief-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.belief-num { font-size: 28px; font-weight: 600; color: var(--on-paper); letter-spacing: -0.02em; }
+.belief-num-suffix { font-size: 14px; color: var(--on-paper-mute); margin-left: 2px; font-weight: 500; }
+.belief-hint { font-size: 13px; color: var(--on-paper-mute); }
+.belief-hint strong { color: var(--on-paper-soft); font-weight: 600; }
+
+.delta-good { color: var(--copper); font-weight: 700; }
+.delta-bad  { color: #b8552c; font-weight: 700; }
+.delta-flat { color: var(--on-paper-mute); font-weight: 600; }
+
+.rerate-group {
+  border-top: 1px dashed var(--rule-paper-2);
+  margin-top: 24px;
+  padding-top: 20px;
+}
+.rerate-head { margin-bottom: 16px; }
+.rerate-eyebrow {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper);
+  margin-bottom: 6px;
+}
+.rerate-title { font-size: 20px; margin: 0 0 6px 0; color: var(--on-paper); }
+.rerate-sub { font-size: 13px; color: var(--on-paper-mute); margin: 0; line-height: 1.5; }
+
+/* Entry-card deltas */
+.intensity-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+}
+.belief-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(184, 85, 44, 0.10);
+  border: 1px solid var(--copper-line);
+  border-radius: var(--r-full);
+  color: var(--on-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+.belief-mini {
+  font-family: var(--mono);
+  color: var(--on-ink);
+  font-weight: 600;
+  font-size: 11px;
+}
+.delta-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.delta-tag.good { background: rgba(184, 85, 44, 0.18); color: var(--copper-light); }
+.delta-tag.flat { background: var(--ink-3); color: var(--on-ink-mute); }
+
+/* Entry-card flag pills (Quick / Sample) */
+.entry-meta-flags { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.entry-flag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.flag-quick { background: rgba(184, 85, 44, 0.18); color: var(--copper-light); border: 1px solid var(--copper-line); }
+.flag-sample { background: var(--ink-3); color: var(--on-ink-mute); border: 1px solid var(--rule-ink); }
+.entry-card.is-quick { border-left: 2px solid var(--copper); }
+
+/* Review rerate block */
+.review-rerate {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--rule-paper);
+}
+
+/* Patterns: rerate card */
+.pattern-card-rerate { display: flex; flex-direction: column; }
+.rerate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 20px;
+  margin-top: 8px;
+}
+.rerate-stat { display: flex; flex-direction: column; gap: 4px; }
+.rerate-stat-num {
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--on-paper);
+}
+.rerate-stat-num.good { color: var(--copper); }
+.rerate-stat-num.bad  { color: var(--on-paper-mute); }
+.rerate-stat-suffix { font-size: 14px; color: var(--on-paper-mute); margin-left: 3px; font-weight: 500; }
+.rerate-stat-label { font-size: 12px; color: var(--on-paper-mute); line-height: 1.4; }
+.rerate-stat-sub { font-size: 11px; color: var(--on-paper-faint); }
+
+/* Topbar quick-capture button */
+.icon-pill--quick {
+  color: var(--copper);
+  border-color: var(--copper-line);
+  background: var(--copper-soft);
+}
+.icon-pill--quick:hover {
+  color: var(--copper-light);
+  border-color: var(--copper);
+  background: var(--copper-glow);
+}
+.icon-pill--quick svg path { fill: currentColor; stroke: currentColor; }
+
+/* Empty-state safety footer */
+.empty-safety {
+  margin-top: 28px;
+  font-size: 13px;
+  color: var(--on-ink-mute);
+  line-height: 1.55;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.empty-safety strong { color: var(--copper); }
+
+/* Inline button styled like a link, used for "see crisis resources" */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--copper);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.link-button:hover { color: var(--copper-light); }
+
+/* Modal additions for quick / onboarding / safety */
+.modal-body {
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-3);
+  padding: 16px;
+  margin: 12px 0;
+}
+.modal-body .field-label-paper { color: var(--on-paper); }
+.modal-body .belief-control { background: var(--paper-2); }
+.btn-modal-primary {
+  background: var(--copper);
+  color: var(--on-paper);
+  border: none;
+}
+.btn-modal-primary:hover { background: var(--copper-light); }
+
+/* Safety section in Reference */
+.ref-section--safety {
+  border-left: 3px solid var(--copper);
+  background: linear-gradient(to right, rgba(184, 85, 44, 0.04), transparent 60%);
+}
+.ref-section--safety .ref-section-num {
+  background: var(--copper);
+  color: var(--paper);
+}
+
+/* Safety modal list */
+.safety-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.safety-item {
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-3);
+  padding: 10px 14px;
+}
+.safety-name {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-paper);
+  margin-bottom: 4px;
+}
+.safety-country {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--on-paper-mute);
+  background: var(--paper-3);
+  border-radius: var(--r-full);
+  padding: 2px 8px;
+  margin-left: 6px;
+  font-weight: 500;
+}
+.safety-detail {
+  font-size: 13px;
+  color: var(--on-paper-soft);
+  line-height: 1.55;
+}
+.safety-detail strong { color: var(--on-paper); font-family: var(--mono); }
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--ink-3); border-radius: 4px; }
@@ -1625,6 +1852,11 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
         </div>
         <div class="topbar-actions">
           <button id="installBtn" class="install-pill" type="button" aria-label="Install Reframe as an app" hidden>＋ Install</button>
+          <button class="icon-pill icon-pill--quick" data-action="open-quick" aria-label="Quick capture (in distress)" title="Quick capture — dump a thought now, refine later">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 2L3 9h4l-1 5 6-7h-4z" fill="currentColor"/>
+            </svg>
+          </button>
           <button class="icon-pill" data-action="open-import" aria-label="Import">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M8 2v9M4 7l4 4 4-4M2 13h12"/>
@@ -1784,20 +2016,95 @@ const STEP_HINTS = [
   "Make changes by tapping a section. Save when it's right.",
 ];
 
+// A realistic, well-filled-in example so first-time users can see what a
+// complete thought record looks like before they have to write one. Loaded
+// on demand from the empty-state "Load example" button and from onboarding.
+// isSample:true marks it as removable in one tap.
+const SAMPLE_ENTRY = {
+  id: "sample-" + Date.now().toString(36),
+  createdAt: new Date().toISOString(),
+  trigger: "Stood up too fast at the pedicure place and broke the chair. Two other clients turned to look. I paid and walked out without finishing.",
+  automaticThought: "Everyone saw that. They all think I'm a huge clumsy idiot and I can never go back there.",
+  emotionFamily: "Shame",
+  emotionVariant: "humiliated",
+  emotionIntensity: 80,
+  emotionEstimated: false,
+  bodyCheck: "Face flushing, chest tight, urge to flee. Hands cold.",
+  bodyInferred: false,
+  distortions: ["Mind Reading", "Catastrophizing", "Labeling"],
+  distortionNote: "Read two strangers' minds, then attached a permanent label to myself from one moment.",
+  evidenceFor: "The chair did break. People did look. I felt embarrassed enough to leave.",
+  evidenceAgainst: "Pedicure chairs are old and have weight ratings; one breaking says more about the chair. The looks were a half-second of curiosity, not judgment. I've never thought another person was 'an idiot' for an accident.",
+  socraticType: "Double standard",
+  socraticQuestion: "If a friend told me they broke a chair in public, would I think they were a clumsy idiot — or would I laugh with them about it?",
+  reframeMethod: "Compassionate reattribution",
+  newThought: "A chair gave out under me. That was embarrassing and the urge to leave makes sense. But \"clumsy idiot\" is a label I'd never put on a friend in the same spot. The chair was the problem.",
+  pivot: "Text the salon tomorrow morning to apologize and ask about rebooking. Specifically: \"Hi — I'm the one whose chair broke today. Sorry I left so quickly. I'd love to finish the appointment if you can rebook me this week.\"",
+  pivotDone: false,
+  beliefBefore: 85,
+  beliefAfter: 30,
+  emotionIntensityAfter: 35,
+  isQuick: false,
+  isSample: true,
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // STORAGE
 // ═══════════════════════════════════════════════════════════════════
 
 const STORAGE_KEY = "reframe-journal-v1";
 const DRAFT_KEY   = "reframe-journal-draft-v1";
+const ONBOARDED_KEY = "reframe-onboarded-v1";
+
+// Fields added after v1 shipped. Existing JSON exports won't carry them, so
+// we normalize on read to a stable shape. null (not 0) means "not rated" —
+// that distinction matters for the before/after delta display.
+function normalizeEntry(e) {
+  return {
+    id: e.id || "",
+    createdAt: e.createdAt || "",
+    updatedAt: e.updatedAt || undefined,
+    trigger: e.trigger || "",
+    automaticThought: e.automaticThought || "",
+    emotionFamily: e.emotionFamily || "",
+    emotionVariant: e.emotionVariant || "",
+    emotionIntensity: typeof e.emotionIntensity === "number" ? e.emotionIntensity : 40,
+    emotionEstimated: !!e.emotionEstimated,
+    bodyCheck: e.bodyCheck || "",
+    bodyInferred: !!e.bodyInferred,
+    distortions: Array.isArray(e.distortions) ? e.distortions : [],
+    distortionNote: e.distortionNote || "",
+    evidenceFor: e.evidenceFor || "",
+    evidenceAgainst: e.evidenceAgainst || "",
+    socraticType: e.socraticType || "",
+    socraticQuestion: e.socraticQuestion || "",
+    reframeMethod: e.reframeMethod || "",
+    newThought: e.newThought || "",
+    pivot: e.pivot || "",
+    pivotDone: !!e.pivotDone,
+    // Re-rating fields. null = not yet rated.
+    beliefBefore: typeof e.beliefBefore === "number" ? e.beliefBefore : null,
+    beliefAfter: typeof e.beliefAfter === "number" ? e.beliefAfter : null,
+    emotionIntensityAfter: typeof e.emotionIntensityAfter === "number" ? e.emotionIntensityAfter : null,
+    // Provenance flags.
+    isQuick: !!e.isQuick,         // entered via the quick-capture path; needs finishing
+    isSample: !!e.isSample,       // pre-loaded demo entry the user can delete
+  };
+}
 
 function loadEntries() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    return Array.isArray(raw) ? raw.map(normalizeEntry) : [];
+  }
   catch { return []; }
 }
 function saveEntries(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
 function loadDraft() {
-  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); }
+  try {
+    const raw = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+    return raw ? normalizeEntry(raw) : null;
+  }
   catch { return null; }
 }
 function saveDraft(d) {
@@ -1827,6 +2134,8 @@ function emptyEntry() {
     socraticType: "", socraticQuestion: "",
     reframeMethod: "", newThought: "",
     pivot: "", pivotDone: false,
+    beliefBefore: null, beliefAfter: null, emotionIntensityAfter: null,
+    isQuick: false, isSample: false,
   };
 }
 
@@ -1869,6 +2178,9 @@ function entryToMd(e, idx) {
   const emoLabel = e.emotionVariant ? (cap(e.emotionVariant) + " (" + e.emotionFamily + ")") : (e.emotionFamily || "—");
   const estTag = e.emotionEstimated ? " *(estimated)*" : "";
   L.push("- **Emotion:** " + emoLabel + " — **Intensity:** " + e.emotionIntensity + "/100" + estTag, "");
+  if (e.beliefBefore !== null && e.beliefBefore !== undefined) {
+    L.push("- **Belief in thought (before):** " + e.beliefBefore + "%", "");
+  }
   const infTag = e.bodyInferred ? " *(inferred from speech)*" : "";
   L.push("- **Body Check:** " + (e.bodyCheck || "—") + infTag, "");
   L.push("**3. Distortion Identified**", "");
@@ -1881,7 +2193,15 @@ function entryToMd(e, idx) {
   L.push("**5. Reframe**", "");
   L.push("- **Method:** " + (e.reframeMethod || "—"), "");
   L.push('- **New Thought:** "' + e.newThought + '"', "");
+  if (e.beliefAfter !== null && e.beliefAfter !== undefined) {
+    const drop = e.beliefBefore !== null && e.beliefBefore !== undefined ? (" (Δ " + (e.beliefAfter - e.beliefBefore) + ")") : "";
+    L.push("- **Belief in thought (after):** " + e.beliefAfter + "%" + drop, "");
+  }
+  if (e.emotionIntensityAfter !== null && e.emotionIntensityAfter !== undefined) {
+    L.push("- **Emotion intensity (after):** " + e.emotionIntensityAfter + "/100 (Δ " + (e.emotionIntensityAfter - e.emotionIntensity) + ")", "");
+  }
   L.push("**6. The Pivot**", "", e.pivot || "—", "");
+  if (e.pivotDone) L.push("", "*Pivot completed.*", "");
   return L.join("\n");
 }
 
@@ -1924,6 +2244,10 @@ const state = {
   filter: "",
   expandedIds: new Set(),
   modal: null,
+  // Working buffer for the quick-capture modal so the textarea + slider can
+  // live-update without churning state.draft (which is reserved for the full
+  // 7-step flow).
+  quickDraft: null,
 };
 
 function setState(patch) {
@@ -1980,11 +2304,16 @@ function renderJournal() {
       <div class="empty-state">
         <div class="empty-state-mark">r</div>
         <h2 class="empty-state-title display">A quiet start.</h2>
-        <p class="empty-state-body">Capture a triggering thought when it happens. Walk it through six steps. End on an action. Your entries live in this browser only.</p>
+        <p class="empty-state-body">Capture a triggering thought when it happens. Walk it through six steps. Re-rate after the reframe so you can see the work shift the dial. End on one small action. Everything lives in this browser only.</p>
         <div class="empty-state-actions">
           <button class="btn btn-primary" data-action="goto-capture">Begin first entry</button>
+          <button class="btn btn-ghost" data-action="load-sample">Load an example</button>
           <button class="btn btn-ghost" data-action="open-import">Import backup</button>
         </div>
+        <p class="empty-safety">
+          Overwhelmed right now? Tap the <strong>⚡</strong> icon in the top-right for a 30-second quick capture, or
+          <button class="link-button" data-action="open-safety">see crisis resources</button>.
+        </p>
       </div>
     `;
   }
@@ -2083,18 +2412,29 @@ function renderEntryCard(entry, index) {
   const expanded = state.expandedIds.has(entry.id);
   const emoLabel = entry.emotionVariant ? cap(entry.emotionVariant) : entry.emotionFamily;
 
+  const hasIntensityDelta = entry.emotionIntensityAfter !== null && entry.emotionIntensityAfter !== undefined;
+  const intensityDelta = hasIntensityDelta ? (entry.emotionIntensityAfter - entry.emotionIntensity) : null;
+  const hasBeliefDelta = entry.beliefBefore !== null && entry.beliefBefore !== undefined &&
+                        entry.beliefAfter  !== null && entry.beliefAfter  !== undefined;
+  const beliefDelta = hasBeliefDelta ? (entry.beliefAfter - entry.beliefBefore) : null;
+
+  // The two flag pills (Quick / Sample) sit at the top-right of the meta row,
+  // displacing the "Pivoted" pill only if both happen to be true at once.
+  const flagPills = [];
+  if (entry.isQuick) flagPills.push('<span class="entry-flag flag-quick">⚡ Finish this</span>');
+  if (entry.isSample) flagPills.push('<span class="entry-flag flag-sample">Sample</span>');
+
   return `
-    <article class="entry-card ${expanded ? "expanded" : ""}">
+    <article class="entry-card ${expanded ? "expanded" : ""} ${entry.isQuick ? "is-quick" : ""}">
       <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
         <div class="entry-meta-row">
           <span class="entry-meta-num">No. ${String(index + 1).padStart(2, "0")}</span>
           <span class="entry-meta-dot">·</span>
           <span class="entry-meta-time">${esc(fmtTime(entry.createdAt))}</span>
-          ${entry.pivotDone ? `
-            <span class="pivot-indicator done" style="margin-left: auto;">
-              <span class="pivot-dot"></span> Pivoted
-            </span>
-          ` : ""}
+          <span class="entry-meta-flags" style="margin-left: auto;">
+            ${flagPills.join("")}
+            ${entry.pivotDone ? `<span class="pivot-indicator done"><span class="pivot-dot"></span> Pivoted</span>` : ""}
+          </span>
         </div>
         <h3 class="entry-card-trigger display ${entry.trigger ? "" : "empty"}">
           ${entry.trigger ? esc(entry.trigger) : "(no trigger)"}
@@ -2103,7 +2443,15 @@ function renderEntryCard(entry, index) {
           ${emoLabel ? `
             <span class="felt-pill">
               Felt <span class="felt-emo">${esc(emoLabel)}</span>
-              <span class="intensity-mini">${entry.emotionIntensity}</span>
+              ${hasIntensityDelta
+                ? `<span class="intensity-delta"><span class="intensity-mini">${entry.emotionIntensity}</span> → <span class="intensity-mini">${entry.emotionIntensityAfter}</span> <span class="delta-tag ${intensityDelta < 0 ? "good" : "flat"}">${intensityDelta > 0 ? "+" : ""}${intensityDelta}</span></span>`
+                : `<span class="intensity-mini">${entry.emotionIntensity}</span>`}
+            </span>
+          ` : ""}
+          ${hasBeliefDelta ? `
+            <span class="belief-pill">
+              Belief <span class="belief-mini">${entry.beliefBefore}%</span> → <span class="belief-mini">${entry.beliefAfter}%</span>
+              <span class="delta-tag ${beliefDelta < 0 ? "good" : "flat"}">${beliefDelta > 0 ? "+" : ""}${beliefDelta}</span>
             </span>
           ` : ""}
           ${entry.distortions.slice(0, 2).map(d => `<span class="dist-chip">${esc(d)}</span>`).join("")}
@@ -2171,7 +2519,7 @@ function renderEntryDetails(entry) {
     <div class="entry-card-actions">
       <span class="entry-card-actions-time">${esc(fmtDateTime(entry.createdAt))}</span>
       <div class="entry-card-actions-buttons">
-        <button class="action-btn primary" data-action="edit" data-id="${entry.id}">Edit</button>
+        ${entry.isQuick ? `<button class="action-btn primary" data-action="finish-quick" data-id="${entry.id}">Finish this entry</button>` : `<button class="action-btn primary" data-action="edit" data-id="${entry.id}">Edit</button>`}
         <button class="action-btn danger" data-action="delete" data-id="${entry.id}">Delete</button>
       </div>
     </div>
@@ -2300,6 +2648,21 @@ function renderCaptureStep(step, d) {
           </div>
         </details>
       </div>
+
+      <div class="field-group">
+        <label class="field-label-paper">Belief in the thought, right now</label>
+        <div class="belief-control">
+          <div class="belief-head">
+            <span class="belief-num display"><span data-slider-display="beliefBefore">${d.beliefBefore ?? 70}</span><span class="belief-num-suffix">%</span></span>
+            <span class="belief-hint">How much do you believe the automatic thought as you write it?</span>
+          </div>
+          <input type="range" min="0" max="100" value="${d.beliefBefore ?? 70}" data-field="beliefBefore" class="intensity-slider">
+          <div class="intensity-bands">
+            <span>0% (don't buy it)</span><span>50%</span><span>100% (fully convinced)</span>
+          </div>
+          <div class="field-help-paper" style="margin-top: 8px;">This sets the baseline. After you reframe in Step 5, you'll re-rate — that delta is the work showing up.</div>
+        </div>
+      </div>
     `;
 
     case 3: return `
@@ -2392,6 +2755,34 @@ function renderCaptureStep(step, d) {
           </div>
         </details>
       </div>
+
+      <div class="field-group rerate-group">
+        <div class="rerate-head">
+          <span class="rerate-eyebrow">Re-rate</span>
+          <h3 class="rerate-title display">After writing that, where are you now?</h3>
+          <p class="rerate-sub">The whole point of reframing is the shift. Re-rate honestly — if nothing budged, the new thought probably isn't landing yet.</p>
+        </div>
+
+        <label class="field-label-paper">Belief in the original thought, now</label>
+        <div class="belief-control">
+          <div class="belief-head">
+            <span class="belief-num display"><span data-slider-display="beliefAfter">${d.beliefAfter ?? (d.beliefBefore ?? 50)}</span><span class="belief-num-suffix">%</span></span>
+            ${d.beliefBefore !== null && d.beliefBefore !== undefined ? `
+              <span class="belief-hint">Before: <strong>${d.beliefBefore}%</strong>${d.beliefAfter !== null && d.beliefAfter !== undefined ? ` · Δ <strong class="${(d.beliefAfter - d.beliefBefore) < 0 ? "delta-good" : "delta-flat"}">${d.beliefAfter - d.beliefBefore > 0 ? "+" : ""}${d.beliefAfter - d.beliefBefore}</strong>` : ""}</span>
+            ` : `<span class="belief-hint">No baseline set in Step 2 — that's fine, just rate now.</span>`}
+          </div>
+          <input type="range" min="0" max="100" value="${d.beliefAfter ?? (d.beliefBefore ?? 50)}" data-field="beliefAfter" class="intensity-slider">
+        </div>
+
+        <label class="field-label-paper" style="margin-top: 18px;">Emotion intensity, now</label>
+        <div class="belief-control">
+          <div class="belief-head">
+            <span class="belief-num display"><span data-slider-display="emotionIntensityAfter">${d.emotionIntensityAfter ?? d.emotionIntensity}</span><span class="belief-num-suffix">/100</span></span>
+            <span class="belief-hint">Before: <strong>${d.emotionIntensity}</strong>${d.emotionIntensityAfter !== null && d.emotionIntensityAfter !== undefined ? ` · Δ <strong class="${(d.emotionIntensityAfter - d.emotionIntensity) < 0 ? "delta-good" : "delta-flat"}">${d.emotionIntensityAfter - d.emotionIntensity > 0 ? "+" : ""}${d.emotionIntensityAfter - d.emotionIntensity}</strong>` : ""}</span>
+          </div>
+          <input type="range" min="0" max="100" value="${d.emotionIntensityAfter ?? d.emotionIntensity}" data-field="emotionIntensityAfter" class="intensity-slider">
+        </div>
+      </div>
     `;
 
     case 6: return `
@@ -2458,6 +2849,19 @@ function renderReview(d) {
         <button class="review-edit-btn" data-action="goto-step" data-step="5">Edit</button>
       </div>
       <div class="review-card-content italic">"${d.newThought ? esc(d.newThought) : '<span class="empty">missing</span>'}"</div>
+      ${(() => {
+        const hasI = d.emotionIntensityAfter !== null && d.emotionIntensityAfter !== undefined;
+        const hasB = d.beliefBefore !== null && d.beliefBefore !== undefined && d.beliefAfter !== null && d.beliefAfter !== undefined;
+        if (!hasI && !hasB) return "";
+        const iD = hasI ? (d.emotionIntensityAfter - d.emotionIntensity) : null;
+        const bD = hasB ? (d.beliefAfter - d.beliefBefore) : null;
+        return `
+          <div class="review-rerate">
+            ${hasI ? `<div class="review-meta-item"><strong>Intensity:</strong> ${d.emotionIntensity} → ${d.emotionIntensityAfter} <span class="delta-tag ${iD < 0 ? "good" : "flat"}">${iD > 0 ? "+" : ""}${iD}</span></div>` : ""}
+            ${hasB ? `<div class="review-meta-item" style="margin-top: 4px;"><strong>Belief:</strong> ${d.beliefBefore}% → ${d.beliefAfter}% <span class="delta-tag ${bD < 0 ? "good" : "flat"}">${bD > 0 ? "+" : ""}${bD}</span></div>` : ""}
+          </div>
+        `;
+      })()}
     </div>
 
     <div class="review-card">
@@ -2489,6 +2893,27 @@ function renderPatterns() {
   const total = entries.length;
   const pivotsDone = entries.filter(e => e.pivotDone).length;
   const pivotPct = Math.round((pivotsDone / total) * 100);
+
+  // Intensity drop per entry, averaged across only those entries that have a
+  // re-rating. This is the headline efficacy number — "your reframes pulled
+  // intensity down by an average of N points." If no entry has been re-rated
+  // yet, the card prompts users to add one.
+  const rerated = entries.filter(e =>
+    e.emotionIntensityAfter !== null && e.emotionIntensityAfter !== undefined
+  );
+  const intensityDrops = rerated.map(e => e.emotionIntensity - e.emotionIntensityAfter);
+  const avgIntensityDrop = intensityDrops.length
+    ? Math.round(intensityDrops.reduce((a, b) => a + b, 0) / intensityDrops.length)
+    : null;
+
+  const beliefRerated = entries.filter(e =>
+    e.beliefBefore !== null && e.beliefBefore !== undefined &&
+    e.beliefAfter  !== null && e.beliefAfter  !== undefined
+  );
+  const beliefDrops = beliefRerated.map(e => e.beliefBefore - e.beliefAfter);
+  const avgBeliefDrop = beliefDrops.length
+    ? Math.round(beliefDrops.reduce((a, b) => a + b, 0) / beliefDrops.length)
+    : null;
 
   const distCounts = {};
   entries.forEach(e => e.distortions.forEach(d => distCounts[d] = (distCounts[d] || 0) + 1));
@@ -2563,6 +2988,31 @@ function renderPatterns() {
             <strong>${pivotsDone}</strong> of ${total}<br>pivots done
           </div>
         </div>
+      </div>
+
+      <div class="pattern-card span-2 pattern-card-rerate">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">Re-rating shift</span>
+          <span class="pattern-card-meta">${rerated.length || 0} of ${total} re-rated</span>
+        </div>
+        ${avgIntensityDrop === null ? `
+          <div class="pattern-stat-label">
+            Re-rate your emotion intensity at Step 5 to see how much your reframes are actually shifting the dial. Right now nothing has been re-rated, so the headline number is just the work you haven't measured yet.
+          </div>
+        ` : `
+          <div class="rerate-grid">
+            <div class="rerate-stat">
+              <div class="rerate-stat-num display ${avgIntensityDrop > 0 ? "good" : avgIntensityDrop < 0 ? "bad" : ""}">${avgIntensityDrop > 0 ? "−" : avgIntensityDrop < 0 ? "+" : ""}${Math.abs(avgIntensityDrop)}</div>
+              <div class="rerate-stat-label">avg intensity drop<br><span class="rerate-stat-sub">across ${rerated.length} ${rerated.length === 1 ? "entry" : "entries"}</span></div>
+            </div>
+            ${avgBeliefDrop !== null ? `
+              <div class="rerate-stat">
+                <div class="rerate-stat-num display ${avgBeliefDrop > 0 ? "good" : avgBeliefDrop < 0 ? "bad" : ""}">${avgBeliefDrop > 0 ? "−" : avgBeliefDrop < 0 ? "+" : ""}${Math.abs(avgBeliefDrop)}<span class="rerate-stat-suffix">pts</span></div>
+                <div class="rerate-stat-label">avg belief drop<br><span class="rerate-stat-sub">across ${beliefRerated.length} ${beliefRerated.length === 1 ? "entry" : "entries"}</span></div>
+              </div>
+            ` : ""}
+          </div>
+        `}
       </div>
 
       <div class="pattern-card span-2">
@@ -2655,6 +3105,36 @@ function renderReference() {
       <div class="page-eyebrow">In-app handbook</div>
       <h1 class="page-title display">Reference</h1>
       <p class="page-sub">The cognitive distortions, emotion families, and reframing methods that drive the six-step workflow. Browseable anytime, not just while capturing.</p>
+    </div>
+
+    <div class="ref-section ref-section--safety">
+      <div class="ref-section-head">
+        <span class="ref-section-num">!</span>
+        <h2 class="ref-section-title display">If you're in crisis</h2>
+        <span class="ref-section-step">Always</span>
+      </div>
+      <p class="ref-section-intro">A thought record is for ordinary distress — moments where you can still pause and write. If you can't, please reach out to one of these now. They're free, confidential, and answer 24/7.</p>
+      <div class="ref-item">
+        <div class="ref-item-name">988 Suicide &amp; Crisis Lifeline · US / Canada</div>
+        <div class="ref-item-desc">Call or text <strong>988</strong>. Online chat at <strong>988lifeline.org/chat</strong>.</div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-item-name">Crisis Text Line · US / UK / Canada / Ireland</div>
+        <div class="ref-item-desc">Text <strong>HOME</strong> to <strong>741741</strong> (US) · <strong>85258</strong> (UK) · <strong>686868</strong> (Canada) · <strong>50808</strong> (Ireland).</div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-item-name">Samaritans · UK / Ireland</div>
+        <div class="ref-item-desc">Call <strong>116 123</strong>. Free, anonymous.</div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-item-name">International directory</div>
+        <div class="ref-item-desc">Crisis centres in 100+ countries at <strong>iasp.info/resources/Crisis_Centres</strong> and <strong>findahelpline.com</strong>.</div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-item-name">Emergency</div>
+        <div class="ref-item-desc">If you or someone near you is in immediate danger, call your local emergency number — <strong>911</strong> (US), <strong>112</strong> (EU), <strong>999</strong> (UK).</div>
+      </div>
+      <p class="ref-section-intro" style="margin-top: 16px; font-style: italic;">Reframe is a journaling tool, not a substitute for therapy or crisis care. If you have a clinician, exporting your journal as Markdown for a session is a good use of the data.</p>
     </div>
 
     <div class="ref-section">
@@ -2838,10 +3318,100 @@ function renderModal() {
         <button class="btn-modal btn-modal-danger" data-action="confirm-delete" data-id="${state.modal.id}">Delete</button>
       </div>
     `;
+  } else if (state.modal === "quick") {
+    const q = state.quickDraft || { thought: "", intensity: 60 };
+    inner = `
+      <h3 class="display">Quick capture</h3>
+      <p class="modal-sub">For the moments where a full 7-step entry is too much. Dump it now, refine later — the entry will land in your journal flagged for finishing.</p>
+      <div class="modal-body">
+        <label class="field-label-paper">What's happening? What's the thought?</label>
+        <textarea class="textarea input-large" id="quickThought" rows="5" autofocus placeholder="Just write. One sentence is fine. No structure required.">${esc(q.thought)}</textarea>
+        <div style="margin-top: 16px;">
+          <label class="field-label-paper">Intensity, right now</label>
+          <div class="belief-control">
+            <div class="belief-head">
+              <span class="belief-num display"><span id="quickIntensityDisplay">${q.intensity}</span><span class="belief-num-suffix">/100</span></span>
+              <span class="belief-hint" id="quickIntensityBand">${esc(band(q.intensity).label)}</span>
+            </div>
+            <input type="range" min="0" max="100" value="${q.intensity}" id="quickIntensity" class="intensity-slider">
+          </div>
+        </div>
+        <p class="modal-sub" style="margin-top: 16px; font-size: 13px;">
+          ${SAFETY_LINK_INLINE}
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
+        <button class="btn-modal btn-modal-primary" data-action="save-quick">Save & breathe</button>
+      </div>
+    `;
+  } else if (state.modal === "onboarding") {
+    inner = `
+      <h3 class="display">Welcome to Reframe</h3>
+      <p class="modal-sub">A private, offline CBT journal. Every entry walks one triggering thought through six steps: capture it, name the distortions, weigh the evidence, write a reframe you'd actually accept, and end on one small action. Then re-rate — the shift in intensity and belief is the work showing up.</p>
+      <div class="modal-options">
+        <button class="modal-option" data-action="load-sample">
+          <div class="modal-option-title">Load an example entry</div>
+          <div class="modal-option-desc">A fully filled-in sample so you can see what a complete thought record looks like. Tap the Sample badge to remove it whenever you're done.</div>
+        </button>
+        <button class="modal-option" data-action="onboard-begin">
+          <div class="modal-option-title">Begin your own entry</div>
+          <div class="modal-option-desc">Jump straight into Step 1. You can always tap the ⚡ icon in the top-right for a quick-capture if you're overwhelmed.</div>
+        </button>
+      </div>
+      <p class="modal-sub" style="font-size: 12px; margin-top: 16px;">
+        ${SAFETY_LINK_INLINE}
+      </p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="onboard-skip">Skip for now</button>
+      </div>
+    `;
+  } else if (state.modal === "safety") {
+    inner = renderSafetyModal();
   }
 
   root.innerHTML = `<div class="modal-overlay" data-action="close-modal"><div class="modal" onclick="event.stopPropagation()">${inner}</div></div>`;
   bindModal();
+}
+
+// Centralized so the same wording is reused across modals, empty state, and
+// Reference. Editing the language in one place updates every surface.
+const SAFETY_LINK_INLINE =
+  'Reframe is a journaling tool, not a substitute for therapy or crisis care. ' +
+  'In the US, call or text <strong>988</strong> (Suicide &amp; Crisis Lifeline) or text <strong>HOME</strong> to <strong>741741</strong> (Crisis Text Line). ' +
+  '<button class="link-button" data-action="open-safety">See more crisis resources →</button>';
+
+function renderSafetyModal() {
+  return `
+    <h3 class="display">If you're in crisis</h3>
+    <p class="modal-sub">A thought record is for ordinary distress — moments where you can still pause and write. If you can't, please reach out to one of these now. They're free, confidential, and answer 24/7.</p>
+    <div class="safety-list">
+      <div class="safety-item">
+        <div class="safety-name">988 Suicide &amp; Crisis Lifeline <span class="safety-country">US / Canada</span></div>
+        <div class="safety-detail">Call or text <strong>988</strong>. Chat at <strong>988lifeline.org/chat</strong>.</div>
+      </div>
+      <div class="safety-item">
+        <div class="safety-name">Crisis Text Line <span class="safety-country">US / UK / Canada / Ireland</span></div>
+        <div class="safety-detail">Text <strong>HOME</strong> to <strong>741741</strong> (US) · <strong>85258</strong> (UK) · <strong>686868</strong> (Canada) · <strong>50808</strong> (Ireland).</div>
+      </div>
+      <div class="safety-item">
+        <div class="safety-name">Samaritans <span class="safety-country">UK / Ireland</span></div>
+        <div class="safety-detail">Call <strong>116 123</strong>. Free, anonymous.</div>
+      </div>
+      <div class="safety-item">
+        <div class="safety-name">International directory</div>
+        <div class="safety-detail">A list of crisis centres in 100+ countries is maintained at <strong>iasp.info/resources/Crisis_Centres</strong> and <strong>findahelpline.com</strong>.</div>
+      </div>
+      <div class="safety-item">
+        <div class="safety-name">Emergency</div>
+        <div class="safety-detail">If you or someone near you is in immediate danger, call your local emergency number (<strong>911</strong> US, <strong>112</strong> EU, <strong>999</strong> UK).</div>
+      </div>
+    </div>
+    <p class="modal-sub" style="margin-top: 16px;">Reframe stores everything on this device — no clinician sees it. If you have one, exporting your journal as Markdown for a session is a good use of the data.</p>
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-primary" data-action="close-modal">Got it</button>
+    </div>
+  `;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2910,6 +3480,42 @@ function bindJournal() {
       setView("capture");
     });
   });
+  // open-safety and load-sample can appear inside the rendered view (empty
+  // state); scope to #view so we don't double-bind the same modal buttons
+  // (bindModal handles those). Bindings on re-rendered elements are fresh,
+  // so duplicate-listener risk is bounded to one #view subtree.
+  document.querySelectorAll('#view [data-action="open-safety"]').forEach(el => {
+    el.addEventListener("click", e => { e.preventDefault(); setState({ modal: "safety" }); });
+  });
+  document.querySelectorAll('#view [data-action="load-sample"]').forEach(el => {
+    el.addEventListener("click", () => {
+      const exists = state.entries.some(x => x.isSample);
+      if (!exists) {
+        state.entries = [{ ...SAMPLE_ENTRY, id: "sample-" + newId(), createdAt: new Date().toISOString() }, ...state.entries];
+        persist();
+      }
+      localStorage.setItem(ONBOARDED_KEY, "1");
+      render();
+      toast(exists ? "Sample already loaded" : "Sample entry loaded — tap to expand");
+    });
+  });
+  // "Finish this entry" picks up a quick-capture row and drops the user into
+  // the full 7-step flow at Step 1 with the thought pre-filled at Step 2.
+  document.querySelectorAll('[data-action="finish-quick"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (!entry) return;
+      state.draft = { ...entry };
+      state.editingId = entry.id;
+      // Clear the isQuick flag for the in-progress draft; we re-stamp it
+      // false on save (via the spread of state.draft) so the badge goes away
+      // once the user actually finishes.
+      state.draft.isQuick = false;
+      state.captureStep = 1;
+      setView("capture");
+    });
+  });
 }
 
 function renderJournalListOnly() {
@@ -2948,6 +3554,14 @@ function bindCapture() {
         if (bn) bn.textContent = b.label;
         const bs = document.querySelector(".intensity-band-sig");
         if (bs) bs.textContent = b.signals;
+        return;
+      }
+      // Belief + after-intensity sliders own their own live readout via the
+      // data-slider-display hook. Avoid a full re-render here so the user's
+      // drag doesn't snap or lose focus mid-gesture.
+      if (field === "beliefBefore" || field === "beliefAfter" || field === "emotionIntensityAfter") {
+        const target = document.querySelector('[data-slider-display="' + field + '"]');
+        if (target) target.textContent = v;
         return;
       }
       if (["emotionFamily", "socraticType", "reframeMethod"].includes(field)) render();
@@ -3048,6 +3662,78 @@ function bindModal() {
       }
     });
   });
+  document.querySelectorAll('[data-action="open-safety"]').forEach(el => {
+    el.addEventListener("click", e => { e.preventDefault(); setState({ modal: "safety" }); });
+  });
+
+  // Quick-capture modal — live wire the textarea + slider to a working draft,
+  // then create a real entry on save with isQuick=true so it surfaces a
+  // "Finish this entry" CTA in the journal.
+  const qt = document.getElementById("quickThought");
+  const qi = document.getElementById("quickIntensity");
+  const qid = document.getElementById("quickIntensityDisplay");
+  const qib = document.getElementById("quickIntensityBand");
+  if (qt) qt.addEventListener("input", () => {
+    state.quickDraft = state.quickDraft || { thought: "", intensity: 60 };
+    state.quickDraft.thought = qt.value;
+  });
+  if (qi) qi.addEventListener("input", () => {
+    state.quickDraft = state.quickDraft || { thought: "", intensity: 60 };
+    state.quickDraft.intensity = parseInt(qi.value, 10);
+    if (qid) qid.textContent = qi.value;
+    if (qib) qib.textContent = band(parseInt(qi.value, 10)).label;
+  });
+  const saveQuick = document.querySelector('[data-action="save-quick"]');
+  if (saveQuick) saveQuick.addEventListener("click", () => {
+    const q = state.quickDraft || { thought: "", intensity: 60 };
+    const thought = (q.thought || "").trim();
+    if (!thought) { toast("Write something first — even one word"); return; }
+    const now = new Date().toISOString();
+    const entry = {
+      ...emptyEntry(),
+      id: newId(),
+      createdAt: now,
+      // Park the thought in the automaticThought field where Step 2 lives;
+      // the trigger stays empty so resuming jumps cleanly to "what happened".
+      automaticThought: thought,
+      emotionIntensity: q.intensity,
+      emotionEstimated: true,
+      isQuick: true,
+    };
+    state.entries = [entry, ...state.entries];
+    persist();
+    state.quickDraft = null;
+    setState({ modal: null });
+    toast("Captured. Breathe — you can finish it later.");
+  });
+
+  // Onboarding modal handlers.
+  const loadSample = document.querySelector('[data-action="load-sample"]');
+  if (loadSample) loadSample.addEventListener("click", () => {
+    const exists = state.entries.some(e => e.isSample);
+    if (!exists) {
+      state.entries = [{ ...SAMPLE_ENTRY, id: "sample-" + newId(), createdAt: new Date().toISOString() }, ...state.entries];
+      persist();
+    }
+    localStorage.setItem(ONBOARDED_KEY, "1");
+    setState({ modal: null });
+    toast(exists ? "Sample already loaded" : "Sample entry loaded — tap to expand");
+  });
+  const onboardBegin = document.querySelector('[data-action="onboard-begin"]');
+  if (onboardBegin) onboardBegin.addEventListener("click", () => {
+    localStorage.setItem(ONBOARDED_KEY, "1");
+    state.modal = null;
+    state.draft = emptyEntry();
+    state.editingId = null;
+    state.captureStep = 1;
+    setView("capture");
+  });
+  const onboardSkip = document.querySelector('[data-action="onboard-skip"]');
+  if (onboardSkip) onboardSkip.addEventListener("click", () => {
+    localStorage.setItem(ONBOARDED_KEY, "1");
+    setState({ modal: null });
+  });
+
   const md = document.querySelector('[data-action="export-md"]');
   if (md) md.addEventListener("click", () => {
     const content = state.entries.length === 0
@@ -3140,6 +3826,13 @@ document.querySelectorAll('[data-action="open-export"]').forEach(b =>
   b.addEventListener("click", () => setState({ modal: "export" })));
 document.querySelectorAll('[data-action="open-import"]').forEach(b =>
   b.addEventListener("click", () => setState({ modal: "import" })));
+// Static-topbar quick-capture button. Bound once at startup so we don't
+// stack listeners on every journal re-render.
+document.querySelectorAll('[data-action="open-quick"]').forEach(b =>
+  b.addEventListener("click", () => {
+    state.quickDraft = { thought: "", intensity: 60 };
+    setState({ modal: "quick" });
+  }));
 
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
@@ -3167,6 +3860,19 @@ document.addEventListener("keydown", e => {
     const v = params.get('nav');
     if (v && ['journal','capture','patterns','reference'].includes(v)) {
       state.view = v;
+    }
+  } catch(_) {}
+})();
+
+// First-launch onboarding: only fires when there are zero entries AND the
+// "onboarded" flag isn't set. Both gates matter — someone who imported a
+// JSON backup shouldn't see onboarding, and someone who explicitly dismissed
+// onboarding shouldn't see it again on a fresh tab.
+(function maybeShowOnboarding(){
+  try {
+    const onboarded = localStorage.getItem(ONBOARDED_KEY) === "1";
+    if (!onboarded && state.entries.length === 0) {
+      state.modal = "onboarding";
     }
   } catch(_) {}
 })();
