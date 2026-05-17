@@ -96,6 +96,32 @@ browsers won't allow a "real" PWA install from `file://`. iOS Safari has the
 same limitation — use a local server (or host the folder somewhere private)
 if you want home-screen install.
 
+## When this tool fits
+
+Reframe is built for **ordinary distress** — frustration, embarrassment,
+catastrophic thinking, social worries, post-event rumination, the daily
+weather of being a person. It's deliberately *not* built for active trauma
+processing, severe depression, psychosis, or acute suicidal ideation, where
+solo cognitive work can be unhelpful or harmful. Use it alongside a
+clinician for those, and use the crisis resources below first if you need
+them now.
+
+Three deliberate concessions to make the tool helpful rather than harmful:
+
+- **"These thoughts feel accurate" tile** on Step 3 — opts out of the
+  distortion frame entirely. Grief, valid anger, accurate self-criticism
+  are real; the rest of the entry holds them rather than arguing.
+- **Grounding gate at intensity ≥80** — surfaces a 5-4-3-2-1 prompt before
+  Step 4 and inside quick-capture, because cognitive work tends to land
+  better after the body has settled.
+- **"Just venting" checkbox** in quick-capture — sometimes naming what's
+  there *is* the intervention; no obligation to finish a 7-step entry
+  later.
+
+The re-rate is awareness, not a grade. Small shifts are still real shifts;
+no shift is information too. Patterns and pivot-completion are framed the
+same way — "each one is information, whether followed or not."
+
 ## Safety
 
 Reframe is a journaling tool, not a substitute for therapy or crisis care. If

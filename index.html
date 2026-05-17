@@ -1598,6 +1598,122 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 .file-input { display: none; }
 
 /* ──────────────────────────────────────────────────────────────────
+   CLINICAL SAFETY: scope caveats, grounding gate, "thoughts accurate"
+   ────────────────────────────────────────────────────────────────── */
+
+/* "These thoughts feel accurate" affirmation tile — sits above the
+   distortion grid so it's the first thing the user sees on Step 3,
+   making "not distorted" a first-class option rather than a hidden one. */
+.accurate-tile {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--paper-2);
+  border: 1px dashed var(--rule-paper-2);
+  border-radius: var(--r-3);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+}
+.accurate-tile:hover { border-color: var(--copper-line); }
+.accurate-tile.active {
+  background: rgba(184, 85, 44, 0.08);
+  border-style: solid;
+  border-color: var(--copper);
+}
+.accurate-tile-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-paper);
+  margin-bottom: 4px;
+}
+.accurate-tile.active .accurate-tile-name { color: var(--copper-deep); }
+.accurate-tile.active .distortion-tile-check {
+  background: var(--copper);
+  color: var(--paper);
+  border-color: var(--copper);
+}
+.accurate-tile-desc {
+  font-size: 13px;
+  color: var(--on-paper-mute);
+  line-height: 1.55;
+}
+.accurate-detail {
+  color: var(--copper-deep);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Grounding gate — shown inline at Step 4 (and inside quick capture)
+   when emotion intensity is ≥80, so cognitive work doesn't try to run
+   in territory where grounding lands better. */
+.grounding-note {
+  background: linear-gradient(to right, rgba(184, 85, 44, 0.08), rgba(184, 85, 44, 0.02));
+  border: 1px solid var(--copper-line);
+  border-left: 3px solid var(--copper);
+  border-radius: var(--r-3);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+.grounding-note--modal {
+  background: rgba(184, 85, 44, 0.10);
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+.grounding-note-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.grounding-note-body p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--on-paper-soft);
+  margin: 0 0 8px 0;
+}
+.grounding-note-body p:last-child { margin-bottom: 0; }
+.grounding-note-body strong { color: var(--on-paper); }
+.grounding-note-foot { font-size: 12px; color: var(--on-paper-mute); }
+
+html[data-theme="dark"] .grounding-note,
+html:not([data-theme="light"]) .grounding-note--modal { /* default dark */ }
+
+/* Onboarding scope caveat — slightly different visual weight than the
+   regular modal-sub so users don't skim past it. */
+.onboard-caveat {
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-left: 3px solid var(--copper);
+  border-radius: var(--r-3);
+  padding: 12px 14px;
+  margin: 14px 0 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--on-paper-soft);
+}
+.onboard-caveat strong { color: var(--on-paper); }
+
+/* Reference: "When CBT is the right tool" — same visual treatment as
+   the safety section but uses the question-mark accent. */
+.ref-section--scope {
+  border-left: 3px solid var(--copper-line);
+  background: linear-gradient(to right, rgba(184, 85, 44, 0.02), transparent 60%);
+}
+.ref-section--scope .ref-section-num {
+  background: var(--paper-3);
+  color: var(--copper-deep);
+}
+
+/* ──────────────────────────────────────────────────────────────────
    TIER 3: light theme, settings, nudge banner, print
    ────────────────────────────────────────────────────────────────── */
 
@@ -2568,6 +2684,11 @@ function normalizeEntry(e) {
     bodyInferred: !!e.bodyInferred,
     distortions: Array.isArray(e.distortions) ? e.distortions : [],
     distortionNote: e.distortionNote || "",
+    // "I looked at the thought and it actually feels accurate to me" — a
+    // valid CBT outcome that the workflow needs to permit explicitly,
+    // otherwise users in real grief / valid distress get nudged into
+    // pathologizing healthy reactions.
+    thoughtsAccurate: !!e.thoughtsAccurate,
     evidenceFor: e.evidenceFor || "",
     evidenceAgainst: e.evidenceAgainst || "",
     socraticType: e.socraticType || "",
@@ -2626,7 +2747,7 @@ function emptyEntry() {
     trigger: "", automaticThought: "",
     emotionFamily: "", emotionVariant: "", emotionIntensity: 40, emotionEstimated: false,
     bodyCheck: "", bodyInferred: false,
-    distortions: [], distortionNote: "",
+    distortions: [], distortionNote: "", thoughtsAccurate: false,
     evidenceFor: "", evidenceAgainst: "",
     socraticType: "", socraticQuestion: "",
     reframeMethod: "", newThought: "",
@@ -2681,8 +2802,12 @@ function entryToMd(e, idx) {
   const infTag = e.bodyInferred ? " *(inferred from speech)*" : "";
   L.push("- **Body Check:** " + (e.bodyCheck || "—") + infTag, "");
   L.push("**3. Distortion Identified**", "");
-  L.push(e.distortions.length ? e.distortions.map(d => "**" + d + "**").join(" + ") : "—", "");
-  if (e.distortionNote) L.push(e.distortionNote, "");
+  if (e.thoughtsAccurate) {
+    L.push("*Marked as accurate, not distorted — the thought here was true to the writer; the rest of the entry holds it rather than arguing with it.*", "");
+  } else {
+    L.push(e.distortions.length ? e.distortions.map(d => "**" + d + "**").join(" + ") : "—", "");
+    if (e.distortionNote) L.push(e.distortionNote, "");
+  }
   L.push("**4. Challenge (The Trial)**", "");
   L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
   L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
@@ -3050,8 +3175,8 @@ function renderNudgeBanner() {
           <path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.6 4.6l2 2M13.4 13.4l2 2M4.6 15.4l2-2M13.4 6.6l2-2"/>
         </svg>
         <div class="nudge-banner-text">
-          <strong>Want to write today?</strong>
-          <span class="preview">Your last entry was ${esc(ago)} ago.</span>
+          <strong>The door's open if today's a writing day.</strong>
+          <span class="preview">Quiet for ${esc(ago)}. No obligation either way.</span>
         </div>
       </div>
       <div class="nudge-banner-actions">
@@ -3159,7 +3284,12 @@ function renderEntryDetails(entry) {
           <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(inferred from speech)</span>` : ""}</p>
         </div>
       ` : ""}
-      ${entry.distortionNote ? `
+      ${entry.thoughtsAccurate ? `
+        <div class="detail-row">
+          <div class="detail-label">3 · Distortions</div>
+          <p class="detail-text"><span class="accurate-detail">Marked as accurate, not distorted — these thoughts feel true to you, and the rest of the entry holds them rather than arguing with them.</span></p>
+        </div>
+      ` : entry.distortionNote ? `
         <div class="detail-row">
           <div class="detail-label">3 · Distortion note</div>
           <p class="detail-text">${esc(entry.distortionNote)}</p>
@@ -3359,35 +3489,58 @@ function renderCaptureStep(step, d) {
 
     case 3: return `
       <div class="field-group">
-        <div class="distortion-grid">
-          ${DISTORTIONS.map(dist => {
-            const active = d.distortions.includes(dist.name);
-            return `
-              <button class="distortion-tile ${active ? "active" : ""}" data-action="toggle-distortion" data-name="${esc(dist.name)}">
-                <div class="distortion-tile-name">
-                  <span>${esc(dist.name)}</span>
-                  <span class="distortion-tile-check">✓</span>
-                </div>
-                <div class="distortion-tile-desc">${esc(dist.desc)}</div>
-              </button>
-            `;
-          }).join("")}
-        </div>
-        <details class="ref-inline">
-          <summary><span class="chev">▸</span> Common pairs</summary>
-          <div class="ref-inline-body">
-            <ul>${COMMON_PAIRS.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+        <button class="accurate-tile ${d.thoughtsAccurate ? "active" : ""}" data-action="toggle-accurate">
+          <div class="accurate-tile-name">
+            <span>These thoughts feel accurate, not distorted</span>
+            <span class="distortion-tile-check">✓</span>
           </div>
-        </details>
+          <div class="accurate-tile-desc">Not every painful thought is a distortion. Grief, valid anger, and accurate self-criticism are real — they don't need to be "fixed." Pick this and skip ahead; the rest of the entry still helps you sit with what's true.</div>
+        </button>
       </div>
 
-      <div class="field-group">
-        <label class="field-label-paper">Distortion note (optional)</label>
-        <textarea class="textarea" data-field="distortionNote" rows="2" placeholder="Assumed others judged me and attached a fixed label…">${esc(d.distortionNote)}</textarea>
-      </div>
+      ${d.thoughtsAccurate ? "" : `
+        <div class="field-group">
+          <div class="distortion-grid">
+            ${DISTORTIONS.map(dist => {
+              const active = d.distortions.includes(dist.name);
+              return `
+                <button class="distortion-tile ${active ? "active" : ""}" data-action="toggle-distortion" data-name="${esc(dist.name)}">
+                  <div class="distortion-tile-name">
+                    <span>${esc(dist.name)}</span>
+                    <span class="distortion-tile-check">✓</span>
+                  </div>
+                  <div class="distortion-tile-desc">${esc(dist.desc)}</div>
+                </button>
+              `;
+            }).join("")}
+          </div>
+          <p class="step-hint" style="margin-top: 10px;">Pick any that apply. Zero is also fine — the question is whether you notice these patterns, not whether you must find one.</p>
+          <details class="ref-inline">
+            <summary><span class="chev">▸</span> Common pairs</summary>
+            <div class="ref-inline-body">
+              <ul>${COMMON_PAIRS.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+            </div>
+          </details>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">Distortion note (optional)</label>
+          <textarea class="textarea" data-field="distortionNote" rows="2" placeholder="Assumed others judged me and attached a fixed label…">${esc(d.distortionNote)}</textarea>
+        </div>
+      `}
     `;
 
     case 4: return `
+      ${d.emotionIntensity >= 80 ? `
+        <div class="grounding-note" role="note">
+          <div class="grounding-note-eyebrow">Pause first</div>
+          <div class="grounding-note-body">
+            <p>You rated this at <strong>${d.emotionIntensity}/100</strong>. Cognitive work tends to land better after you've taken a moment to settle the body — and what you write here will still be here when you come back.</p>
+            <p><strong>Try 5-4-3-2-1:</strong> name 5 things you can see, 4 you can hear, 3 you can touch, 2 you can smell, 1 you can taste. Slow each one down. Then continue.</p>
+            <p class="grounding-note-foot">If this level of distress is more than you can sit with right now, <button class="link-button" data-action="open-safety">crisis support is here</button>.</p>
+          </div>
+        </div>
+      ` : ""}
       <div class="field-group">
         <label class="field-label-paper">Evidence FOR the thought</label>
         <textarea class="textarea" data-field="evidenceFor" rows="3">${esc(d.evidenceFor)}</textarea>
@@ -3423,8 +3576,17 @@ function renderCaptureStep(step, d) {
     `;
 
     case 5: return `
+      ${d.thoughtsAccurate ? `
+        <div class="grounding-note" role="note">
+          <div class="grounding-note-eyebrow">You marked these thoughts as accurate</div>
+          <div class="grounding-note-body">
+            <p>A "new thought" may not fit here, and you don't have to write one. What sometimes helps instead is a kinder way to <em>hold</em> what's true — an acknowledgment that doesn't argue with the facts but doesn't add cruelty either.</p>
+            <p>Skip what doesn't apply. The pivot in Step 6 is often where the work lands when the thought itself isn't the problem.</p>
+          </div>
+        </div>
+      ` : ""}
       <div class="field-group">
-        <label class="field-label-paper">Method</label>
+        <label class="field-label-paper">${d.thoughtsAccurate ? "Method (optional)" : "Method"}</label>
         <select class="select" data-field="reframeMethod">
           <option value="">— pick one —</option>
           ${REFRAME_METHODS.map(r => `<option value="${esc(r.method)}" ${d.reframeMethod === r.method ? "selected" : ""}>${esc(r.method)}</option>`).join("")}
@@ -3432,9 +3594,9 @@ function renderCaptureStep(step, d) {
         ${d.reframeMethod ? `<div class="field-help-paper">${esc(REFRAME_METHODS.find(r => r.method === d.reframeMethod)?.does || "")}</div>` : ""}
       </div>
       <div class="field-group">
-        <label class="field-label-paper">New Thought</label>
-        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="That was embarrassing, and wanting to leave makes sense. But a chair breaking says more about the chair than about me.">${esc(d.newThought)}</textarea>
-        <div class="field-help-paper">Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.</div>
+        <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "New Thought"}</label>
+        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : "That was embarrassing, and wanting to leave makes sense. But a chair breaking says more about the chair than about me."}">${esc(d.newThought)}</textarea>
+        <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.`}</div>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All reframe methods</summary>
           <div class="ref-inline-body">
@@ -3452,7 +3614,7 @@ function renderCaptureStep(step, d) {
         <div class="rerate-head">
           <span class="rerate-eyebrow">Re-rate</span>
           <h3 class="rerate-title display">After writing that, where are you now?</h3>
-          <p class="rerate-sub">The whole point of reframing is the shift. Re-rate honestly — if nothing budged, the new thought probably isn't landing yet.</p>
+          <p class="rerate-sub">Rate honestly. Small shifts are still real shifts; no shift is information too — the reframe may need more time, or the situation may just be heavy. The numbers are awareness, not a grade.</p>
         </div>
 
         <label class="field-label-paper">Belief in the original thought, now</label>
@@ -3518,8 +3680,10 @@ function renderReview(d) {
         <button class="review-edit-btn" data-action="goto-step" data-step="3">Edit</button>
       </div>
       <div class="review-card-content">
-        ${d.distortions.length ? d.distortions.map(x => `<strong>${esc(x)}</strong>`).join(" + ") : '<span class="empty">none selected</span>'}
-        ${d.distortionNote ? `<div style="margin-top: 6px; font-size: 13px; color: var(--on-paper-mute);">${esc(d.distortionNote)}</div>` : ""}
+        ${d.thoughtsAccurate
+          ? '<span class="accurate-detail">Marked as accurate, not distorted.</span>'
+          : (d.distortions.length ? d.distortions.map(x => `<strong>${esc(x)}</strong>`).join(" + ") : '<span class="empty">none selected</span>')}
+        ${!d.thoughtsAccurate && d.distortionNote ? `<div style="margin-top: 6px; font-size: 13px; color: var(--on-paper-mute);">${esc(d.distortionNote)}</div>` : ""}
       </div>
     </div>
 
@@ -3663,7 +3827,7 @@ function renderPatterns() {
 
       <div class="pattern-card">
         <div class="pattern-card-head">
-          <span class="pattern-card-title">Pivot completion</span>
+          <span class="pattern-card-title">Pivots followed through</span>
         </div>
         <div class="pivot-ring-wrap">
           <div class="pivot-ring" style="width: 72px; height: 72px;">
@@ -3673,11 +3837,11 @@ function renderPatterns() {
                 stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" stroke-linecap="round"/>
             </svg>
             <div class="pivot-ring-label">
-              <div class="pivot-ring-pct display">${pivotPct}<span class="small">%</span></div>
+              <div class="pivot-ring-pct display">${pivotsDone}<span class="small">/${total}</span></div>
             </div>
           </div>
           <div class="pivot-ring-detail">
-            <strong>${pivotsDone}</strong> of ${total}<br>pivots done
+            ${pivotsDone === 0 ? "Untried isn't unkind" : "Each one is information"}<br><span class="muted">whether followed or not</span>
           </div>
         </div>
       </div>
@@ -3797,6 +3961,31 @@ function renderReference() {
       <div class="page-eyebrow">In-app handbook</div>
       <h1 class="page-title display">Reference</h1>
       <p class="page-sub">The cognitive distortions, emotion families, and reframing methods that drive the six-step workflow. Browseable anytime, not just while capturing.</p>
+    </div>
+
+    <div class="ref-section ref-section--scope">
+      <div class="ref-section-head">
+        <span class="ref-section-num">?</span>
+        <h2 class="ref-section-title display">When CBT is the right tool</h2>
+        <span class="ref-section-step">Read first</span>
+      </div>
+      <p class="ref-section-intro">A thought record helps when there's a thought to record — a specific moment of distress where slowing down and looking at the thinking can shift something. It's not a universal solvent.</p>
+      <div class="ref-item">
+        <div class="ref-item-name">CBT tends to help with</div>
+        <div class="ref-item-desc">Ordinary anxiety, frustration, embarrassment, self-criticism, low mood that comes and goes, social worries, perfectionism, catastrophic thinking, post-event rumination. Anything where there's a thought you can name and examine.</div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-item-name">CBT alone tends to fall short for</div>
+        <div class="ref-item-desc"><strong>Active trauma processing</strong> (intrusive memories, flashbacks, dissociation) — needs trauma-specialized care, not solo cognitive work. <strong>Severe depression</strong> where motivation is collapsed and the cognitive frame itself is suspect. <strong>Psychosis or thought disorders.</strong> <strong>Acute suicidal ideation</strong> — please reach for the resources below first. <strong>Grief</strong> — grief usually doesn't want fixing, just witness; the "accurate, not distorted" tile on Step 3 is for exactly this.</div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-item-name">If a thought turns out to be accurate</div>
+        <div class="ref-item-desc">Not every painful thought is distorted. "I hurt them," "I'm out of my depth," "this relationship is over" — sometimes those are true. The work then is sitting with what's true, not arguing with it. Use the "These thoughts feel accurate" tile and let the rest of the entry hold what's real.</div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-item-name">Pace</div>
+        <div class="ref-item-desc">One entry isn't a treatment. The benefit shows up across many entries, ideally with a clinician you trust. If the journal starts to feel like a task, scale down — quick capture or vent-only is a complete option.</div>
+      </div>
     </div>
 
     <div class="ref-section ref-section--safety">
@@ -4018,13 +4207,13 @@ function renderModal() {
       </div>
     `;
   } else if (state.modal === "quick") {
-    const q = state.quickDraft || { thought: "", intensity: 60 };
+    const q = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
     inner = `
       <h3 class="display">Quick capture</h3>
-      <p class="modal-sub">For the moments where a full 7-step entry is too much. Dump it now, refine later — the entry will land in your journal flagged for finishing.</p>
+      <p class="modal-sub">For when a full 7-step entry is too much. Just naming what's there is already work — you don't have to do anything else with it.</p>
       <div class="modal-body">
-        <label class="field-label-paper">What's happening? What's the thought?</label>
-        <textarea class="textarea input-large" id="quickThought" rows="5" autofocus placeholder="Just write. One sentence is fine. No structure required.">${esc(q.thought)}</textarea>
+        <label class="field-label-paper">What's here right now?</label>
+        <textarea class="textarea input-large" id="quickThought" rows="5" autofocus placeholder="One sentence is fine. No structure needed.">${esc(q.thought)}</textarea>
         <div style="margin-top: 16px;">
           <label class="field-label-paper">Intensity, right now</label>
           <div class="belief-control">
@@ -4035,19 +4224,35 @@ function renderModal() {
             <input type="range" min="0" max="100" value="${q.intensity}" id="quickIntensity" class="intensity-slider">
           </div>
         </div>
-        <p class="modal-sub" style="margin-top: 16px; font-size: 13px;">
-          ${SAFETY_LINK_INLINE}
-        </p>
+        <label class="checkbox-flag" style="margin-top: 12px;">
+          <input type="checkbox" id="quickVentOnly" ${q.ventOnly ? "checked" : ""}>
+          <span>Just venting — don't follow up. Sometimes naming it is enough.</span>
+        </label>
+        ${q.intensity >= 80 ? `
+          <div class="grounding-note grounding-note--modal" role="note">
+            <div class="grounding-note-eyebrow">At this intensity…</div>
+            <div class="grounding-note-body">
+              <p>Above 80 is a lot to sit with. Before — or instead of — writing more, try slowing the breath out (4-second in, 6-second out) for a minute, or name 5 things you can see. ${'<button class="link-button" data-action="open-safety">Crisis support is here</button>'} if you need it.</p>
+            </div>
+          </div>
+        ` : `
+          <p class="modal-sub" style="margin-top: 16px; font-size: 13px;">
+            ${SAFETY_LINK_INLINE}
+          </p>
+        `}
       </div>
       <div class="modal-actions">
         <button class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
-        <button class="btn-modal btn-modal-primary" data-action="save-quick">Save & breathe</button>
+        <button class="btn-modal btn-modal-primary" data-action="save-quick">Save</button>
       </div>
     `;
   } else if (state.modal === "onboarding") {
     inner = `
       <h3 class="display">Welcome to Reframe</h3>
-      <p class="modal-sub">A private, offline CBT journal. Every entry walks one triggering thought through six steps: capture it, name the distortions, weigh the evidence, write a reframe you'd actually accept, and end on one small action. Then re-rate — the shift in intensity and belief is the work showing up.</p>
+      <p class="modal-sub">A private, offline CBT journal. Every entry walks one triggering thought through six steps: capture it, name any distortions, weigh the evidence, write a reframe you'd actually accept, and end on one small action. Then re-rate — the shift is awareness, not a grade.</p>
+      <div class="onboard-caveat">
+        <strong>When this tool fits.</strong> Reframe is built for ordinary distress — the daily frustrations, disappointments, and worries that benefit from a structured pause. <strong>It's not built for</strong> active trauma processing, severe depression, psychosis, or acute crisis. For those, please use this alongside professional care, and reach for <button class="link-button" data-action="open-safety">crisis support</button> if you need it now.
+      </div>
       <div class="modal-options">
         <button class="modal-option" data-action="load-sample">
           <div class="modal-option-title">Load an example entry</div>
@@ -4427,6 +4632,19 @@ function bindCapture() {
       btn.classList.toggle("active");
     });
   });
+  // "Thoughts feel accurate" — opt out of the distortion frame entirely so
+  // valid grief / anger / accurate self-criticism aren't pushed through a
+  // pathology lens. Re-render so the grid collapses and we don't keep
+  // collecting distortions for an entry the user has explicitly marked as
+  // non-distorted.
+  document.querySelectorAll('[data-action="toggle-accurate"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.draft.thoughtsAccurate = !state.draft.thoughtsAccurate;
+      if (state.draft.thoughtsAccurate) state.draft.distortions = [];
+      saveDraft(state.draft);
+      render();
+    });
+  });
 
   document.querySelectorAll('[data-action="goto-step"]').forEach(el => {
     el.addEventListener("click", () => {
@@ -4551,25 +4769,36 @@ function bindModal() {
   });
 
   // Quick-capture modal — live wire the textarea + slider to a working draft,
-  // then create a real entry on save with isQuick=true so it surfaces a
-  // "Finish this entry" CTA in the journal.
+  // then create a real entry on save. isQuick=true surfaces a "Finish this
+  // entry" CTA in the journal; ventOnly=true means the user explicitly chose
+  // not to do further work, so we skip the CTA and treat the entry as final.
   const qt = document.getElementById("quickThought");
   const qi = document.getElementById("quickIntensity");
   const qid = document.getElementById("quickIntensityDisplay");
   const qib = document.getElementById("quickIntensityBand");
+  const qv = document.getElementById("quickVentOnly");
   if (qt) qt.addEventListener("input", () => {
-    state.quickDraft = state.quickDraft || { thought: "", intensity: 60 };
+    state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
     state.quickDraft.thought = qt.value;
   });
   if (qi) qi.addEventListener("input", () => {
-    state.quickDraft = state.quickDraft || { thought: "", intensity: 60 };
-    state.quickDraft.intensity = parseInt(qi.value, 10);
-    if (qid) qid.textContent = qi.value;
-    if (qib) qib.textContent = band(parseInt(qi.value, 10)).label;
+    state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
+    const v = parseInt(qi.value, 10);
+    const wasHigh = state.quickDraft.intensity >= 80;
+    state.quickDraft.intensity = v;
+    if (qid) qid.textContent = v;
+    if (qib) qib.textContent = band(v).label;
+    // Show / hide the grounding note as the user crosses the threshold, so
+    // they get the gentle prompt without having to dismiss and re-open.
+    if ((v >= 80) !== wasHigh) renderModal();
+  });
+  if (qv) qv.addEventListener("change", () => {
+    state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
+    state.quickDraft.ventOnly = qv.checked;
   });
   const saveQuick = document.querySelector('[data-action="save-quick"]');
   if (saveQuick) saveQuick.addEventListener("click", () => {
-    const q = state.quickDraft || { thought: "", intensity: 60 };
+    const q = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
     const thought = (q.thought || "").trim();
     if (!thought) { toast("Write something first — even one word"); return; }
     const now = new Date().toISOString();
@@ -4582,13 +4811,15 @@ function bindModal() {
       automaticThought: thought,
       emotionIntensity: q.intensity,
       emotionEstimated: true,
-      isQuick: true,
+      // Vent-only entries are complete by user's choice; no "finish this"
+      // pressure.
+      isQuick: !q.ventOnly,
     };
     state.entries = [entry, ...state.entries];
     persist();
     state.quickDraft = null;
     setState({ modal: null });
-    toast("Captured. Breathe — you can finish it later.");
+    toast(q.ventOnly ? "Named. That's enough." : "Captured. No need to finish — only if you want.");
   });
 
   // Onboarding modal handlers.
@@ -4620,10 +4851,21 @@ function bindModal() {
 
   const md = document.querySelector('[data-action="export-md"]');
   if (md) md.addEventListener("click", () => {
-    const content = state.entries.length === 0
-      ? "*No reframeable thoughts detected.*"
+    // Prepend a short header so the file isn't anonymous and so a reader
+    // (often a clinician, the user reviewing on a hard day, or future-self)
+    // knows what they're looking at and how to read it.
+    const header = [
+      "# Reframe — thought records",
+      "",
+      "*Exported " + new Date().toISOString().slice(0, 10) + " from Reframe (a private CBT journal). ",
+      "Patterns here are most useful when reviewed with a clinician, not interpreted alone. ",
+      "Single entries are snapshots of one moment — the work is across many of them.*",
+      "",
+    ].join("\n");
+    const body = state.entries.length === 0
+      ? "*No entries yet.*"
       : state.entries.map((e, i) => entryToMd(e, i)).join("\n");
-    download(content, "reframes-" + new Date().toISOString().slice(0, 10) + ".md", "text/markdown");
+    download(header + "\n" + body, "reframes-" + new Date().toISOString().slice(0, 10) + ".md", "text/markdown");
     setState({ modal: null });
     toast("Markdown exported");
   });
