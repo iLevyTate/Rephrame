@@ -364,12 +364,13 @@ main {
 }
 .search-input {
   width: 100%;
-  padding: 10px 12px 10px 36px;
+  padding: 11px 12px 11px 36px;
   background: var(--ink-2);
   color: var(--on-ink);
   border: 1px solid var(--rule-ink);
   border-radius: var(--r-2);
-  font-size: 13px;
+  /* 16px font-size to dodge iOS Safari's focus auto-zoom. */
+  font-size: 16px;
   outline: none;
   transition: border-color 0.15s var(--ease);
 }
@@ -848,7 +849,10 @@ main {
   color: var(--on-paper);
   border: 1px solid transparent;
   border-radius: var(--r-2);
-  font-size: 15px;
+  /* 16px is the iOS Safari threshold below which the browser auto-zooms
+     on focus. The text isn't visibly larger than 15px to most users,
+     but it spares everyone the jarring zoom-and-reset on every tap. */
+  font-size: 16px;
   font-family: var(--body);
   outline: none;
   transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
@@ -1624,6 +1628,19 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 
 .file-input { display: none; }
 
+/* Respect the user's motion preference. Smooth scroll, modal fade,
+   button press transforms, and hover lifts all become near-instant for
+   anyone with vestibular sensitivity or who's just turned reduced
+   motion on. The app's information is the point, not the choreography. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ──────────────────────────────────────────────────────────────────
    CLINICAL SAFETY: scope caveats, grounding gate, "thoughts accurate"
    ────────────────────────────────────────────────────────────────── */
@@ -2255,7 +2272,8 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   padding: 10px 12px;
   width: 100%;
   resize: vertical;
-  font-size: 14px;
+  /* 16px to dodge iOS focus auto-zoom; see .input baseline. */
+  font-size: 16px;
   line-height: 1.55;
   color: var(--on-paper);
 }
@@ -3006,6 +3024,25 @@ function shouldShowNudge() {
   if (Date.now() < (state.settings.nudgeSnoozedUntil || 0)) return false;
   return msSinceLastEntry() >= intervalMs;
 }
+// Smooth scroll wrapper that respects prefers-reduced-motion. The CSS
+// @media query handles `scroll-behavior: auto` for declarative scrolls,
+// but JS calls to window.scrollTo({behavior:"smooth"}) and
+// node.scrollIntoView({behavior:"smooth"}) bypass that — they need this
+// runtime check.
+function _prefersReducedMotion() {
+  try { return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+  catch { return false; }
+}
+function smoothScrollTo(opts) {
+  if (_prefersReducedMotion()) window.scrollTo({ ...opts, behavior: "auto" });
+  else window.scrollTo(opts);
+}
+function smoothScrollIntoView(node, opts) {
+  if (!node) return;
+  if (_prefersReducedMotion()) node.scrollIntoView({ ...opts, behavior: "auto" });
+  else node.scrollIntoView(opts);
+}
+
 function humanDuration(ms) {
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return "moments";
@@ -4581,7 +4618,7 @@ function bindJournal() {
       // on the freshly-rendered card.
       requestAnimationFrame(() => {
         const node = document.getElementById("entry-" + id);
-        if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+        smoothScrollIntoView(node, { behavior: "smooth", block: "start" });
       });
     };
     el.addEventListener("click", open);
@@ -4766,7 +4803,7 @@ function bindCapture() {
       }
       state.captureStep = step;
       render();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      smoothScrollTo({ top: 0, behavior: "smooth" });
     });
   });
 
@@ -4779,14 +4816,14 @@ function bindCapture() {
     state.captureStep++;
     saveDraft(state.draft);
     render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    smoothScrollTo({ top: 0, behavior: "smooth" });
   });
 
   const prev = document.querySelector('[data-action="prev-step"]');
   if (prev) prev.addEventListener("click", () => {
     state.captureStep--;
     render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    smoothScrollTo({ top: 0, behavior: "smooth" });
   });
 
   const save = document.querySelector('[data-action="save-entry"]');
@@ -5065,7 +5102,7 @@ document.querySelectorAll(".nav-item").forEach(b => {
       }
     }
     setView(v);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    smoothScrollTo({ top: 0, behavior: "smooth" });
   });
 });
 // Static-topbar buttons. Bound once at startup so we don't stack listeners
