@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Reframe">
+  <title>Reframe</title>
+  <defs>
+    <!-- Background: a deep ink with a soft warm core, so the icon has
+         dimension instead of reading flat. Center-biased glow keeps the mark
+         feeling lit, not stamped. -->
+    <radialGradient id="bg" cx="50%" cy="38%" r="78%">
+      <stop offset="0%"   stop-color="#2a221d"/>
+      <stop offset="55%"  stop-color="#1d1916"/>
+      <stop offset="100%" stop-color="#120f0e"/>
+    </radialGradient>
+    <!-- Copper gradient with a fuller tonal range than v1: a brighter
+         highlight at top-left, the brand copper mid, and a deep ember at the
+         tail. Gives the italic r weight and warmth at large sizes without
+         going flat at small ones. -->
+    <!-- gradientUnits="userSpaceOnUse" because the same gradient is applied
+         to both the <text> (which has a bounding box) and the <line>
+         (which has zero box width — objectBoundingBox would render nothing
+         on it). Coordinates match the icon's 512×512 viewport. -->
+    <linearGradient id="mark" gradientUnits="userSpaceOnUse" x1="100" y1="80" x2="430" y2="420">
+      <stop offset="0%"   stop-color="#e9885a"/>
+      <stop offset="42%"  stop-color="#c46838"/>
+      <stop offset="78%"  stop-color="#a14d24"/>
+      <stop offset="100%" stop-color="#7a3a1a"/>
+    </linearGradient>
+    <!-- Subtle inner shadow on the squircle edge so it doesn't look like a
+         clipart rounded rect. -->
+    <filter id="edge" x="-2%" y="-2%" width="104%" height="104%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feSpecularLighting in="blur" surfaceScale="3" specularConstant="0.4" specularExponent="20" lighting-color="#ffffff">
+        <feDistantLight azimuth="220" elevation="45"/>
+      </feSpecularLighting>
+      <feComposite in2="SourceGraphic" operator="in"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle base. iOS-style rounded-rect (radius ~18% of side) reads as
+       app-icon rather than badge. -->
+  <rect width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
+
+  <!-- Very faint copper bloom in the upper-left for warmth. Stays under 10%
+       opacity so it never competes with the mark. -->
+  <circle cx="170" cy="170" r="180" fill="#b8552c" opacity="0.06"/>
+
+  <!-- Hero italic r. Fraunces if available, Georgia otherwise — both render
+       a confident humanist italic. Positioned so the letter's optical
+       weight, not its bounding box, centers. -->
+  <text x="262" y="368"
+        font-family="Fraunces, 'Iowan Old Style', Baskerville, Georgia, serif"
+        font-size="340"
+        font-weight="500"
+        font-style="italic"
+        fill="url(#mark)"
+        text-anchor="middle"
+        letter-spacing="-6">r</text>
+
+  <!-- Framing rule: a thin copper line just past the r's optical baseline,
+       extending slightly beyond the letter on each side. Reads as a
+       literary underline / "framed thought" — the visual nod to the
+       app's name. Subtle (single-pixel feel) so it never overpowers. -->
+  <line x1="166" y1="404" x2="346" y2="404"
+        stroke="url(#mark)" stroke-width="6" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- Tiny end-cap dots on the rule for typographic finish — they echo
+       Fraunces' ball-terminal style and add craft without complexity. -->
+  <circle cx="166" cy="404" r="3.5" fill="#b8552c" opacity="0.9"/>
+  <circle cx="346" cy="404" r="3.5" fill="#b8552c" opacity="0.9"/>
+</svg>

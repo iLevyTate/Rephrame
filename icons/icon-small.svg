@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Reframe">
+  <title>Reframe</title>
+  <!-- Favicon: the underline detail gets dropped below ~24px to keep the r
+       crisp. Single solid copper color, no gradient — gradients dither badly
+       at favicon sizes and the eye doesn't register them anyway. -->
+  <rect width="32" height="32" rx="6" ry="6" fill="#1a1715"/>
+  <text x="17" y="24"
+        font-family="Fraunces, 'Iowan Old Style', Baskerville, Georgia, serif"
+        font-size="22" font-weight="500" font-style="italic"
+        fill="#c46838" text-anchor="middle">r</text>
+</svg>
