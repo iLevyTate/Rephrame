@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Reframe">
+  <defs>
+    <linearGradient id="mark" x1="20%" y1="20%" x2="80%" y2="90%">
+      <stop offset="0%" stop-color="#c46838"/>
+      <stop offset="60%" stop-color="#b8552c"/>
+      <stop offset="100%" stop-color="#8c4520"/>
+    </linearGradient>
+  </defs>
+  <!-- Maskable: fill the full 512x512 safe-zone with solid background.
+       Mark stays inside the inner 80% safe area to survive OS masking. -->
+  <rect width="512" height="512" fill="#1a1715"/>
+  <text x="256" y="340"
+        font-family="Georgia, 'Iowan Old Style', Baskerville, serif"
+        font-size="260"
+        font-weight="500"
+        font-style="italic"
+        fill="url(#mark)"
+        text-anchor="middle"
+        letter-spacing="-6">r</text>
+</svg>

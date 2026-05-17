@@ -8,7 +8,19 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Reframe">
 <title>Reframe — A CBT Journal</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%231a1715'/%3E%3Ctext x='50' y='70' font-family='Georgia,serif' font-size='62' font-weight='500' font-style='italic' fill='%23b8552c' text-anchor='middle'%3Er%3C/text%3E%3C/svg%3E">
+<meta name="description" content="A private, offline-first CBT journal. Capture thoughts, identify distortions, reframe them. All data stays on your device.">
+
+<!-- PWA manifest + icons. IDs let js/pwa.js swap to inline blob URLs when
+     the app is opened from file:// (where external manifest fetch fails). -->
+<link rel="manifest" href="manifest.json" id="pwa-manifest">
+<link rel="apple-touch-icon" href="icons/icon-192.svg" id="pwa-apple-icon">
+<link rel="icon" type="image/svg+xml" href="icons/icon-small.svg" id="pwa-favicon">
+<link rel="icon" type="image/svg+xml" sizes="192x192" href="icons/icon-192.svg">
+<link rel="icon" type="image/svg+xml" sizes="512x512" href="icons/icon-512.svg">
+
+<!-- PWA bootstrap: service worker registration + install prompt + file:// fallback -->
+<script src="js/pwa.js"></script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -181,6 +193,25 @@ main {
 }
 .icon-pill:hover { color: var(--copper); border-color: var(--copper-line); }
 .icon-pill svg { width: 16px; height: 16px; }
+
+.install-pill {
+  height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  border-radius: var(--r-full);
+  color: var(--copper);
+  background: var(--copper-soft);
+  border: 1px solid var(--copper-line);
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: all 0.15s var(--ease);
+  white-space: nowrap;
+}
+.install-pill:hover { background: var(--copper-glow); border-color: var(--copper); color: var(--copper-light); }
+.install-pill[hidden] { display: none; }
 
 .page-header {
   margin-bottom: 24px;
@@ -1574,7 +1605,7 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 @media print {
   body { background: white; color: black; }
   body::before { display: none; }
-  .bottom-nav, .topbar-actions, .icon-pill, .entry-card-actions, .resume-banner, .journal-toolbar, .filter-chips { display: none !important; }
+  .bottom-nav, .topbar-actions, .icon-pill, .install-pill, .entry-card-actions, .resume-banner, .journal-toolbar, .filter-chips { display: none !important; }
   .entry-card, .ref-section, .pattern-card { box-shadow: none; border: 1px solid #ccc; }
   main { padding-bottom: 0 !important; }
 }
@@ -1593,6 +1624,7 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
           </div>
         </div>
         <div class="topbar-actions">
+          <button id="installBtn" class="install-pill" type="button" aria-label="Install Reframe as an app" hidden>＋ Install</button>
           <button class="icon-pill" data-action="open-import" aria-label="Import">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M8 2v9M4 7l4 4 4-4M2 13h12"/>
@@ -3125,6 +3157,19 @@ document.addEventListener("keydown", e => {
     }
   }
 });
+
+// Honor ?nav=<view> from PWA shortcuts (e.g. "Capture" tile on the home
+// screen passes ?nav=capture). Whitelist views so a bad value can't push us
+// into an unknown render branch.
+(function applyLaunchNav(){
+  try {
+    const params = new URLSearchParams(location.search || '');
+    const v = params.get('nav');
+    if (v && ['journal','capture','patterns','reference'].includes(v)) {
+      state.view = v;
+    }
+  } catch(_) {}
+})();
 
 render();
 </script>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Reframe">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#221e1b"/>
+      <stop offset="100%" stop-color="#1a1715"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="20%" y1="20%" x2="80%" y2="90%">
+      <stop offset="0%" stop-color="#c46838"/>
+      <stop offset="60%" stop-color="#b8552c"/>
+      <stop offset="100%" stop-color="#8c4520"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
+  <text x="256" y="370"
+        font-family="Georgia, 'Iowan Old Style', Baskerville, serif"
+        font-size="340"
+        font-weight="500"
+        font-style="italic"
+        fill="url(#mark)"
+        text-anchor="middle"
+        letter-spacing="-8">r</text>
+</svg>
