@@ -1598,6 +1598,258 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 .file-input { display: none; }
 
 /* ──────────────────────────────────────────────────────────────────
+   TIER 3: light theme, settings, nudge banner, print
+   ────────────────────────────────────────────────────────────────── */
+
+/* Light theme overrides. The app's primary design is dark "ink with paper
+   cards floating on top." Light mode inverts the body chrome so the page
+   itself reads as paper, while in-card content (capture form, modals,
+   reference) — already paper-themed — stays close to its existing look. */
+html[data-theme="light"] body {
+  background: var(--paper);
+  color: var(--on-paper);
+}
+html[data-theme="light"] body::before {
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(184,85,44,0.08) 0%, transparent 45%),
+    radial-gradient(circle at 82% 78%, rgba(184,85,44,0.05) 0%, transparent 50%);
+}
+html[data-theme="light"] .brand-name { color: var(--on-paper); }
+html[data-theme="light"] .brand-sub  { color: var(--on-paper-mute); }
+html[data-theme="light"] .page-eyebrow { color: var(--on-paper-mute); }
+html[data-theme="light"] .page-title { color: var(--on-paper); }
+html[data-theme="light"] .page-sub  { color: var(--on-paper-soft); }
+html[data-theme="light"] .kicker { color: var(--on-paper-mute); }
+html[data-theme="light"] .date-group-rule { background: var(--rule-paper); }
+
+html[data-theme="light"] .icon-pill {
+  color: var(--on-paper-soft);
+  background: var(--paper-2);
+  border-color: var(--rule-paper);
+}
+html[data-theme="light"] .icon-pill:hover { color: var(--copper); border-color: var(--copper-line); }
+html[data-theme="light"] .icon-pill--quick {
+  color: var(--copper);
+  background: rgba(184, 85, 44, 0.08);
+  border-color: var(--copper-line);
+}
+
+html[data-theme="light"] .install-pill {
+  background: rgba(184, 85, 44, 0.10);
+}
+
+html[data-theme="light"] .bottom-nav {
+  background: linear-gradient(to top, var(--paper) 60%, rgba(245,239,230,0.85) 100%);
+  border-top: 1px solid var(--rule-paper);
+}
+html[data-theme="light"] .nav-item { color: var(--on-paper-mute); }
+html[data-theme="light"] .nav-item:hover { color: var(--on-paper-soft); }
+html[data-theme="light"] .nav-item.active { color: var(--copper); }
+
+html[data-theme="light"] .view-chip {
+  background: var(--paper-2);
+  border-color: var(--rule-paper);
+  color: var(--on-paper-soft);
+}
+html[data-theme="light"] .view-chip:hover { color: var(--copper); border-color: var(--copper-line); }
+html[data-theme="light"] .view-chip.active {
+  background: rgba(184, 85, 44, 0.10);
+  border-color: var(--copper);
+  color: var(--copper);
+}
+html[data-theme="light"] .view-chip-count { background: var(--paper-3); color: var(--on-paper-mute); }
+html[data-theme="light"] .view-chip.active .view-chip-count { background: var(--copper); color: var(--paper); }
+
+html[data-theme="light"] .filter-chip {
+  background: var(--paper-2);
+  border-color: var(--rule-paper);
+  color: var(--on-paper-soft);
+}
+html[data-theme="light"] .filter-chip:hover { color: var(--copper); border-color: var(--copper-line); }
+html[data-theme="light"] .filter-chip.active {
+  background: var(--copper);
+  color: var(--paper);
+  border-color: var(--copper);
+}
+
+html[data-theme="light"] .search-box {
+  background: var(--paper-2);
+  border-color: var(--rule-paper);
+}
+html[data-theme="light"] .search-box svg { color: var(--on-paper-mute); }
+html[data-theme="light"] .search-input { color: var(--on-paper); }
+html[data-theme="light"] .search-input::placeholder { color: var(--on-paper-mute); }
+
+html[data-theme="light"] .resume-banner,
+html[data-theme="light"] .nudge-banner {
+  background: var(--paper-2);
+  border-color: var(--rule-paper);
+}
+html[data-theme="light"] .resume-banner strong,
+html[data-theme="light"] .nudge-banner strong { color: var(--on-paper); }
+html[data-theme="light"] .resume-banner .preview,
+html[data-theme="light"] .nudge-banner .preview { color: var(--on-paper-mute); }
+
+html[data-theme="light"] .empty-state-mark { color: var(--copper-deep); }
+html[data-theme="light"] .empty-state-title { color: var(--on-paper); }
+html[data-theme="light"] .empty-state-body { color: var(--on-paper-soft); }
+html[data-theme="light"] .empty-safety { color: var(--on-paper-mute); }
+
+html[data-theme="light"] .coping-strip-eyebrow { color: var(--copper-deep); }
+html[data-theme="light"] .coping-strip-meta { color: var(--on-paper-mute); }
+html[data-theme="light"] .coping-card { border-color: var(--rule-paper); background: var(--paper); }
+html[data-theme="light"] .coping-card-quote { color: var(--on-paper); }
+
+html[data-theme="light"] .entry-flag.flag-sample {
+  background: var(--paper-3);
+  color: var(--on-paper-mute);
+  border-color: var(--rule-paper);
+}
+html[data-theme="light"] .belief-pill { color: var(--on-paper-soft); }
+html[data-theme="light"] .belief-mini { color: var(--on-paper); }
+
+html[data-theme="light"] .pattern-card { /* already paper-themed; no override */ }
+
+html[data-theme="light"] .sw-precache-banner {
+  background: var(--paper-2) !important;
+  color: var(--on-paper) !important;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--paper-3); }
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--paper-4); }
+
+/* Settings modal */
+.settings-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--rule-paper);
+}
+.settings-section:first-of-type { border-top: none; padding-top: 0; margin-top: 12px; }
+.settings-section-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.settings-section-help {
+  font-size: 13px;
+  color: var(--on-paper-mute);
+  line-height: 1.5;
+  margin: 0 0 12px 0;
+}
+.settings-choice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-choice {
+  text-align: left;
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-3);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+}
+.settings-choice:hover { border-color: var(--copper-line); }
+.settings-choice.active {
+  background: rgba(184, 85, 44, 0.08);
+  border-color: var(--copper);
+}
+.settings-choice-label {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-paper);
+}
+.settings-choice.active .settings-choice-label { color: var(--copper-deep); }
+.settings-choice-desc {
+  font-size: 12px;
+  color: var(--on-paper-mute);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* Nudge banner — sits in the journal column at the same width as
+   resume-banner so they visually rhyme. */
+.nudge-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--ink-2);
+  border: 1px solid var(--copper-line);
+  border-radius: var(--r-3);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.nudge-banner-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.nudge-banner-icon { color: var(--copper); flex-shrink: 0; }
+.nudge-banner-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nudge-banner-text strong { color: var(--on-ink); font-family: var(--display); font-size: 15px; font-weight: 600; }
+.nudge-banner-text .preview { color: var(--on-ink-mute); font-size: 12px; }
+.nudge-banner-actions { display: flex; gap: 6px; }
+.action-btn.ghost {
+  background: transparent;
+  color: var(--on-ink-mute);
+  border: 1px solid var(--rule-ink);
+}
+.action-btn.ghost:hover { color: var(--on-ink-soft); border-color: var(--rule-ink-2); }
+html[data-theme="light"] .action-btn.ghost { color: var(--on-paper-mute); border-color: var(--rule-paper); }
+html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); border-color: var(--rule-paper-2); }
+
+/* Enhanced print: ensure even the dark-theme chrome prints as readable
+   black-on-white. Forces light theme regardless of user choice during the
+   actual print render. */
+@media print {
+  html, body { background: white !important; color: black !important; }
+  body::before { display: none !important; }
+  .bottom-nav, .topbar-actions, .install-pill, .resume-banner,
+  .nudge-banner, .coping-strip, .view-chips, .filter-chips,
+  .journal-toolbar, .entry-card-actions, .entry-fav-btn,
+  .modal-overlay, .pivot-toggle-large { display: none !important; }
+  .app { display: block !important; }
+  main { padding-bottom: 0 !important; }
+  .topbar { padding: 0 0 16px 0 !important; border-bottom: 1px solid #333 !important; margin-bottom: 16px !important; }
+  .page-header { page-break-after: avoid; }
+  .entry-card {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    background: white !important;
+    color: black !important;
+    page-break-inside: avoid;
+    margin-bottom: 16px;
+  }
+  .entry-card.expanded { page-break-inside: auto; }
+  .ref-section, .pattern-card {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    background: white !important;
+    color: black !important;
+  }
+  .nav-item, .icon-pill, .filter-chip, .view-chip { display: none !important; }
+  /* Force every detail open under print, including the felt-pill colors. */
+  .felt-pill, .belief-pill, .entry-flag, .pivot-followup {
+    background: #f5f5f5 !important;
+    color: black !important;
+    border-color: #ccc !important;
+  }
+  /* Show a footer with the PWA URL + date so a printed copy isn't anonymous. */
+  .print-only { display: block !important; }
+}
+.print-only { display: none; }
+
+/* ──────────────────────────────────────────────────────────────────
    TIER 2: coping cards, view chips, star, pivot follow-up
    ────────────────────────────────────────────────────────────────── */
 
@@ -1867,13 +2119,13 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   background: rgba(184, 85, 44, 0.10);
   border: 1px solid var(--copper-line);
   border-radius: var(--r-full);
-  color: var(--on-ink-soft);
+  color: var(--on-paper-soft);
   font-size: 12px;
   font-weight: 500;
 }
 .belief-mini {
   font-family: var(--mono);
-  color: var(--on-ink);
+  color: var(--on-paper);
   font-weight: 600;
   font-size: 11px;
 }
@@ -1887,8 +2139,8 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   font-weight: 700;
   letter-spacing: 0.02em;
 }
-.delta-tag.good { background: rgba(184, 85, 44, 0.18); color: var(--copper-light); }
-.delta-tag.flat { background: var(--ink-3); color: var(--on-ink-mute); }
+.delta-tag.good { background: rgba(184, 85, 44, 0.18); color: var(--copper-deep); }
+.delta-tag.flat { background: var(--paper-3); color: var(--on-paper-mute); }
 
 /* Entry-card flag pills (Quick / Sample) */
 .entry-meta-flags { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
@@ -1901,8 +2153,8 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.flag-quick { background: rgba(184, 85, 44, 0.18); color: var(--copper-light); border: 1px solid var(--copper-line); }
-.flag-sample { background: var(--ink-3); color: var(--on-ink-mute); border: 1px solid var(--rule-ink); }
+.flag-quick { background: rgba(184, 85, 44, 0.18); color: var(--copper-deep); border: 1px solid var(--copper-line); }
+.flag-sample { background: var(--paper-3); color: var(--on-paper-mute); border: 1px solid var(--rule-paper); }
 .entry-card.is-quick { border-left: 2px solid var(--copper); }
 
 /* Review rerate block */
@@ -2038,14 +2290,9 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--ink-3); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ink-4); }
-
-@media print {
-  body { background: white; color: black; }
-  body::before { display: none; }
-  .bottom-nav, .topbar-actions, .icon-pill, .install-pill, .entry-card-actions, .resume-banner, .journal-toolbar, .filter-chips { display: none !important; }
-  .entry-card, .ref-section, .pattern-card { box-shadow: none; border: 1px solid #ccc; }
-  main { padding-bottom: 0 !important; }
-}
+/* The active @media print block lives further up alongside the Tier 3
+   light-theme rules; the older one used to be here and was removed to
+   avoid two competing rule sets fighting each other in cascade order. */
 </style>
 </head>
 <body>
@@ -2075,6 +2322,12 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
           <button class="icon-pill" data-action="open-export" aria-label="Export">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M8 13V4M4 8l4-4 4 4M2 13h12"/>
+            </svg>
+          </button>
+          <button class="icon-pill" data-action="open-settings" aria-label="Settings" title="Settings — theme, reminders">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="8" cy="8" r="2"/>
+              <path d="M13 8a5 5 0 0 0-.1-1l1.1-.8-1-1.7-1.3.5a5 5 0 0 0-1.7-1l-.2-1.4h-2L7.6 4a5 5 0 0 0-1.7 1l-1.3-.5-1 1.7L4.7 7a5 5 0 0 0 0 2l-1.1.8 1 1.7 1.3-.5a5 5 0 0 0 1.7 1l.2 1.4h2l.2-1.4a5 5 0 0 0 1.7-1l1.3.5 1-1.7-1.1-.8c.1-.3.1-.6.1-1z"/>
             </svg>
           </button>
         </div>
@@ -2268,6 +2521,34 @@ const SAMPLE_ENTRY = {
 const STORAGE_KEY = "reframe-journal-v1";
 const DRAFT_KEY   = "reframe-journal-draft-v1";
 const ONBOARDED_KEY = "reframe-onboarded-v1";
+const SETTINGS_KEY = "reframe-settings-v1";
+
+const DEFAULT_SETTINGS = {
+  theme: "auto",             // "auto" | "light" | "dark"
+  reminderInterval: "off",   // "off" | "daily" | "3days" | "weekly"
+  nudgeSnoozedUntil: 0,      // epoch ms; suppress the nudge banner until this time
+};
+function loadSettings() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    return { ...DEFAULT_SETTINGS, ...(raw || {}) };
+  } catch { return { ...DEFAULT_SETTINGS }; }
+}
+function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+// Reminder interval → milliseconds. `off` returns 0 to short-circuit checks.
+const REMINDER_MS = {
+  off:     0,
+  daily:   24 * 3600 * 1000,
+  "3days": 3 * 24 * 3600 * 1000,
+  weekly:  7 * 24 * 3600 * 1000,
+};
+const REMINDER_LABELS = {
+  off:     "Off",
+  daily:   "Daily",
+  "3days": "Every 3 days",
+  weekly:  "Weekly",
+};
 
 // Fields added after v1 shipped. Existing JSON exports won't carry them, so
 // we normalize on read to a stable shape. null (not 0) means "not rated" —
@@ -2471,7 +2752,67 @@ const state = {
   // live-update without churning state.draft (which is reserved for the full
   // 7-step flow).
   quickDraft: null,
+  settings: loadSettings(),
+  // Print mode: when true, every entry renders expanded. Used by the
+  // Print/PDF flow so the browser print dialog gets a full transcript.
+  printMode: false,
 };
+
+// Resolve "auto" against the system preference at call time so toggling the
+// OS theme while the app is open updates the rendered theme.
+function resolveTheme(setting) {
+  if (setting === "light" || setting === "dark") return setting;
+  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) return "light";
+  return "dark";
+}
+function applyTheme() {
+  const resolved = resolveTheme(state.settings.theme);
+  document.documentElement.setAttribute("data-theme", resolved);
+  // Update the PWA theme-color meta so the browser chrome (status bar / tab
+  // strip on mobile) matches the resolved theme rather than always reading
+  // the dark value baked into <head>.
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", resolved === "light" ? "#f5efe6" : "#1a1715");
+}
+// Watch the OS preference so "auto" updates live without a reload.
+if (window.matchMedia) {
+  try {
+    window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+      if (state.settings.theme === "auto") applyTheme();
+    });
+  } catch(_) { /* older Safari — ignore */ }
+}
+
+// Stale-nudge logic. Returns the most recent entry's age in ms, or Infinity
+// if there are no entries (in which case the nudge would show for someone
+// who's never written — which we don't want, so the caller short-circuits).
+function msSinceLastEntry() {
+  if (!state.entries.length) return Infinity;
+  const latest = state.entries.reduce((acc, e) => {
+    const t = new Date(e.createdAt || 0).getTime();
+    return t > acc ? t : acc;
+  }, 0);
+  return Date.now() - latest;
+}
+function shouldShowNudge() {
+  const intervalMs = REMINDER_MS[state.settings.reminderInterval] || 0;
+  if (!intervalMs) return false;
+  if (!state.entries.length) return false; // don't nag people who've never written
+  if (Date.now() < (state.settings.nudgeSnoozedUntil || 0)) return false;
+  return msSinceLastEntry() >= intervalMs;
+}
+function humanDuration(ms) {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return "moments";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min + " minute" + (min === 1 ? "" : "s");
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return hr + " hour" + (hr === 1 ? "" : "s");
+  const day = Math.floor(hr / 24);
+  if (day < 14) return day + " day" + (day === 1 ? "" : "s");
+  const wk = Math.floor(day / 7);
+  return wk + " week" + (wk === 1 ? "" : "s");
+}
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -2647,6 +2988,7 @@ function renderJournal() {
     </div>
 
     ${hasDraft ? renderResumeBanner() : ""}
+    ${shouldShowNudge() ? renderNudgeBanner() : ""}
 
     ${favorites.length > 0 && state.viewFilter !== "favorites" ? renderCopingCards(favorites) : ""}
 
@@ -2699,6 +3041,27 @@ function renderJournal() {
   `;
 }
 
+function renderNudgeBanner() {
+  const ago = humanDuration(msSinceLastEntry());
+  return `
+    <div class="nudge-banner" role="status">
+      <div class="nudge-banner-info">
+        <svg class="nudge-banner-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.6 4.6l2 2M13.4 13.4l2 2M4.6 15.4l2-2M13.4 6.6l2-2"/>
+        </svg>
+        <div class="nudge-banner-text">
+          <strong>Want to write today?</strong>
+          <span class="preview">Your last entry was ${esc(ago)} ago.</span>
+        </div>
+      </div>
+      <div class="nudge-banner-actions">
+        <button class="action-btn" data-action="goto-capture">Capture</button>
+        <button class="action-btn ghost" data-action="snooze-nudge">Not today</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderResumeBanner() {
   const preview = state.draft.trigger || state.draft.automaticThought || "(unfinished entry)";
   return `
@@ -2722,7 +3085,9 @@ function renderResumeBanner() {
 }
 
 function renderEntryCard(entry, index) {
-  const expanded = state.expandedIds.has(entry.id);
+  // Print mode forces every card open so the print dialog gets a full
+  // transcript regardless of which cards the user had expanded.
+  const expanded = state.printMode || state.expandedIds.has(entry.id);
   const emoLabel = entry.emotionVariant ? cap(entry.emotionVariant) : entry.emotionFamily;
 
   const hasIntensityDelta = entry.emotionIntensityAfter !== null && entry.emotionIntensityAfter !== undefined;
@@ -3588,14 +3953,21 @@ function renderModal() {
   if (state.modal === "export") {
     inner = `
       <h3 class="display">Export</h3>
-      <p class="modal-sub">Markdown matches your spec'd entry format. JSON is for backup or re-import on another device.</p>
+      <p class="modal-sub">Markdown for therapists, journals, or Obsidian. JSON for backup. Print / PDF for paper or a clean read-back.</p>
       <div class="modal-options">
         <button class="modal-option" data-action="export-md">
           <div class="modal-option-title">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v10h10V3z"/><path d="M5 6h6M5 9h4"/></svg>
             Markdown (.md)
           </div>
-          <div class="modal-option-desc">Entry N format with all six steps, ready to paste into Obsidian</div>
+          <div class="modal-option-desc">Entry N format with all seven sections, ready to paste into Obsidian or share with a clinician</div>
+        </button>
+        <button class="modal-option" data-action="export-print">
+          <div class="modal-option-title">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5V2h8v3M4 11H2V6h12v5h-2M5 9h6v5H5z"/></svg>
+            Print / Save as PDF
+          </div>
+          <div class="modal-option-desc">Opens your browser's print dialog with every entry expanded — pick "Save as PDF" to keep an offline copy</div>
         </button>
         <button class="modal-option" data-action="export-json">
           <div class="modal-option-title">
@@ -3693,6 +4065,8 @@ function renderModal() {
         <button class="btn-modal btn-modal-secondary" data-action="onboard-skip">Skip for now</button>
       </div>
     `;
+  } else if (state.modal === "settings") {
+    inner = renderSettingsModal();
   } else if (state.modal === "safety") {
     inner = renderSafetyModal();
   }
@@ -3707,6 +4081,59 @@ const SAFETY_LINK_INLINE =
   'Reframe is a journaling tool, not a substitute for therapy or crisis care. ' +
   'In the US, call or text <strong>988</strong> (Suicide &amp; Crisis Lifeline) or text <strong>HOME</strong> to <strong>741741</strong> (Crisis Text Line). ' +
   '<button class="link-button" data-action="open-safety">See more crisis resources →</button>';
+
+function renderSettingsModal() {
+  const s = state.settings;
+  const themeChoices = [
+    { v: "auto",  label: "Auto",  desc: "Follow your OS preference" },
+    { v: "light", label: "Light", desc: "Paper background, ink text" },
+    { v: "dark",  label: "Dark",  desc: "Ink background, paper text" },
+  ];
+  const intervalChoices = [
+    { v: "off",    label: "Off",          desc: "No nudges" },
+    { v: "daily",  label: "Daily",        desc: "If you haven't written in 24 hours" },
+    { v: "3days",  label: "Every 3 days", desc: "Gentler — once your last entry is 3+ days old" },
+    { v: "weekly", label: "Weekly",       desc: "Light-touch — only if you've been quiet for a week" },
+  ];
+  return `
+    <h3 class="display">Settings</h3>
+    <p class="modal-sub">Local only — nothing here is synced or sent anywhere.</p>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Appearance</div>
+      <div class="settings-choice-group" role="radiogroup" aria-label="Theme">
+        ${themeChoices.map(c => `
+          <button class="settings-choice ${s.theme === c.v ? "active" : ""}" data-action="set-theme" data-value="${c.v}" role="radio" aria-checked="${s.theme === c.v}">
+            <div class="settings-choice-label">${esc(c.label)}</div>
+            <div class="settings-choice-desc">${esc(c.desc)}</div>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Gentle nudge</div>
+      <p class="settings-section-help">A soft in-app banner that appears at the top of the journal when your last entry is older than the interval below. No notifications go out — it only shows the next time you open the app.</p>
+      <div class="settings-choice-group" role="radiogroup" aria-label="Reminder interval">
+        ${intervalChoices.map(c => `
+          <button class="settings-choice ${s.reminderInterval === c.v ? "active" : ""}" data-action="set-reminder" data-value="${c.v}" role="radio" aria-checked="${s.reminderInterval === c.v}">
+            <div class="settings-choice-label">${esc(c.label)}</div>
+            <div class="settings-choice-desc">${esc(c.desc)}</div>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Data</div>
+      <p class="settings-section-help">All entries live in this browser's localStorage and never leave it. Use Export to back up; use Import to restore on another device. To wipe everything, clear site data in your browser settings (or delete and re-add the PWA).</p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-primary" data-action="close-modal">Done</button>
+    </div>
+  `;
+}
 
 function renderSafetyModal() {
   return `
@@ -3814,6 +4241,16 @@ function bindJournal() {
       state.filter = "";
       state.viewFilter = "all";
       render();
+    });
+  });
+  // "Not today" snooze — suppress the nudge banner for 18 hours so the user
+  // can dismiss without permanently turning the feature off.
+  document.querySelectorAll('[data-action="snooze-nudge"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.settings.nudgeSnoozedUntil = Date.now() + 18 * 3600 * 1000;
+      saveSettings(state.settings);
+      render();
+      toast("Snoozed for today");
     });
   });
   // Coping card → jump to underlying entry and expand it.
@@ -4069,6 +4506,50 @@ function bindModal() {
     el.addEventListener("click", e => { e.preventDefault(); setState({ modal: "safety" }); });
   });
 
+  // Theme + reminder choice cards — radiogroup pattern. Re-render so the
+  // active styling moves to the newly picked card and the theme applies
+  // immediately.
+  document.querySelectorAll('[data-action="set-theme"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.settings.theme = el.dataset.value;
+      saveSettings(state.settings);
+      applyTheme();
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="set-reminder"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.settings.reminderInterval = el.dataset.value;
+      // Clear the snooze whenever the user changes interval; otherwise an
+      // old snooze could silently suppress a freshly-enabled reminder.
+      state.settings.nudgeSnoozedUntil = 0;
+      saveSettings(state.settings);
+      render();
+    });
+  });
+
+  // Print export. Expanding all entries gives the print dialog a full
+  // transcript; printMode tells renderEntryCard to render expanded regardless
+  // of state.expandedIds. We restore on afterprint.
+  const printBtn = document.querySelector('[data-action="export-print"]');
+  if (printBtn) printBtn.addEventListener("click", () => {
+    state.printMode = true;
+    setState({ modal: null });
+    // Defer to the next frame so the re-render lands before the print dialog
+    // captures the document.
+    requestAnimationFrame(() => {
+      const restore = () => {
+        state.printMode = false;
+        window.removeEventListener("afterprint", restore);
+        render();
+      };
+      window.addEventListener("afterprint", restore);
+      window.print();
+      // Safari iOS doesn't fire afterprint reliably — fall back on a timeout.
+      setTimeout(() => { if (state.printMode) restore(); }, 2000);
+    });
+  });
+
   // Quick-capture modal — live wire the textarea + slider to a working draft,
   // then create a real entry on save with isQuick=true so it surfaces a
   // "Finish this entry" CTA in the journal.
@@ -4236,6 +4717,8 @@ document.querySelectorAll('[data-action="open-quick"]').forEach(b =>
     state.quickDraft = { thought: "", intensity: 60 };
     setState({ modal: "quick" });
   }));
+document.querySelectorAll('[data-action="open-settings"]').forEach(b =>
+  b.addEventListener("click", () => setState({ modal: "settings" })));
 
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
@@ -4280,6 +4763,7 @@ document.addEventListener("keydown", e => {
   } catch(_) {}
 })();
 
+applyTheme();
 render();
 </script>
 </body>

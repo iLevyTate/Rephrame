@@ -36,6 +36,19 @@ Markdown export, searchable.
 the per-distortion chips below the search. Reset everything via the
 "Reset filters" button in the empty results state.
 
+**Settings.** The gear icon in the top-right opens a settings modal:
+
+- **Theme** — Auto (follow OS) / Light / Dark.
+- **Gentle nudge** — Off / Daily / Every 3 days / Weekly. Shows a
+  soft banner the next time you open the app if your last entry is
+  older than the chosen interval. No notifications go out. "Not
+  today" snoozes the banner for 18 hours.
+
+**Print / Save as PDF.** The Export modal has a "Print / Save as PDF"
+option that expands every entry, opens your browser's print dialog,
+and switches to a printer-friendly layout. Pick "Save as PDF" in the
+dialog to keep an offline archival copy.
+
 ## Install
 
 ### Desktop (Chrome, Edge, Brave, Arc…)
