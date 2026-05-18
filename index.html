@@ -2663,6 +2663,179 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
 }
 
 /* ──────────────────────────────────────────────────────────────────
+   ENTRY-KIND BUFFET: mode switcher, free-form / activity / worry
+   capture styles + per-kind card variants.
+   ────────────────────────────────────────────────────────────────── */
+
+.capture-modes {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 16px 12px 16px;
+  margin: 0 -16px 16px -16px;
+  scrollbar-width: thin;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+}
+.capture-mode-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-3);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-short) var(--ease),
+              border-color var(--dur-short) var(--ease),
+              transform var(--dur-micro) var(--ease);
+  min-height: 56px;
+}
+.capture-mode-chip:hover { border-color: var(--copper-line); }
+.capture-mode-chip:active { transform: scale(0.98); }
+.capture-mode-chip.active {
+  background: rgba(184, 85, 44, 0.08);
+  border-color: var(--copper);
+}
+.capture-mode-label {
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-paper);
+}
+.capture-mode-chip.active .capture-mode-label { color: var(--copper-deep); }
+.capture-mode-sub {
+  font-size: 11px;
+  color: var(--on-paper-mute);
+  line-height: 1.3;
+}
+
+/* Free-form: more relaxed body field, quieter card variant. */
+.freeform-body {
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.65;
+  min-height: 220px;
+}
+.entry-card--freeform .entry-card-trigger {
+  font-size: 17px;
+  font-weight: 500;
+}
+.entry-card-preview {
+  margin: 6px 0 0 0;
+  font-size: 13px;
+  color: var(--on-paper-mute);
+  line-height: 1.55;
+}
+.entry-kind-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+}
+.freeform-detail-body {
+  white-space: pre-wrap;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--on-paper);
+  margin: 0;
+}
+
+/* Activity: category chips, status flag, P/M presentation. */
+.activity-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.activity-cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-full);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--dur-short) var(--ease),
+              border-color var(--dur-short) var(--ease),
+              transform var(--dur-micro) var(--ease);
+}
+.activity-cat-chip:hover { border-color: var(--copper-line); }
+.activity-cat-chip:active { transform: scale(0.97); }
+.activity-cat-chip.active {
+  background: rgba(184, 85, 44, 0.10);
+  border-color: var(--copper);
+  color: var(--copper-deep);
+}
+.activity-cat-emoji { font-size: 16px; line-height: 1; }
+.activity-cat-label { font-size: 12px; font-weight: 600; }
+.entry-card--activity .entry-card-trigger { font-size: 16px; }
+.flag-activity {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--r-full);
+  border: 1px solid var(--rule-paper);
+}
+.flag-activity--planned   { background: var(--paper-3); color: var(--on-paper-mute); }
+.flag-activity--due       { background: rgba(184, 85, 44, 0.18); color: var(--copper-deep); border-color: var(--copper-line); }
+.flag-activity--completed { background: var(--copper-soft); color: var(--copper-deep); border-color: var(--copper-line); }
+
+/* Worry: parked vs resolved variants. */
+.entry-card--worry .entry-card-trigger { font-size: 16px; }
+.flag-worry {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--r-full);
+}
+.flag-worry--parked              { background: var(--paper-3); color: var(--on-paper-mute); }
+.flag-worry--resolved--dissolved { background: var(--copper-soft); color: var(--copper-deep); }
+.flag-worry--resolved--escalated { background: rgba(184, 85, 44, 0.18); color: var(--copper-deep); }
+.flag-worry--resolved--postponed { background: var(--paper-3); color: var(--on-paper-soft); }
+.worry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.worry-window-note {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--paper-2);
+  border-left: 3px solid var(--copper);
+  border-radius: var(--r-2);
+}
+.worry-window-eyebrow {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.worry-window-time {
+  display: block;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--on-paper);
+}
+.worry-window-help {
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  color: var(--on-paper-mute);
+}
+
+/* ──────────────────────────────────────────────────────────────────
    EXPLAINER CARDS: plain-English intros for Socratic / Evidence /
    any other step that benefits from "what does this mean."
    ────────────────────────────────────────────────────────────────── */
@@ -3527,6 +3700,9 @@ const DEFAULT_SETTINGS = {
   theme: "auto",             // "auto" | "light" | "dark"
   reminderInterval: "off",   // "off" | "daily" | "3days" | "weekly"
   nudgeSnoozedUntil: 0,      // epoch ms; suppress the nudge banner until this time
+  // Worry-postponement window — when the user has parked worries and the
+  // wall-clock crosses this time, the journal surfaces a calm banner.
+  worryWindowTime: "18:00",  // HH:MM 24-hour, local
 };
 function loadSettings() {
   try {
@@ -3560,9 +3736,18 @@ const REMINDER_LABELS = {
 // Legacy v1 entries (single emotion + single automaticThought) are
 // converted on read; the v1 scalar fields are dropped from the output so
 // we never have stale duplicates to keep in sync.
+// Valid entry kinds. The default — for backward-read and new captures —
+// is the full Mind Over Mood thought record. Each non-default kind has
+// its own narrower field set, captured by its own UI flow. Fields not
+// relevant to a kind stay at their default ("" / 0 / null / false) so
+// renderers can simply check kind first and pick the relevant fields.
+const ENTRY_KINDS = ["thought-record", "freeform", "activity", "worry"];
+
 function normalizeEntry(e) {
+  const kind = (ENTRY_KINDS.includes(e && e.kind)) ? e.kind : "thought-record";
   const out = {
     id: e.id || "",
+    kind,
     createdAt: e.createdAt || "",
     updatedAt: e.updatedAt || undefined,
 
@@ -3594,38 +3779,65 @@ function normalizeEntry(e) {
     pivotDone: !!e.pivotDone,
     pivotDoneAt: e.pivotDoneAt || "",
     pivotReflection: e.pivotReflection || "",
-    // Marks that Step 8 (the post-pivot outcome screen) has been completed
-    // at least once. Independent of pivotDone — the user can mark pivot done
-    // without re-rating moods, and vice versa.
     outcomeRecorded: !!e.outcomeRecorded,
+
+    // Free-form (kind: "freeform") fields — title is optional, body is the
+    // long-form text. Moods + distortions remain reusable on free-form too.
+    body: e.body || "",
+
+    // Behavioral-activation (kind: "activity") fields. Pleasure + Mastery
+    // are rated 0–10 — the canonical Lejuez scale. predicted* are set when
+    // planning; actual* + completedAt are set on log-completion.
+    category: e.category || "",          // connection|movement|creation|self-care|chore|rest|other
+    plannedFor: e.plannedFor || "",      // ISO datetime
+    predictedP: typeof e.predictedP === "number" ? e.predictedP : null,
+    predictedM: typeof e.predictedM === "number" ? e.predictedM : null,
+    completedAt: e.completedAt || "",
+    actualP: typeof e.actualP === "number" ? e.actualP : null,
+    actualM: typeof e.actualM === "number" ? e.actualM : null,
+    activityNotes: e.activityNotes || "",
+
+    // Worry (kind: "worry") fields. urgency 0–10. resolution null until the
+    // worry-window pass; "dissolved" means user marked it gone without
+    // further work, "escalated" means it got converted to a thought-record,
+    // "postponed" pushes scheduledFor forward another window.
+    worryText: e.worryText || "",
+    urgency: typeof e.urgency === "number" ? e.urgency : null,
+    parkedAt: e.parkedAt || "",
+    scheduledFor: e.scheduledFor || "",
+    resolution: e.resolution || null,
+    resolvedAt: e.resolvedAt || "",
+    linkedEntryId: e.linkedEntryId || "",
 
     isQuick: !!e.isQuick,
     isSample: !!e.isSample,
     isFavorite: !!e.isFavorite,
   };
 
-  // Migrate v1 single-emotion/single-thought entries.
-  if (out.moods.length === 0 && (e.emotionFamily || typeof e.emotionIntensity === "number")) {
-    out.moods.push(normalizeMood({
-      family: e.emotionFamily,
-      variant: e.emotionVariant,
-      intensity: e.emotionIntensity,
-      estimated: e.emotionEstimated,
-      intensityAfterReframe: e.emotionIntensityAfter,
-    }));
-  }
-  if (out.thoughts.length === 0 && (e.automaticThought || typeof e.beliefBefore === "number")) {
-    out.thoughts.push(normalizeThought({
-      text: e.automaticThought,
-      beliefBefore: e.beliefBefore,
-      beliefAfter: e.beliefAfter,
-      isHot: true,
-    }));
-  }
-  // Guarantee at least one thought is hot. If the array is empty, no hot
-  // thought; if it's non-empty and nothing is marked, pin the first.
-  if (out.thoughts.length > 0 && !out.thoughts.some(t => t.isHot)) {
-    out.thoughts[0].isHot = true;
+  // Migrate v1 single-emotion/single-thought entries. Only applies to
+  // thought-record-shaped entries; free-form/activity/worry never had v1.
+  if (kind === "thought-record") {
+    if (out.moods.length === 0 && (e.emotionFamily || typeof e.emotionIntensity === "number")) {
+      out.moods.push(normalizeMood({
+        family: e.emotionFamily,
+        variant: e.emotionVariant,
+        intensity: e.emotionIntensity,
+        estimated: e.emotionEstimated,
+        intensityAfterReframe: e.emotionIntensityAfter,
+      }));
+    }
+    if (out.thoughts.length === 0 && (e.automaticThought || typeof e.beliefBefore === "number")) {
+      out.thoughts.push(normalizeThought({
+        text: e.automaticThought,
+        beliefBefore: e.beliefBefore,
+        beliefAfter: e.beliefAfter,
+        isHot: true,
+      }));
+    }
+    // Guarantee at least one thought is hot.
+    if (out.thoughts.length > 0 && !out.thoughts.some(t => t.isHot)) {
+      out.thoughts[0].isHot = true;
+    }
   }
   return out;
 }
@@ -3692,23 +3904,37 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const band = n => INTENSITY_BANDS.find(b => n <= b.max) || INTENSITY_BANDS[4];
 
 function emptyEntry() {
-  // Start with one empty thought (auto-hot) and one empty mood so the v2
-  // capture form has rows to render. The user can add more or leave it at
-  // one — single-thought / single-mood remains a perfectly valid entry.
-  return {
-    id: "", createdAt: "",
-    trigger: "",
+  // Default: full Mind Over Mood thought record (kind: "thought-record").
+  // Other kinds use the dedicated factories below.
+  return normalizeEntry({
+    kind: "thought-record",
     thoughts: [normalizeThought({ isHot: true })],
     moods: [normalizeMood({})],
-    bodyCheck: "", bodyInferred: false,
-    distortions: [], distortionNote: "", thoughtsAccurate: false,
-    evidenceFor: "", evidenceAgainst: "",
-    socraticType: "", socraticQuestion: "",
-    reframeMethod: "", newThought: "",
-    pivot: "", pivotDone: false, pivotDoneAt: "", pivotReflection: "",
-    outcomeRecorded: false,
-    isQuick: false, isSample: false, isFavorite: false,
-  };
+  });
+}
+
+function emptyFreeform() {
+  return normalizeEntry({
+    kind: "freeform",
+    moods: [],       // free-form starts with zero moods; user can add via the optional widget
+    thoughts: [],    // no thoughts captured
+  });
+}
+
+function emptyActivity() {
+  return normalizeEntry({
+    kind: "activity",
+    moods: [],
+    thoughts: [],
+  });
+}
+
+function emptyWorry() {
+  return normalizeEntry({
+    kind: "worry",
+    moods: [],
+    thoughts: [],
+  });
 }
 
 function fmtDate(iso) {
@@ -3742,6 +3968,79 @@ function dateGroupLabel(iso) {
 }
 
 function entryToMd(e, idx) {
+  // Dispatch by kind — each kind has a different shape so it gets its
+  // own render. Thought-record stays the canonical Mind Over Mood layout.
+  if (e.kind === "freeform") return freeformToMd(e, idx);
+  if (e.kind === "activity") return activityToMd(e, idx);
+  if (e.kind === "worry")    return worryToMd(e, idx);
+  return thoughtRecordToMd(e, idx);
+}
+
+function freeformToMd(e, idx) {
+  const L = [];
+  L.push("---", "", "### Free write " + (idx + 1), "");
+  if (e.trigger) L.push("**" + e.trigger + "**", "");
+  if (e.createdAt) L.push("*" + fmtDateTime(e.createdAt) + "*", "");
+  L.push(e.body || "—", "");
+  const moods = (e.moods || []).filter(m => m.family);
+  if (moods.length) {
+    L.push("**Mood" + (moods.length > 1 ? "s" : "") + ":**");
+    moods.forEach(m => {
+      const label = m.variant ? cap(m.variant) + " (" + m.family + ")" : m.family;
+      L.push("- " + label + " — " + m.intensity + "/100");
+    });
+    L.push("");
+  }
+  if (e.isFavorite) L.push("★ *Coping card — pinned.*", "");
+  return L.join("\n");
+}
+
+function activityToMd(e, idx) {
+  const L = [];
+  const cat = ACTIVITY_CATEGORIES.find(c => c.value === e.category) || { label: "Activity", emoji: "" };
+  L.push("---", "", "### Activity " + (idx + 1) + " · " + cat.label, "");
+  L.push("**Plan:** " + (e.body || "—"));
+  if (e.plannedFor) L.push("**When:** " + fmtDateTime(e.plannedFor));
+  L.push("");
+  if (typeof e.predictedP === "number" || typeof e.predictedM === "number") {
+    L.push("**Predicted:**");
+    if (typeof e.predictedP === "number") L.push("- Pleasure: " + e.predictedP + "/10");
+    if (typeof e.predictedM === "number") L.push("- Mastery: "  + e.predictedM + "/10");
+    L.push("");
+  }
+  if (e.completedAt) {
+    L.push("**Actual:** *(logged " + fmtDateTime(e.completedAt) + ")*");
+    if (typeof e.actualP === "number") {
+      const d = typeof e.predictedP === "number" ? " (Δ " + (e.actualP - e.predictedP) + ")" : "";
+      L.push("- Pleasure: " + e.actualP + "/10" + d);
+    }
+    if (typeof e.actualM === "number") {
+      const d = typeof e.predictedM === "number" ? " (Δ " + (e.actualM - e.predictedM) + ")" : "";
+      L.push("- Mastery: " + e.actualM + "/10" + d);
+    }
+    if (e.activityNotes) L.push("", e.activityNotes);
+    L.push("");
+  }
+  return L.join("\n");
+}
+
+function worryToMd(e, idx) {
+  const L = [];
+  L.push("---", "", "### Worry " + (idx + 1), "");
+  L.push(e.worryText || "—", "");
+  if (typeof e.urgency === "number") L.push("- Urgency: " + e.urgency + "/10");
+  if (e.parkedAt) L.push("- Parked: " + fmtDateTime(e.parkedAt));
+  if (e.scheduledFor) L.push("- Scheduled window: " + fmtDateTime(e.scheduledFor));
+  const resLabel = e.resolution === "dissolved" ? "Dissolved on its own"
+                : e.resolution === "escalated" ? "Worked through (escalated to thought record)"
+                : e.resolution === "postponed" ? "Postponed to next window"
+                : "Parked";
+  L.push("- Status: " + resLabel + (e.resolvedAt ? " · " + fmtDateTime(e.resolvedAt) : ""));
+  L.push("");
+  return L.join("\n");
+}
+
+function thoughtRecordToMd(e, idx) {
   const L = [];
   L.push("---", "", "### Entry " + (idx + 1), "");
   L.push("**1. Trigger (Antecedent)**", "", e.trigger || "—", "");
@@ -3911,6 +4210,9 @@ const state = {
   // live-update without churning state.draft (which is reserved for the full
   // 7-step flow).
   quickDraft: null,
+  // Same shape as quickDraft but for the log-activity modal — holds the
+  // entry id + transient slider values until the user saves.
+  logActivityDraft: null,
   settings: loadSettings(),
   // Print mode: when true, every entry renders expanded. Used by the
   // Print/PDF flow so the browser print dialog gets a full transcript.
@@ -4017,8 +4319,13 @@ function hasDraftContent(d) {
   if (!d) return false;
   const anyThought = (d.thoughts || []).some(t => (t.text || "").trim());
   const anyMood    = (d.moods    || []).some(m => m.family);
+  // Each non-thought-record kind has its own minimum content signal.
+  const freeformFilled = d.kind === "freeform" && ((d.body || "").trim() || anyMood);
+  const activityFilled = d.kind === "activity" && ((d.body || "").trim() || d.category);
+  const worryFilled    = d.kind === "worry"    && (d.worryText || "").trim();
   return !!(d.trigger || anyThought || anyMood || d.evidenceFor || d.evidenceAgainst ||
-           d.newThought || d.pivot || (d.distortions && d.distortions.length));
+           d.newThought || d.pivot || (d.distortions && d.distortions.length) ||
+           freeformFilled || activityFilled || worryFilled);
 }
 
 function persist() {
@@ -4214,6 +4521,9 @@ function applyViewFilter(entries, key) {
   if (key === "week")       return entries.filter(e => daysBetween(new Date(), new Date(e.createdAt)) < 7);
   if (key === "pivoted")    return entries.filter(e => e.pivotDone);
   if (key === "pending")    return entries.filter(e => e.pivot && !e.pivotDone);
+  if (key === "freeform")   return entries.filter(e => e.kind === "freeform");
+  if (key === "activities") return entries.filter(e => e.kind === "activity");
+  if (key === "worries")    return entries.filter(e => e.kind === "worry");
   return entries;
 }
 
@@ -4291,6 +4601,9 @@ function renderJournal() {
     week: entries.filter(e => daysBetween(new Date(), new Date(e.createdAt)) < 7).length,
     pivoted: entries.filter(e => e.pivotDone).length,
     pending: entries.filter(e => e.pivot && !e.pivotDone).length,
+    freeform: entries.filter(e => e.kind === "freeform").length,
+    activities: entries.filter(e => e.kind === "activity").length,
+    worries: entries.filter(e => e.kind === "worry").length,
   };
 
   let filtered = entries;
@@ -4325,12 +4638,15 @@ function renderJournal() {
   });
 
   const viewChips = [
-    { key: "all",        label: "All",         count: counts.all,        hint: "Every entry" },
-    { key: "favorites",  label: "★ Coping",    count: counts.favorites,  hint: "Pinned reframes" },
-    { key: "unfinished", label: "⚡ Unfinished", count: counts.unfinished, hint: "Quick captures waiting" },
-    { key: "week",       label: "This week",   count: counts.week,       hint: "Last 7 days" },
-    { key: "pivoted",    label: "Pivoted",     count: counts.pivoted,    hint: "Pivot marked done" },
-    { key: "pending",    label: "Pivot due",   count: counts.pending,    hint: "Pivot written, not yet done" },
+    { key: "all",        label: "All",          count: counts.all,        hint: "Every entry" },
+    { key: "favorites",  label: "★ Coping",     count: counts.favorites,  hint: "Pinned reframes" },
+    { key: "unfinished", label: "⚡ Unfinished",  count: counts.unfinished, hint: "Quick captures waiting" },
+    { key: "freeform",   label: "Free writes",  count: counts.freeform,   hint: "Open-form journal entries" },
+    { key: "activities", label: "Activities",   count: counts.activities, hint: "Planned and logged activities" },
+    { key: "worries",    label: "Worries",      count: counts.worries,    hint: "Parked worries and resolutions" },
+    { key: "week",       label: "This week",    count: counts.week,       hint: "Last 7 days" },
+    { key: "pivoted",    label: "Pivoted",      count: counts.pivoted,    hint: "Pivot marked done" },
+    { key: "pending",    label: "Pivot due",    count: counts.pending,    hint: "Pivot written, not yet done" },
   ].filter(c => c.key === "all" || c.count > 0);
 
   return `
@@ -4341,6 +4657,7 @@ function renderJournal() {
 
     ${hasDraft ? renderResumeBanner() : ""}
     ${shouldShowNudge() ? renderNudgeBanner() : ""}
+    ${shouldShowWorryWindow() ? renderWorryWindowBanner() : ""}
 
     ${favorites.length > 0 && state.viewFilter !== "favorites" ? renderCopingCards(favorites) : ""}
 
@@ -4414,6 +4731,39 @@ function renderNudgeBanner() {
   `;
 }
 
+// True when there are unresolved parked worries scheduled for this
+// session's worry window (within ±30 min of the window time today).
+function shouldShowWorryWindow() {
+  const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
+  if (parked.length === 0) return false;
+  const s = state.settings || {};
+  const [h, m] = (s.worryWindowTime || "18:00").split(":").map(n => parseInt(n, 10));
+  const now = new Date();
+  const winStart = new Date(); winStart.setHours(h, m, 0, 0);
+  const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000); // 20-min window
+  return now >= winStart && now <= winEnd;
+}
+
+function renderWorryWindowBanner() {
+  const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
+  return `
+    <div class="nudge-banner worry-banner" role="status">
+      <div class="nudge-banner-info">
+        <svg class="nudge-banner-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/>
+        </svg>
+        <div class="nudge-banner-text">
+          <strong>It's worry time.</strong>
+          <span class="preview">${parked.length} parked worr${parked.length === 1 ? "y" : "ies"} — ready to look at?</span>
+        </div>
+      </div>
+      <div class="nudge-banner-actions">
+        <button class="action-btn" data-action="set-view-filter" data-value="worries">Open the list</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderResumeBanner() {
   const firstThought = (state.draft.thoughts || []).find(t => (t.text || "").trim());
   const preview = state.draft.trigger || (firstThought && firstThought.text) || "(unfinished entry)";
@@ -4438,6 +4788,16 @@ function renderResumeBanner() {
 }
 
 function renderEntryCard(entry, index) {
+  // Dispatch by kind. Existing thought-record card lives in
+  // renderThoughtRecordCard; the new kinds get their own card variants
+  // tuned to the data they actually carry.
+  if (entry.kind === "freeform") return renderFreeformCard(entry, index);
+  if (entry.kind === "activity") return renderActivityCard(entry, index);
+  if (entry.kind === "worry")    return renderWorryCard(entry, index);
+  return renderThoughtRecordCard(entry, index);
+}
+
+function renderThoughtRecordCard(entry, index) {
   const expanded = state.printMode || state.expandedIds.has(entry.id);
   const moods = entry.moods || [];
   const hot = hotThought(entry);
@@ -4508,6 +4868,122 @@ function renderEntryCard(entry, index) {
       </div>
       <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
         ${renderEntryDetails(entry)}
+      </div>
+    </article>
+  `;
+}
+
+// Free-form card: quiet eyebrow tag instead of "No. NN", title + 3-line
+// body preview. Tapping expands to the full body. Mood pill if any.
+function renderFreeformCard(entry, index) {
+  const expanded = state.printMode || state.expandedIds.has(entry.id);
+  const moods = entry.moods || [];
+  const namedMoods = moods.filter(m => m.family);
+  const primaryMood = namedMoods[0];
+  const moodLabel = primaryMood ? (primaryMood.variant ? cap(primaryMood.variant) : primaryMood.family) : null;
+  const title = entry.trigger || "Free write";
+  const preview = (entry.body || "").replace(/\s+/g, " ").trim().slice(0, 160);
+  return `
+    <article class="entry-card entry-card--freeform ${expanded ? "expanded" : ""} ${entry.isFavorite ? "is-favorite" : ""}" id="entry-${entry.id}">
+      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
+        <div class="entry-meta-row">
+          <span class="entry-kind-tag">Free write</span>
+          <span class="entry-meta-dot">·</span>
+          <span class="entry-meta-time">${esc(fmtTime(entry.createdAt))}</span>
+          <span class="entry-meta-flags"></span>
+          <button class="entry-fav-btn ${entry.isFavorite ? "active" : ""}" data-action="toggle-favorite" data-id="${entry.id}" aria-label="${entry.isFavorite ? "Unpin" : "Pin"}">
+            <svg viewBox="0 0 16 16" fill="${entry.isFavorite ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+              <path d="M8 1.8l1.8 4 4.4.5-3.3 3 1 4.3L8 11.5l-3.9 2.1 1-4.3-3.3-3 4.4-.5z"/>
+            </svg>
+          </button>
+        </div>
+        <h3 class="entry-card-trigger display">${esc(title)}</h3>
+        ${preview ? `<p class="entry-card-preview">${esc(preview)}${entry.body.length > 160 ? "…" : ""}</p>` : ""}
+        ${moodLabel ? `
+          <div class="entry-tags-row">
+            <span class="felt-pill">
+              Felt <span class="felt-emo">${esc(moodLabel)}</span>
+              <span class="intensity-mini">${primaryMood.intensity}</span>
+            </span>
+          </div>
+        ` : ""}
+      </div>
+      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
+        ${renderFreeformDetails(entry)}
+      </div>
+    </article>
+  `;
+}
+
+// Activity card: category emoji + description + Planned/Completed pill
+// + predicted/actual P/M arc if completed.
+function renderActivityCard(entry, index) {
+  const expanded = state.printMode || state.expandedIds.has(entry.id);
+  const cat = ACTIVITY_CATEGORIES.find(c => c.value === entry.category) || ACTIVITY_CATEGORIES[ACTIVITY_CATEGORIES.length - 1];
+  const isCompleted = !!entry.completedAt;
+  const isPast = entry.plannedFor && new Date(entry.plannedFor).getTime() < Date.now();
+  const statusLabel = isCompleted ? "Completed" : (isPast ? "Awaiting log" : "Planned");
+  const statusClass = isCompleted ? "completed" : (isPast ? "due" : "planned");
+  const pDelta = (isCompleted && typeof entry.predictedP === "number" && typeof entry.actualP === "number") ? entry.actualP - entry.predictedP : null;
+  const mDelta = (isCompleted && typeof entry.predictedM === "number" && typeof entry.actualM === "number") ? entry.actualM - entry.predictedM : null;
+  return `
+    <article class="entry-card entry-card--activity ${expanded ? "expanded" : ""}" id="entry-${entry.id}">
+      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
+        <div class="entry-meta-row">
+          <span class="entry-kind-tag">${cat.emoji} ${esc(cat.label)}</span>
+          <span class="entry-meta-dot">·</span>
+          <span class="entry-meta-time">${esc(fmtDateTime(entry.plannedFor || entry.createdAt))}</span>
+          <span class="entry-meta-flags">
+            <span class="entry-flag flag-activity flag-activity--${statusClass}">${esc(statusLabel)}</span>
+          </span>
+        </div>
+        <h3 class="entry-card-trigger display">${esc(entry.body) || "(activity)"}</h3>
+        <div class="entry-tags-row">
+          ${typeof entry.predictedP === "number" ? `
+            <span class="felt-pill">Pleasure <span class="intensity-mini">${entry.predictedP}</span>${isCompleted && entry.actualP !== null ? ` → <span class="intensity-mini">${entry.actualP}</span> <span class="delta-tag ${pDelta > 0 ? "good" : pDelta < 0 ? "flat" : "flat"}">${pDelta > 0 ? "+" : ""}${pDelta}</span>` : " predicted"}</span>
+          ` : ""}
+          ${typeof entry.predictedM === "number" ? `
+            <span class="felt-pill">Mastery <span class="intensity-mini">${entry.predictedM}</span>${isCompleted && entry.actualM !== null ? ` → <span class="intensity-mini">${entry.actualM}</span> <span class="delta-tag ${mDelta > 0 ? "good" : mDelta < 0 ? "flat" : "flat"}">${mDelta > 0 ? "+" : ""}${mDelta}</span>` : " predicted"}</span>
+          ` : ""}
+        </div>
+      </div>
+      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
+        ${renderActivityDetails(entry)}
+      </div>
+    </article>
+  `;
+}
+
+// Worry card: urgency + status (parked/dissolved/escalated/postponed)
+// + time since parking.
+function renderWorryCard(entry, index) {
+  const expanded = state.printMode || state.expandedIds.has(entry.id);
+  const r = entry.resolution;
+  const statusLabel = r === "dissolved" ? "Dissolved on its own"
+                    : r === "escalated" ? "Worked through"
+                    : r === "postponed" ? "Postponed"
+                    : "Parked";
+  const statusClass = r ? `resolved resolved--${r}` : "parked";
+  const ago = entry.parkedAt ? humanDuration(Date.now() - new Date(entry.parkedAt).getTime()) : "";
+  return `
+    <article class="entry-card entry-card--worry ${expanded ? "expanded" : ""}" id="entry-${entry.id}">
+      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
+        <div class="entry-meta-row">
+          <span class="entry-kind-tag">⏳ Worry</span>
+          <span class="entry-meta-dot">·</span>
+          <span class="entry-meta-time">${esc(fmtTime(entry.parkedAt || entry.createdAt))}${ago ? ` · ${esc(ago)} ago` : ""}</span>
+          <span class="entry-meta-flags">
+            <span class="entry-flag flag-worry flag-worry--${statusClass}">${esc(statusLabel)}</span>
+          </span>
+        </div>
+        <h3 class="entry-card-trigger display">${esc(entry.worryText) || "(parked worry)"}</h3>
+        <div class="entry-tags-row">
+          ${typeof entry.urgency === "number" ? `<span class="felt-pill">Urgency <span class="intensity-mini">${entry.urgency}</span>/10</span>` : ""}
+          ${entry.scheduledFor && !r ? `<span class="dist-chip">Window: ${esc(fmtDateTime(entry.scheduledFor))}</span>` : ""}
+        </div>
+      </div>
+      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
+        ${renderWorryDetails(entry)}
       </div>
     </article>
   `;
@@ -4647,17 +5123,171 @@ function renderEntryDetails(entry) {
   `;
 }
 
+// Free-form expanded body — just the full text, plus mood arc + actions.
+function renderFreeformDetails(entry) {
+  const moods = entry.moods || [];
+  return `
+    <div class="entry-body">
+      <div class="detail-row">
+        <p class="freeform-detail-body">${esc(entry.body) || "—"}</p>
+      </div>
+      ${moods.filter(m => m.family).length ? `
+        <div class="detail-row">
+          <div class="detail-label">Mood${moods.filter(m => m.family).length > 1 ? "s" : ""}</div>
+          <div class="mood-arc-list">
+            ${moods.filter(m => m.family).map(m => {
+              const label = m.variant ? cap(m.variant) + " · " + m.family : m.family;
+              return `<div class="mood-arc"><div class="mood-arc-head"><span class="mood-arc-label">${esc(label)}</span></div><div class="mood-arc-stages"><span class="mood-arc-stage">${m.intensity}</span></div></div>`;
+            }).join("")}
+          </div>
+        </div>
+      ` : ""}
+    </div>
+    <div class="entry-card-actions">
+      <span class="entry-card-actions-time">${esc(fmtDateTime(entry.createdAt))}</span>
+      <div class="entry-card-actions-buttons">
+        <button class="action-btn primary" data-action="edit" data-id="${entry.id}">Edit</button>
+        <button class="action-btn" data-action="copy-entry" data-id="${entry.id}" title="Copy as Markdown">Copy</button>
+        <button class="action-btn danger" data-action="delete" data-id="${entry.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderActivityDetails(entry) {
+  const isPast = entry.plannedFor && new Date(entry.plannedFor).getTime() < Date.now();
+  const isCompleted = !!entry.completedAt;
+  const showLogCTA = isPast && !isCompleted;
+  return `
+    <div class="entry-body">
+      ${typeof entry.predictedP === "number" || typeof entry.predictedM === "number" ? `
+        <div class="detail-row">
+          <div class="detail-label">Predicted</div>
+          <div class="review-meta-row">
+            ${typeof entry.predictedP === "number" ? `<div class="review-meta-item">Pleasure: <strong>${entry.predictedP}/10</strong></div>` : ""}
+            ${typeof entry.predictedM === "number" ? `<div class="review-meta-item">Mastery: <strong>${entry.predictedM}/10</strong></div>` : ""}
+          </div>
+        </div>
+      ` : ""}
+      ${isCompleted ? `
+        <div class="detail-row">
+          <div class="detail-label">Actual</div>
+          <div class="review-meta-row">
+            ${typeof entry.actualP === "number" ? `<div class="review-meta-item">Pleasure: <strong>${entry.actualP}/10</strong></div>` : ""}
+            ${typeof entry.actualM === "number" ? `<div class="review-meta-item">Mastery: <strong>${entry.actualM}/10</strong></div>` : ""}
+          </div>
+          ${entry.activityNotes ? `<p class="detail-text" style="margin-top: 10px;">${esc(entry.activityNotes)}</p>` : ""}
+        </div>
+      ` : ""}
+      ${showLogCTA ? `
+        <div class="detail-row pivot-followup">
+          <button class="btn btn-primary outcome-cta" data-action="open-log-activity" data-id="${entry.id}">
+            How did it go? · Log actual P/M
+          </button>
+        </div>
+      ` : ""}
+    </div>
+    <div class="entry-card-actions">
+      <span class="entry-card-actions-time">${esc(fmtDateTime(entry.createdAt))}</span>
+      <div class="entry-card-actions-buttons">
+        ${showLogCTA ? `<button class="action-btn primary" data-action="open-log-activity" data-id="${entry.id}">Log result</button>` : `<button class="action-btn primary" data-action="edit" data-id="${entry.id}">Edit</button>`}
+        <button class="action-btn" data-action="copy-entry" data-id="${entry.id}">Copy</button>
+        <button class="action-btn danger" data-action="delete" data-id="${entry.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderWorryDetails(entry) {
+  const r = entry.resolution;
+  const showWindow = !r; // parked worries can still be resolved
+  return `
+    <div class="entry-body">
+      <div class="detail-row">
+        <p class="detail-text">${esc(entry.worryText) || "—"}</p>
+      </div>
+      ${entry.parkedAt ? `
+        <div class="detail-row">
+          <div class="detail-label">Parked</div>
+          <p class="detail-text">${esc(fmtDateTime(entry.parkedAt))}${entry.scheduledFor ? ` · scheduled window: ${esc(fmtDateTime(entry.scheduledFor))}` : ""}</p>
+        </div>
+      ` : ""}
+      ${r ? `
+        <div class="detail-row">
+          <div class="detail-label">Resolved</div>
+          <p class="detail-text">${esc(r === "dissolved" ? "Dissolved on its own" : r === "escalated" ? "Worked through (converted to a thought record)" : "Postponed to next window")}${entry.resolvedAt ? " — " + esc(fmtDateTime(entry.resolvedAt)) : ""}</p>
+        </div>
+      ` : ""}
+      ${showWindow ? `
+        <div class="detail-row pivot-followup">
+          <div class="detail-label pivot-followup-label">
+            <span>How is this worry doing?</span>
+          </div>
+          <div class="worry-actions">
+            <button class="action-btn primary" data-action="worry-dissolve" data-id="${entry.id}">Dissolved on its own</button>
+            <button class="action-btn" data-action="worry-escalate" data-id="${entry.id}">Open as thought record</button>
+            <button class="action-btn ghost" data-action="worry-postpone" data-id="${entry.id}">Postpone again</button>
+          </div>
+        </div>
+      ` : ""}
+    </div>
+    <div class="entry-card-actions">
+      <span class="entry-card-actions-time">${esc(fmtDateTime(entry.createdAt))}</span>
+      <div class="entry-card-actions-buttons">
+        <button class="action-btn" data-action="copy-entry" data-id="${entry.id}">Copy</button>
+        <button class="action-btn danger" data-action="delete" data-id="${entry.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+// Entry-kind metadata used by the Capture mode switcher. Order here is
+// the visual order of the chip row.
+const CAPTURE_MODES = [
+  { kind: "thought-record", label: "Thought record", sub: "Walk a thought through 7 steps." },
+  { kind: "freeform",       label: "Free write",     sub: "Open page. Write whatever comes." },
+  { kind: "activity",       label: "Plan activity",  sub: "Pick something to do, rate later." },
+  { kind: "worry",          label: "Park a worry",   sub: "Set it aside for the worry window." },
+];
+
 function renderCapture() {
-  const totalSteps = 7;
-  const step = state.captureStep;
   const d = state.draft;
+  // Mode switcher only shows when starting fresh (not when editing an
+  // existing entry — switching the kind of an in-flight entry would
+  // discard its data, which would feel hostile).
+  const showModeSwitcher = !state.editingId;
+  const modeHeader = showModeSwitcher ? `
+    <div class="capture-modes" role="tablist" aria-label="Entry type">
+      ${CAPTURE_MODES.map(m => `
+        <button class="capture-mode-chip ${d.kind === m.kind ? "active" : ""}" data-action="set-capture-mode" data-kind="${esc(m.kind)}" role="tab" aria-selected="${d.kind === m.kind}">
+          <span class="capture-mode-label">${esc(m.label)}</span>
+          <span class="capture-mode-sub">${esc(m.sub)}</span>
+        </button>
+      `).join("")}
+    </div>
+  ` : "";
+
+  const inner = d.kind === "freeform" ? renderFreeformCapture(d)
+              : d.kind === "activity" ? renderActivityCapture(d)
+              : d.kind === "worry"    ? renderWorryCapture(d)
+              :                          renderThoughtRecordCapture(d);
 
   return `
     <div class="page-header">
       <div class="page-eyebrow">${state.editingId ? "Editing" : "Capture"}</div>
       <h1 class="page-title display">${state.editingId ? "Refine entry" : "New entry"}</h1>
     </div>
+    ${modeHeader}
+    ${inner}
+  `;
+}
 
+// The original 7-step structured thought-record flow, lifted as-is from
+// the old renderCapture() body.
+function renderThoughtRecordCapture(d) {
+  const totalSteps = 7;
+  const step = state.captureStep;
+  return `
     <div class="capture-shell">
       <div class="capture-progress">
         <div class="progress-top">
@@ -4697,12 +5327,240 @@ function renderCapture() {
   `;
 }
 
+// Free-form: single screen. Optional title (the existing `trigger` field
+// is reused as the title for kind:"freeform" entries — keeps the schema
+// tighter), a long-form body textarea, and an optional mood widget.
+function renderFreeformCapture(d) {
+  const moods = d.moods || [];
+  return `
+    <div class="capture-shell">
+      <div class="capture-screen">
+        <div class="step-header">
+          <h2 class="step-prompt display">Write what's there</h2>
+          <p class="step-hint">No structure. No prompts you have to answer. Title is optional. You can tag a mood at the bottom if it helps you find the entry later.</p>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">Title (optional)</label>
+          <input class="input" data-field="trigger" placeholder="A line that names this moment, if it has a name" value="${esc(d.trigger)}">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">Body</label>
+          <textarea class="textarea input-large freeform-body" data-field="body" rows="14" autofocus placeholder="Whatever comes. One sentence is fine. So is ten paragraphs.">${esc(d.body)}</textarea>
+        </div>
+
+        <div class="step2-section" style="margin-top: 18px;">
+          <div class="step2-section-head">
+            <span class="step2-eyebrow">Optional</span>
+            <h3 class="step2-title display">Tag a mood (or skip)</h3>
+            <p class="step2-sub">Only if a feeling stands out. Otherwise leave it blank.</p>
+          </div>
+          ${moods.length === 0 ? `
+            <button type="button" class="row-add" data-action="add-mood">＋ Add a mood</button>
+          ` : `
+            <div class="row-list" data-list="moods">
+              ${moods.map(m => `
+                <div class="row-card row-card--mood" data-row-id="${esc(m.id)}">
+                  <div class="row-head">
+                    <div class="field-row-split">
+                      <select class="select" data-action="edit-mood-family" data-id="${esc(m.id)}">
+                        <option value="">— family —</option>
+                        ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${f}" ${m.family === f ? "selected" : ""}>${f}</option>`).join("")}
+                      </select>
+                      <select class="select" data-action="edit-mood-variant" data-id="${esc(m.id)}" ${!m.family ? "disabled" : ""}>
+                        <option value="">— variant —</option>
+                        ${(m.family ? (EMOTION_FAMILIES[m.family] || []) : []).map(v => `<option value="${v}" ${m.variant === v ? "selected" : ""}>${v}</option>`).join("")}
+                      </select>
+                    </div>
+                    <button type="button" class="row-remove" data-action="remove-mood" data-id="${esc(m.id)}" aria-label="Remove this mood">×</button>
+                  </div>
+                  <div class="intensity-control intensity-control--row">
+                    <div class="intensity-head">
+                      <span class="intensity-num-big"><span data-slider-display="mood-${esc(m.id)}">${m.intensity}</span><span class="intensity-num-suffix">/100</span></span>
+                      <div class="intensity-band-label">
+                        <div class="intensity-band-name display" data-slider-band-name="mood-${esc(m.id)}">${esc(band(m.intensity).label)}</div>
+                      </div>
+                    </div>
+                    <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider">
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          `}
+        </div>
+      </div>
+
+      <div class="capture-footer">
+        <div class="capture-footer-left">
+          <button class="btn-discard" data-action="discard-capture">Discard</button>
+        </div>
+        <button class="btn btn-primary" data-action="save-entry" ${(d.body || "").trim() ? "" : "disabled"}>${state.editingId ? "Save changes" : "Save entry"}</button>
+      </div>
+    </div>
+  `;
+}
+
+// Activity plan: description + category + plannedFor + predicted P/M.
+// Logged completion lives in a separate modal (renderLogActivityModal).
+function renderActivityCapture(d) {
+  const cats = ACTIVITY_CATEGORIES;
+  const canSave = (d.body || "").trim().length > 0 && !!d.category && !!d.plannedFor;
+  // Default plannedFor to "today, 1 hour from now" if blank.
+  const defaultPlanned = d.plannedFor || (() => {
+    const t = new Date(Date.now() + 60 * 60 * 1000);
+    t.setSeconds(0, 0);
+    return t.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM for datetime-local
+  })();
+  return `
+    <div class="capture-shell">
+      <div class="capture-screen">
+        <div class="step-header">
+          <h2 class="step-prompt display">Plan one thing</h2>
+          <p class="step-hint">Behavioral activation in one move: pick something concrete, predict how good it'll feel and how competent you'll feel doing it, then come back after to compare. The gap between predicted and actual is most of the lesson.</p>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">What will you do?</label>
+          <input class="input" data-field="body" placeholder="Call my sister · Walk to the park · Cook dinner from scratch" value="${esc(d.body)}" autofocus>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">Category</label>
+          <div class="activity-cats">
+            ${cats.map(c => `
+              <button type="button" class="activity-cat-chip ${d.category === c.value ? "active" : ""}" data-action="set-activity-category" data-value="${esc(c.value)}">
+                <span class="activity-cat-emoji" aria-hidden="true">${c.emoji}</span>
+                <span class="activity-cat-label">${esc(c.label)}</span>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">When</label>
+          <input class="input" type="datetime-local" data-field="plannedFor" value="${esc(defaultPlanned)}">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">Predicted pleasure (0–10)</label>
+          <div class="belief-control">
+            <div class="belief-head">
+              <span class="belief-num display"><span data-slider-display="predP">${d.predictedP ?? 5}</span><span class="belief-num-suffix">/10</span></span>
+              <span class="belief-hint">How enjoyable do you predict this will be?</span>
+            </div>
+            <input type="range" min="0" max="10" step="1" value="${d.predictedP ?? 5}" data-field="predictedP" class="intensity-slider">
+            <div class="intensity-bands">
+              <span>nothing</span><span>some</span><span>a lot</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">Predicted mastery (0–10)</label>
+          <div class="belief-control">
+            <div class="belief-head">
+              <span class="belief-num display"><span data-slider-display="predM">${d.predictedM ?? 5}</span><span class="belief-num-suffix">/10</span></span>
+              <span class="belief-hint">How competent / accomplished do you predict you'll feel?</span>
+            </div>
+            <input type="range" min="0" max="10" step="1" value="${d.predictedM ?? 5}" data-field="predictedM" class="intensity-slider">
+            <div class="intensity-bands">
+              <span>not at all</span><span>some</span><span>fully</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="capture-footer">
+        <div class="capture-footer-left">
+          <button class="btn-discard" data-action="discard-capture">Discard</button>
+        </div>
+        <button class="btn btn-primary" data-action="save-entry" ${canSave ? "" : "disabled"}>${state.editingId ? "Save changes" : "Add to plan"}</button>
+      </div>
+    </div>
+  `;
+}
+
+// Worry park: text + urgency. scheduledFor is computed from settings on
+// save. The dedicated worry-window list view handles resolution.
+function renderWorryCapture(d) {
+  const canSave = (d.worryText || "").trim().length > 0;
+  const nextWindow = computeNextWorryWindow();
+  return `
+    <div class="capture-shell">
+      <div class="capture-screen">
+        <div class="step-header">
+          <h2 class="step-prompt display">Park it</h2>
+          <p class="step-hint">Worry postponement: write it down, set it aside, look at it later at your worry-window time. Most worries dissolve before you get back to them — that's the lesson.</p>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">What's worrying you?</label>
+          <textarea class="textarea input-large" data-field="worryText" rows="5" autofocus placeholder="One sentence. You don't have to solve it now — you're parking it.">${esc(d.worryText)}</textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">Urgency, 0–10</label>
+          <div class="belief-control">
+            <div class="belief-head">
+              <span class="belief-num display"><span data-slider-display="urgency">${d.urgency ?? 5}</span><span class="belief-num-suffix">/10</span></span>
+              <span class="belief-hint">How loud is it right now?</span>
+            </div>
+            <input type="range" min="0" max="10" step="1" value="${d.urgency ?? 5}" data-field="urgency" class="intensity-slider">
+            <div class="intensity-bands">
+              <span>quiet</span><span>medium</span><span>loud</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="worry-window-note">
+          <span class="worry-window-eyebrow">Next worry window</span>
+          <span class="worry-window-time">${esc(fmtDateTime(nextWindow))}</span>
+          <p class="worry-window-help">You can change the worry-window time in Settings → Reminders.</p>
+        </div>
+      </div>
+
+      <div class="capture-footer">
+        <div class="capture-footer-left">
+          <button class="btn-discard" data-action="discard-capture">Discard</button>
+        </div>
+        <button class="btn btn-primary" data-action="save-entry" ${canSave ? "" : "disabled"}>${state.editingId ? "Save changes" : "Park worry"}</button>
+      </div>
+    </div>
+  `;
+}
+
 function canAdvance(step, d) {
   if (step === 1) return d.trigger.trim().length > 0;
   // Step 2 now: require at least one thought with text. Moods are nice to
   // have but not required to advance — body-check stays optional.
   if (step === 2) return (d.thoughts || []).some(t => (t.text || "").trim().length > 0);
   return true;
+}
+
+// Activity categories — keeping the list short and recognizable so the
+// "what category was this" question has obvious answers. Each has an
+// emoji for at-a-glance scanning.
+const ACTIVITY_CATEGORIES = [
+  { value: "connection", label: "Connection", emoji: "🤝" },
+  { value: "movement",   label: "Movement",   emoji: "🚶" },
+  { value: "creation",   label: "Creation",   emoji: "🎨" },
+  { value: "self-care",  label: "Self-care",  emoji: "🛁" },
+  { value: "chore",      label: "Chore",      emoji: "🧹" },
+  { value: "rest",       label: "Rest",       emoji: "😴" },
+  { value: "other",      label: "Other",      emoji: "•"  },
+];
+
+// Computes the next worry-window time given the user's settings.
+// If today's window time hasn't passed yet, return today; else tomorrow.
+function computeNextWorryWindow() {
+  const s = state.settings || {};
+  const timeStr = s.worryWindowTime || "18:00";
+  const [h, m] = timeStr.split(":").map(n => parseInt(n, 10));
+  const t = new Date();
+  t.setHours(h, m, 0, 0);
+  if (t.getTime() < Date.now()) t.setDate(t.getDate() + 1);
+  return t.toISOString();
 }
 
 function renderCaptureStep(step, d) {
@@ -5861,6 +6719,8 @@ function renderModal() {
     inner = renderSafetyModal();
   } else if (state.modal === "quota-error") {
     inner = renderQuotaErrorModal();
+  } else if (state.modal === "log-activity") {
+    inner = renderLogActivityModal();
   }
 
   root.innerHTML = `<div class="modal-overlay" data-action="close-modal"><div class="modal" onclick="event.stopPropagation()">${inner}</div></div>`;
@@ -6062,6 +6922,43 @@ function renderQuotaErrorModal() {
     <p class="modal-sub" style="margin-top: 14px; font-size: 12px;">If this keeps happening, you may have hit your browser's per-site quota (usually ~5MB for localStorage). A future release can move storage to IndexedDB, which scales to gigabytes.</p>
     <div class="modal-actions">
       <button class="btn-modal btn-modal-secondary" data-action="close-modal">Close</button>
+    </div>
+  `;
+}
+
+function renderLogActivityModal() {
+  const d = state.logActivityDraft || { actualP: 5, actualM: 5, notes: "" };
+  const entry = state.entries.find(x => x.id === d.entryId);
+  if (!entry) {
+    return `<h3 class="display">Activity not found</h3><div class="modal-actions"><button class="btn-modal btn-modal-secondary" data-action="close-modal">Close</button></div>`;
+  }
+  const cat = ACTIVITY_CATEGORIES.find(c => c.value === entry.category) || ACTIVITY_CATEGORIES[ACTIVITY_CATEGORIES.length - 1];
+  return `
+    <h3 class="display">How did it go?</h3>
+    <p class="modal-sub">${esc(cat.emoji)} ${esc(entry.body)} — planned for ${esc(fmtDateTime(entry.plannedFor))}</p>
+    <div class="modal-body">
+      <label class="field-label-paper">Actual pleasure (0–10)</label>
+      <div class="belief-control">
+        <div class="belief-head">
+          <span class="belief-num display"><span id="actualPDisplay">${d.actualP}</span><span class="belief-num-suffix">/10</span></span>
+          <span class="belief-hint">Predicted: <strong>${entry.predictedP ?? "—"}</strong></span>
+        </div>
+        <input type="range" min="0" max="10" step="1" value="${d.actualP}" id="actualP" class="intensity-slider">
+      </div>
+      <label class="field-label-paper" style="margin-top: 14px;">Actual mastery (0–10)</label>
+      <div class="belief-control">
+        <div class="belief-head">
+          <span class="belief-num display"><span id="actualMDisplay">${d.actualM}</span><span class="belief-num-suffix">/10</span></span>
+          <span class="belief-hint">Predicted: <strong>${entry.predictedM ?? "—"}</strong></span>
+        </div>
+        <input type="range" min="0" max="10" step="1" value="${d.actualM}" id="actualM" class="intensity-slider">
+      </div>
+      <label class="field-label-paper" style="margin-top: 14px;">Notes (optional)</label>
+      <textarea class="textarea" id="actualNotes" rows="3" placeholder="What surprised you? What was different from your prediction?">${esc(d.notes)}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
+      <button class="btn-modal btn-modal-primary" data-action="save-log-activity">Save</button>
     </div>
   `;
 }
@@ -6335,6 +7232,74 @@ function bindJournal() {
       setView("outcome");
     });
   });
+
+  // Activity log-completion: opens the log-activity modal pre-loaded with
+  // the planned entry so the user fills in actual P/M.
+  document.querySelectorAll('[data-action="open-log-activity"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (!entry) return;
+      state.logActivityDraft = {
+        entryId: entry.id,
+        actualP: typeof entry.actualP === "number" ? entry.actualP : (entry.predictedP ?? 5),
+        actualM: typeof entry.actualM === "number" ? entry.actualM : (entry.predictedM ?? 5),
+        notes: entry.activityNotes || "",
+      };
+      setState({ modal: "log-activity" });
+    });
+  });
+
+  // Worry resolutions — three terminal actions on a parked worry. Each
+  // sets the resolution + resolvedAt and re-renders so the chip updates.
+  document.querySelectorAll('[data-action="worry-dissolve"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (!entry) return;
+      entry.resolution = "dissolved";
+      entry.resolvedAt = new Date().toISOString();
+      persist();
+      render();
+      toast("Worry let go.");
+    });
+  });
+  document.querySelectorAll('[data-action="worry-postpone"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (!entry) return;
+      // Bump scheduledFor to the next window after now. Preserve "postponed"
+      // resolution so the patterns card tracks it as deliberately deferred.
+      entry.scheduledFor = computeNextWorryWindow();
+      entry.resolution = "postponed";
+      entry.resolvedAt = new Date().toISOString();
+      persist();
+      render();
+      toast("Postponed to the next worry window.");
+    });
+  });
+  // Escalate: convert a worry into a fresh thought-record draft, pre-filling
+  // the trigger + a thought from the worry text. Original worry is marked
+  // "escalated" and linked to the new entry.
+  document.querySelectorAll('[data-action="worry-escalate"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (!entry) return;
+      const draft = emptyEntry();
+      draft.trigger = "From a parked worry";
+      draft.thoughts = [normalizeThought({ text: entry.worryText, isHot: true })];
+      draft.linkedEntryId = entry.id;
+      state.draft = draft;
+      state.editingId = null;
+      state.captureStep = 1;
+      entry.resolution = "escalated";
+      entry.resolvedAt = new Date().toISOString();
+      persist();
+      setView("capture");
+    });
+  });
 }
 
 function renderJournalListOnly() {
@@ -6354,25 +7319,81 @@ function renderJournalListOnly() {
 }
 
 function bindCapture() {
-  // Generic data-field handler — handles whole-entry scalar fields that
-  // still exist (trigger, bodyCheck, evidence, socratic, reframe, pivot,
-  // and the legacy single-field path during draft hydration).
+  // Entry-kind mode switcher: tap a chip to swap state.draft to the
+  // empty-template of that kind. Only enabled when not editing — see
+  // renderCapture for the guard.
+  document.querySelectorAll('[data-action="set-capture-mode"]').forEach(el => {
+    el.addEventListener("click", () => {
+      const kind = el.dataset.kind;
+      if (state.draft.kind === kind) return;
+      // Discard the current empty / scratch draft for a fresh template.
+      // We keep this behind the no-editingId guard so users can't lose
+      // a half-filled real entry.
+      const factory =
+        kind === "freeform" ? emptyFreeform :
+        kind === "activity" ? emptyActivity :
+        kind === "worry"    ? emptyWorry    :
+                              emptyEntry;
+      state.draft = factory();
+      state.captureStep = 1;
+      saveDraft(state.draft);
+      render();
+    });
+  });
+
+  // Activity category picker.
+  document.querySelectorAll('[data-action="set-activity-category"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.draft.category = el.dataset.value || "";
+      saveDraft(state.draft);
+      render();
+    });
+  });
+
+  // Generic data-field handler — handles whole-entry scalar fields
+  // (trigger, body, bodyCheck, evidence, socratic, reframe, pivot,
+  // worryText, urgency, plannedFor, predictedP, predictedM, etc.).
   document.querySelectorAll('[data-field]').forEach(el => {
     const field = el.dataset.field;
     const handler = () => {
       let v;
       if (el.type === "checkbox") v = el.checked;
       else if (el.type === "range") v = parseInt(el.value, 10);
+      else if (el.type === "number") v = parseInt(el.value, 10);
       else v = el.value;
       state.draft[field] = v;
       saveDraft(state.draft);
 
+      // Inline-update live readouts for the new sliders so we don't
+      // re-render mid-drag and lose the user's grab.
+      const liveTargets = {
+        predictedP: '[data-slider-display="predP"]',
+        predictedM: '[data-slider-display="predM"]',
+        urgency:    '[data-slider-display="urgency"]',
+      };
+      if (liveTargets[field]) {
+        const node = document.querySelector(liveTargets[field]);
+        if (node) node.textContent = String(v);
+      }
+
       if (["socraticType", "reframeMethod"].includes(field)) render();
 
+      // Next-step button reflects validity in the structured flow only.
       const cont = document.querySelector('[data-action="next-step"]');
       if (cont) {
         if (canAdvance(state.captureStep, state.draft)) cont.removeAttribute("disabled");
         else cont.setAttribute("disabled", "");
+      }
+      // Save button enable/disable for the single-screen kinds.
+      const save = document.querySelector('[data-action="save-entry"]');
+      if (save && state.draft.kind !== "thought-record") {
+        const d = state.draft;
+        let ok = false;
+        if (d.kind === "freeform") ok = (d.body || "").trim().length > 0;
+        else if (d.kind === "activity") ok = (d.body || "").trim().length > 0 && !!d.category && !!d.plannedFor;
+        else if (d.kind === "worry") ok = (d.worryText || "").trim().length > 0;
+        if (ok) save.removeAttribute("disabled");
+        else save.setAttribute("disabled", "");
       }
     };
     el.addEventListener("input", handler);
@@ -6829,6 +7850,45 @@ function bindModal() {
     state.quickDraft = null;
     setState({ modal: null });
     toast(q.ventOnly ? "Named. That's enough." : "Captured. No need to finish — only if you want.");
+  });
+
+  // ── Log-activity modal handlers ────────────────────────────────────
+  // Live readout for the two sliders, persist user-typed notes, save
+  // back to the entry on submit.
+  const aP = document.getElementById("actualP");
+  const aM = document.getElementById("actualM");
+  const aN = document.getElementById("actualNotes");
+  if (aP) aP.addEventListener("input", () => {
+    state.logActivityDraft = state.logActivityDraft || {};
+    state.logActivityDraft.actualP = parseInt(aP.value, 10);
+    const d = document.getElementById("actualPDisplay");
+    if (d) d.textContent = aP.value;
+  });
+  if (aM) aM.addEventListener("input", () => {
+    state.logActivityDraft = state.logActivityDraft || {};
+    state.logActivityDraft.actualM = parseInt(aM.value, 10);
+    const d = document.getElementById("actualMDisplay");
+    if (d) d.textContent = aM.value;
+  });
+  if (aN) aN.addEventListener("input", () => {
+    state.logActivityDraft = state.logActivityDraft || {};
+    state.logActivityDraft.notes = aN.value;
+  });
+  const saveLog = document.querySelector('[data-action="save-log-activity"]');
+  if (saveLog) saveLog.addEventListener("click", () => {
+    const d = state.logActivityDraft;
+    if (!d) return;
+    const entry = state.entries.find(x => x.id === d.entryId);
+    if (!entry) return;
+    entry.actualP = d.actualP;
+    entry.actualM = d.actualM;
+    entry.activityNotes = d.notes;
+    entry.completedAt = new Date().toISOString();
+    persist();
+    state.logActivityDraft = null;
+    state.expandedIds.add(entry.id);
+    setState({ modal: null });
+    toast("Logged. Compare the predicted vs actual to learn.");
   });
 
   // Onboarding modal handlers.
