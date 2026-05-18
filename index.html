@@ -155,7 +155,10 @@ html[data-theme="light"] body::after {
      play. We put opacity on .app (not body) so the body's warm gradient
      background paints from frame 1 — no white-flash. */
   opacity: 1;
-  transition: opacity var(--dur-medium) var(--ease-out);
+  /* Boot fade uses --dur-long: a slower, more luxurious 480ms read for the
+     "app appearing for the first time" moment. Faster than this and it
+     feels like the app is jumping in. */
+  transition: opacity var(--dur-long) var(--ease-out);
 }
 body.is-booting .app { opacity: 0; }
 .container {
@@ -3541,10 +3544,6 @@ function normalizeThought(t) {
 function hotThought(entry) {
   const list = (entry && entry.thoughts) || [];
   return list.find(t => t.isHot) || list[0] || null;
-}
-function firstMood(entry) {
-  const list = (entry && entry.moods) || [];
-  return list[0] || null;
 }
 
 function loadEntries() {
