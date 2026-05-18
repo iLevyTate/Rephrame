@@ -76,6 +76,14 @@
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Motion duration tokens — one source of truth for every animation /
+     transition in the app. Adjust here, not at the call site. */
+  --dur-micro:  120ms;   /* button press, slider thumb scale */
+  --dur-short:  200ms;   /* hover, color, in-place state change */
+  --dur-medium: 320ms;   /* view fade, modal entrance, card expand */
+  --dur-long:   480ms;   /* reserved for the boot fade */
 
   --app-max: 720px;
   --nav-h: 68px;
@@ -142,7 +150,14 @@ html[data-theme="light"] body::after {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  /* Boot fade-in. body.is-booting forces opacity: 0 before first render
+     completes; the boot block removes it after rAF, letting the fade
+     play. We put opacity on .app (not body) so the body's warm gradient
+     background paints from frame 1 — no white-flash. */
+  opacity: 1;
+  transition: opacity var(--dur-medium) var(--ease-out);
 }
+body.is-booting .app { opacity: 0; }
 .container {
   max-width: var(--app-max);
   margin: 0 auto;
@@ -233,7 +248,7 @@ main {
   color: var(--on-ink-soft);
   background: var(--ink-2);
   border: 1px solid var(--rule-ink);
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   flex-shrink: 0;
 }
 .icon-pill:hover { color: var(--copper); border-color: var(--copper-line); }
@@ -253,7 +268,7 @@ main {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -328,18 +343,30 @@ body.kb-open .bottom-nav {
   padding: 10px 6px 8px 6px;
   border-radius: var(--r-3);
   color: var(--on-ink-mute);
-  transition: all 0.2s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   position: relative;
 }
 .nav-item:hover { color: var(--on-ink-soft); }
 .nav-item.active { color: var(--copper); }
-.nav-item.active::before {
+/* Active indicator: the bar exists on every nav-item; only opacity +
+   scaleX animate between the active and inactive states. Cheaper than
+   moving a single shared indicator element across the nav, and it
+   gracefully no-ops if the user is dragging from one tab to another. */
+.nav-item::before {
   content: '';
   position: absolute;
-  top: 0; left: 50%; transform: translateX(-50%);
+  top: 0; left: 50%;
   width: 24px; height: 2px;
   background: var(--copper);
   border-radius: 0 0 2px 2px;
+  transform: translateX(-50%) scaleX(0);
+  opacity: 0;
+  transition: transform var(--dur-short) var(--ease), opacity var(--dur-short) var(--ease);
+  pointer-events: none;
+}
+.nav-item.active::before {
+  transform: translateX(-50%) scaleX(1);
+  opacity: 1;
 }
 .nav-item svg { width: 20px; height: 20px; stroke-width: 1.6; }
 .nav-label {
@@ -359,7 +386,7 @@ body.kb-open .bottom-nav {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  transition: all 0.18s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   white-space: nowrap;
 }
 .btn-primary {
@@ -446,7 +473,7 @@ body.kb-open .bottom-nav {
   color: var(--on-ink-soft);
   border-radius: var(--r-full);
   white-space: nowrap;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   flex-shrink: 0;
 }
 .filter-chip:hover { color: var(--copper); border-color: var(--copper-line); }
@@ -480,7 +507,7 @@ body.kb-open .bottom-nav {
      diffuse outer shadow for atmosphere. Cheaper than a blur filter and
      much more "physical" than a single shadow. */
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.10), 0 6px 18px rgba(0, 0, 0, 0.20);
-  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
+  transition: box-shadow var(--dur-short) var(--ease), transform var(--dur-short) var(--ease);
   position: relative;
 }
 .entry-card:hover {
@@ -576,24 +603,40 @@ body.kb-open .bottom-nav {
   gap: 4px;
   color: var(--on-paper-faint);
 }
-.pivot-indicator.done { color: #4a7c4a; }
+/* "Pivoted" pill — copper-toned, palette-consistent. The pivot dot
+   gets a soft outer halo so it reads as a quiet confirmation, not an
+   alert badge. */
+.pivot-indicator.done { color: var(--copper); }
 .pivot-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
   background: currentColor;
+  box-shadow: 0 0 0 3px var(--copper-soft);
 }
 
+/* Entry-body-wrap: the collapsible region uses the modern
+   grid-template-rows: 0fr ↔ 1fr trick (Chrome 117+, Safari 17.4+,
+   Firefox 121+). Older Safari falls back to instant toggle. The inner
+   .entry-body needs `min-height: 0` so the grid row can collapse to 0. */
+.entry-body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-medium) var(--ease);
+}
+.entry-card.expanded .entry-body-wrap { grid-template-rows: 1fr; }
+.entry-body-wrap > .entry-body {
+  overflow: hidden;
+  min-height: 0;
+}
 .entry-body {
-  padding: 0 18px 18px 18px;
-  animation: slideDown 0.3s var(--ease-out);
+  padding: 16px 18px 18px 18px;
   border-top: 1px solid var(--rule-paper);
-  margin-top: 4px;
-  padding-top: 16px;
+  /* No margin-top — extra space outside the overflow:hidden box would
+     remain visible while collapsing and produce a small visual jolt.
+     padding-top: 16px on the body itself provides the same visual gap
+     when expanded. */
 }
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* slideDown keyframe retired — superseded by the grid-rows transition. */
 .detail-row { margin-bottom: 18px; }
 .detail-row:last-child { margin-bottom: 0; }
 .detail-label {
@@ -885,12 +928,24 @@ body.kb-open .bottom-nav {
 .capture-screen {
   padding: 28px 24px 20px 24px;
   min-height: 380px;
-  animation: stepIn 0.3s var(--ease-out);
+  /* Animation moved off the always-on rule — render() applies the
+     step-entering class only when state.captureStep actually changes,
+     so intra-step rerenders (slider drags, etc.) don't re-trigger it. */
 }
 @keyframes stepIn {
-  from { opacity: 0; transform: translateX(8px); }
-  to { opacity: 1; transform: translateX(0); }
+  /* Cross-fade up — gentler than the previous translateX which read as a
+     directional slide. User explicitly chose cross-fade for step nav. */
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+/* Shared by view transitions (journal ↔ capture ↔ patterns ↔ ...) and
+   capture-step transitions. Same geometry; one source of truth. */
+@keyframes viewIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+#view.view-entering { animation: viewIn var(--dur-medium) var(--ease-out); }
+.capture-screen.step-entering { animation: viewIn var(--dur-medium) var(--ease-out); }
 @media (min-width: 768px) {
   .capture-screen { padding: 36px 36px 24px 36px; }
 }
@@ -1024,6 +1079,10 @@ body.kb-open .bottom-nav {
   border-radius: var(--r-full);
   outline: none;
 }
+/* Slider thumb states: symmetric across WebKit and Firefox so polish
+   doesn't depend on the user's browser. The :active scale gives drag
+   a tactile push, and :focus-visible adds a soft copper halo so
+   keyboard users have a clear focus indicator. */
 .intensity-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -1033,9 +1092,13 @@ body.kb-open .bottom-nav {
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0,0,0,0.25);
   border: 3px solid var(--paper);
-  transition: transform 0.15s var(--ease);
+  transition: transform var(--dur-micro) var(--ease), box-shadow var(--dur-short) var(--ease);
 }
-.intensity-slider::-webkit-slider-thumb:hover { transform: scale(1.1); }
+.intensity-slider::-webkit-slider-thumb:hover  { transform: scale(1.08); }
+.intensity-slider::-webkit-slider-thumb:active { transform: scale(1.15); }
+.intensity-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 0 0 4px var(--copper-glow);
+}
 .intensity-slider::-moz-range-thumb {
   width: 22px; height: 22px;
   border-radius: 50%;
@@ -1043,6 +1106,12 @@ body.kb-open .bottom-nav {
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0,0,0,0.25);
   border: 3px solid var(--paper);
+  transition: transform var(--dur-micro) var(--ease), box-shadow var(--dur-short) var(--ease);
+}
+.intensity-slider::-moz-range-thumb:hover  { transform: scale(1.08); }
+.intensity-slider::-moz-range-thumb:active { transform: scale(1.15); }
+.intensity-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 0 0 4px var(--copper-glow);
 }
 .intensity-bands {
   display: flex;
@@ -1085,7 +1154,7 @@ body.kb-open .bottom-nav {
   background: var(--paper-2);
   border: 1px solid transparent;
   color: var(--on-paper);
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   cursor: pointer;
   position: relative;
 }
@@ -1193,7 +1262,7 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   color: var(--on-paper-mute);
   padding: 4px 8px;
   border-radius: var(--r-1);
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
 }
 .review-edit-btn:hover { color: var(--copper); background: var(--copper-soft); }
 .review-card-content {
@@ -1639,6 +1708,16 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+@keyframes modalOut {
+  /* Mirror of modalIn so close animations feel symmetric to opens. */
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.98); }
+}
+@keyframes overlayOut {
+  from { opacity: 1; } to { opacity: 0; }
+}
+.modal-overlay.is-closing { animation: overlayOut var(--dur-short) var(--ease-in) forwards; }
+.modal-overlay.is-closing .modal { animation: modalOut var(--dur-short) var(--ease-in) forwards; }
 .modal h3 {
   font-family: var(--display);
   font-size: 22px;
@@ -1659,7 +1738,7 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   color: var(--on-paper);
   padding: 14px 16px;
   border-radius: var(--r-2);
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   border: 1px solid transparent;
 }
 .modal-option:hover {
@@ -1687,7 +1766,7 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   border-radius: var(--r-2);
   font-size: 13px;
   font-weight: 600;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
 }
 .btn-modal-secondary { color: var(--on-paper-mute); }
 .btn-modal-secondary:hover { color: var(--on-paper); background: var(--paper-2); }
@@ -1740,6 +1819,30 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 }
 .toast-action:hover { background: var(--copper-light); }
 .toast-action:active { transform: scale(0.96); }
+
+/* Error-variant toast: deeper copper border-left, longer dwell, manual
+   dismiss via × button. Used for import-parse failures and unexpected
+   save errors. */
+.toast--error {
+  border-left: 3px solid var(--copper-deep);
+  background: var(--paper);
+  color: var(--on-paper);
+  padding-left: 14px;
+}
+.toast--error svg { color: var(--copper-deep); }
+.toast-close {
+  background: transparent;
+  border: none;
+  color: var(--on-paper-mute);
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+  margin-left: 4px;
+  border-radius: var(--r-2);
+  transition: color var(--dur-short) var(--ease), background var(--dur-short) var(--ease);
+}
+.toast-close:hover { color: var(--on-paper); background: rgba(0,0,0,0.05); }
 
 .file-input { display: none; }
 
@@ -1885,7 +1988,7 @@ html[data-theme="light"] .lock-error { color: var(--copper-deep); }
   border-radius: var(--r-3);
   padding: 14px 16px;
   cursor: pointer;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
 }
 .accurate-tile:hover { border-color: var(--copper-line); }
 .accurate-tile.active {
@@ -2146,7 +2249,7 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--pap
   border-radius: var(--r-3);
   padding: 10px 14px;
   cursor: pointer;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
 }
 .settings-choice:hover { border-color: var(--copper-line); }
 .settings-choice.active {
@@ -2183,7 +2286,7 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--pap
   border-radius: var(--r-3);
   padding: 12px 14px;
   cursor: pointer;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   width: 100%;
 }
 .settings-data-btn:hover { border-color: var(--copper-line); background: var(--paper); }
@@ -2417,7 +2520,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
 }
 .view-chip:hover { color: var(--copper); border-color: var(--copper-line); }
 .view-chip.active {
@@ -2452,7 +2555,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   border: 1px solid transparent;
   margin-left: 2px;
   flex-shrink: 0;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   position: relative;
 }
 .entry-fav-btn::before {
@@ -2599,7 +2702,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
 }
 .row-remove:hover {
   color: var(--copper-deep);
@@ -2644,7 +2747,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   width: 100%;
   justify-content: center;
 }
@@ -3045,7 +3148,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
    avoid two competing rule sets fighting each other in cascade order. */
 </style>
 </head>
-<body>
+<body class="is-booting">
 <div class="app">
   <div class="container">
     <header class="topbar">
@@ -3618,14 +3721,26 @@ function download(content, filename, mime) {
 }
 
 function toast(message, opts) {
+  opts = opts || {};
+  const isError = opts.variant === "error";
+  const persistent = !!opts.persist;
   const stack = document.getElementById("toasts");
   const el = document.createElement("div");
-  el.className = "toast" + (opts && opts.action ? " toast--action" : "");
-  const lifespan = (opts && typeof opts.ms === "number") ? opts.ms : 2400;
+  el.className = "toast"
+    + (opts.action ? " toast--action" : "")
+    + (isError ? " toast--error" : "")
+    + (persistent ? " toast--persist" : "");
+  // Errors default to 8s (long enough to read), non-errors to 2.4s. A
+  // persistent toast doesn't auto-dismiss; users tap the × to clear.
+  const defaultMs = isError ? 8000 : 2400;
+  const lifespan = (typeof opts.ms === "number") ? opts.ms : defaultMs;
+  const iconPath = isError
+    ? '<path d="M8 5v4M8 11v0.5M8 2 1 14h14z"/>'
+    : '<path d="M3 8l3 3 7-7"/>';
   el.innerHTML = `
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3 3 7-7"/></svg>
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg>
     <span class="toast-message">${esc(message)}</span>`;
-  if (opts && opts.action) {
+  if (opts.action) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "toast-action";
@@ -3636,6 +3751,17 @@ function toast(message, opts) {
     });
     el.appendChild(btn);
   }
+  // Close × for persistent toasts (errors, kept-open notices) so keyboard
+  // and screen-reader users have a clear dismiss path.
+  if (persistent || isError) {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-close";
+    close.setAttribute("aria-label", "Dismiss");
+    close.textContent = "×";
+    close.addEventListener("click", dismiss);
+    el.appendChild(close);
+  }
   stack.appendChild(el);
   let dismissed = false;
   function dismiss() {
@@ -3643,10 +3769,10 @@ function toast(message, opts) {
     dismissed = true;
     el.style.opacity = "0";
     el.style.transform = "translateY(8px)";
-    el.style.transition = "all 0.3s var(--ease)";
+    el.style.transition = "opacity var(--dur-medium) var(--ease), transform var(--dur-medium) var(--ease)";
     setTimeout(() => el.remove(), 300);
   }
-  setTimeout(dismiss, lifespan);
+  if (!persistent) setTimeout(dismiss, lifespan);
   return { dismiss };
 }
 
@@ -3781,11 +3907,60 @@ function hasDraftContent(d) {
            d.newThought || d.pivot || (d.distortions && d.distortions.length));
 }
 
-function persist() { saveEntries(state.entries); }
+function persist() {
+  // Wrap the write so a QuotaExceededError surfaces a styled blocking
+  // modal instead of silently failing. The user's most recent entry
+  // sits at state.entries[0] and stays in memory regardless — we never
+  // lose data on a quota failure, only the persistence to disk.
+  try {
+    saveEntries(state.entries);
+  } catch (err) {
+    const isQuota = err && (
+      err.name === "QuotaExceededError" ||
+      err.code === 22 ||
+      err.code === 1014   // Firefox legacy code
+    );
+    if (isQuota) {
+      state.modal = "quota-error";
+      render();
+    } else {
+      toast("Couldn't save — " + (err && err.message ? err.message : "unknown error"),
+            { variant: "error", persist: true });
+    }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // RENDER
 // ═══════════════════════════════════════════════════════════════════
+
+// Tracked between render() calls so the view-fade and capture-step fade
+// only retrigger on actual transitions, not on every intra-view re-render
+// (search input, slider drag, filter chip toggle).
+let lastRenderedView = null;
+let lastRenderedStep = null;
+
+// Re-applies an animation class so the same keyframe runs again on a
+// node that's already in the DOM. Without the void-offsetWidth reflow,
+// removing+re-adding the class in the same tick does nothing because the
+// browser collapses the two style mutations.
+function retriggerAnimation(node, cls, fallbackMs) {
+  if (!node) return;
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+  const cleanup = () => node.classList.remove(cls);
+  let done = false;
+  node.addEventListener("animationend", function once() {
+    if (done) return;
+    done = true;
+    node.removeEventListener("animationend", once);
+    cleanup();
+  });
+  // Safety net — `animationend` is reliable but not infallible (e.g. the
+  // node gets removed mid-animation). Clean up after the duration anyway.
+  setTimeout(() => { if (!done) { done = true; cleanup(); } }, fallbackMs || 400);
+}
 
 function render() {
   // Lock gate. When a PIN is set and this session hasn't unlocked yet, we
@@ -3821,6 +3996,19 @@ function render() {
   if (state.view === "journal")      bindJournal();
   else if (state.view === "capture") bindCapture();
   else if (state.view === "outcome") bindOutcome();
+
+  // View transition: fire only when state.view actually changed.
+  if (state.view !== lastRenderedView) {
+    retriggerAnimation(view, "view-entering", 380);
+    lastRenderedView = state.view;
+    // Reset step tracking so re-entering the capture view animates step 1.
+    lastRenderedStep = null;
+  }
+  // Capture step transition: fire only when the step number changed.
+  if (state.view === "capture" && state.captureStep !== lastRenderedStep) {
+    retriggerAnimation(view.querySelector(".capture-screen"), "step-entering", 380);
+    lastRenderedStep = state.captureStep;
+  }
 
   renderModal();
 }
@@ -4204,7 +4392,9 @@ function renderEntryCard(entry, index) {
           ${entry.distortions.length > 2 ? `<span class="dist-more">+${entry.distortions.length - 2}</span>` : ""}
         </div>
       </div>
-      ${expanded ? renderEntryDetails(entry) : ""}
+      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
+        ${renderEntryDetails(entry)}
+      </div>
     </article>
   `;
 }
@@ -5528,6 +5718,8 @@ function renderModal() {
     inner = renderRemovePinModal();
   } else if (state.modal === "safety") {
     inner = renderSafetyModal();
+  } else if (state.modal === "quota-error") {
+    inner = renderQuotaErrorModal();
   }
 
   root.innerHTML = `<div class="modal-overlay" data-action="close-modal"><div class="modal" onclick="event.stopPropagation()">${inner}</div></div>`;
@@ -5710,6 +5902,26 @@ function renderRemovePinModal() {
         <button type="submit" class="btn-modal btn-modal-danger">Remove PIN</button>
       </div>
     </form>
+  `;
+}
+
+function renderQuotaErrorModal() {
+  // Blocking modal — the only error worth a full modal because the user
+  // needs to take action (export & clear space) before they can continue
+  // capturing entries. The current entry is in memory but unsaved.
+  return `
+    <h3 class="display">Storage is full</h3>
+    <p class="modal-sub">Your browser ran out of space for Reframe to save this entry. The text is still on this screen — but it won't survive a refresh until you free up storage.</p>
+    <div class="modal-options">
+      <button class="modal-option" data-action="open-export">
+        <div class="modal-option-title">Export everything now</div>
+        <div class="modal-option-desc">Save your full journal as JSON or Markdown so nothing's lost. Then clear site data in your browser to free space, and re-import.</div>
+      </button>
+    </div>
+    <p class="modal-sub" style="margin-top: 14px; font-size: 12px;">If this keeps happening, you may have hit your browser's per-site quota (usually ~5MB for localStorage). A future release can move storage to IndexedDB, which scales to gigabytes.</p>
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-secondary" data-action="close-modal">Close</button>
+    </div>
   `;
 }
 
@@ -6266,11 +6478,30 @@ function bindCapture() {
   });
 }
 
+// Animated modal close — adds `.is-closing` to the overlay so the
+// modalOut / overlayOut keyframes play, then setStates `modal: null` so
+// the next render() unmounts. Used by every user-triggered close path
+// (X / Cancel / Done buttons, overlay backdrop click, Escape key). After-
+// action closes (post-save, post-import, post-delete) still use bare
+// setState({modal: null}) because the modal disappearing instantly there
+// feels confirming rather than abrupt.
+function closeModal() {
+  if (!state.modal) return;
+  const overlay = document.querySelector(".modal-overlay");
+  if (!overlay || _prefersReducedMotion()) {
+    setState({ modal: null });
+    return;
+  }
+  if (overlay.classList.contains("is-closing")) return; // double-tap guard
+  overlay.classList.add("is-closing");
+  setTimeout(() => setState({ modal: null }), 200);
+}
+
 function bindModal() {
   document.querySelectorAll('[data-action="close-modal"]').forEach(el => {
     el.addEventListener("click", e => {
       if (e.currentTarget === e.target || el.tagName === "BUTTON") {
-        setState({ modal: null });
+        closeModal();
       }
     });
   });
@@ -6568,7 +6799,10 @@ document.getElementById("import-file").addEventListener("change", e => {
       setState({ modal: null });
       toast("Imported " + imported.length + " entries");
     } catch (err) {
-      alert("Couldn't read that file: " + err.message);
+      // Replace native alert() — out of design and unstylable — with a
+      // persistent error toast carrying the same information.
+      toast("Couldn't read that backup — " + (err && err.message ? err.message : "invalid file"),
+            { variant: "error", persist: true });
     }
     e.target.value = "";
   };
@@ -6604,7 +6838,7 @@ document.querySelectorAll('[data-action="open-settings"]').forEach(b =>
 
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
-    if (state.modal) setState({ modal: null });
+    if (state.modal) closeModal();
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
     if (state.view === "capture") {
@@ -6707,6 +6941,14 @@ document.addEventListener("keydown", e => {
 
 applyTheme();
 render();
+
+// Schedule the boot fade-in after the first paint. Two rAFs because some
+// browsers (Safari) do font swapping in the first frame after layout —
+// removing the class on the second frame guarantees the fade plays over
+// rendered content, not blank space.
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  document.body.classList.remove("is-booting");
+}));
 </script>
 </body>
 </html>
