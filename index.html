@@ -41,13 +41,20 @@
 
   --on-ink:        #f5efe6;
   --on-ink-soft:   #c9bdac;
-  --on-ink-mute:   #8a7d6c;
-  --on-ink-faint:  #5a4f43;
+  /* WCAG AA tuning: on-ink-mute lightened from #8a7d6c (4.4:1 — failed AA
+     body) to #a89a85 (6.5:1 on ink, 6.0:1 on ink-2, 5.5:1 on ink-3).
+     on-ink-faint lightened from #5a4f43 (2.2:1 — failed AA large too)
+     to #7a6e5e (3.6:1 — clears AA large; used only for decorative
+     timestamps where small-but-readable is the brief). */
+  --on-ink-mute:   #a89a85;
+  --on-ink-faint:  #7a6e5e;
 
   --on-paper:        #1a1715;
   --on-paper-soft:   #4a3f33;
   --on-paper-mute:   #6a5a47;
-  --on-paper-faint:  #8a7860;
+  /* on-paper-faint darkened from #8a7860 (3.7:1 — failed AA body) to
+     #6e5d47 (5.5:1) so secondary copy on paper meets AA. */
+  --on-paper-faint:  #6e5d47;
 
   --copper:        #b8552c;
   --copper-light:  #c46838;
@@ -1294,7 +1301,25 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  /* Sticky to the bottom of the viewport so the Continue / Back buttons
+     stay reachable on long Step 2 forms without scrolling. Offset by the
+     bottom-nav height so they don't overlap. When the keyboard is up,
+     body.kb-open hides the bottom-nav and we slide the footer down to
+     bottom:0 to claim that space. iOS Safari (which uses the JS
+     keyboard-avoidance path) gets the same behaviour because the
+     visualViewport listener toggles kb-open. */
+  position: sticky;
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  z-index: 5;
+  /* Soft blur for the sticky band so content sliding under it doesn't
+     look harsh. Falls back to the solid bg on browsers without backdrop. */
+  background: rgba(235, 227, 213, 0.92);
+  -webkit-backdrop-filter: saturate(180%) blur(8px);
+  backdrop-filter: saturate(180%) blur(8px);
+  transition: bottom var(--dur-short) var(--ease);
 }
+body.kb-open .capture-footer { bottom: 0; }
+html[data-theme="light"] .capture-footer { background: rgba(235, 227, 213, 0.94); }
 @media (min-width: 768px) { .capture-footer { padding: 16px 36px; } }
 .capture-footer-left {
   display: flex;
@@ -2431,10 +2456,16 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   display: flex;
   gap: 12px;
   overflow-x: auto;
-  padding: 4px 2px 12px 2px;
+  padding: 4px 16px 12px 16px;
+  margin-left: -16px;
+  margin-right: -16px;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  /* Same edge-fade trick as the view-chips so users can see there's
+     more to swipe to. */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
 }
 .coping-scroller::-webkit-scrollbar { height: 6px; }
 .coping-card {
@@ -2506,8 +2537,16 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   gap: 6px;
   overflow-x: auto;
   margin: 0 0 12px;
-  padding-bottom: 4px;
+  padding: 0 16px 4px 16px;
+  /* Negative margin pulls the row to the container edge so the mask
+     fade reaches the screen edge cleanly. */
+  margin-left: -16px;
+  margin-right: -16px;
   scrollbar-width: thin;
+  /* Mask fades both edges so a clipped chip on either side reads as
+     "there's more here, swipe" rather than "this is the end." */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
 }
 .view-chips::-webkit-scrollbar { height: 4px; }
 .view-chip {
@@ -2622,6 +2661,82 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   outline-offset: 1px;
   border-color: var(--copper);
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   EXPLAINER CARDS: plain-English intros for Socratic / Evidence /
+   any other step that benefits from "what does this mean."
+   ────────────────────────────────────────────────────────────────── */
+
+.explainer-card {
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-left: 3px solid var(--copper);
+  border-radius: var(--r-3);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.explainer-card--socratic { margin-top: 20px; }
+.explainer-eyebrow {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper-deep);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.explainer-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--on-paper-soft);
+  margin: 0;
+}
+.explainer-body strong { color: var(--on-paper); }
+.explainer-body em { font-style: italic; color: var(--on-paper); }
+
+/* Quick-capture starter prompts — small chip row that seeds the
+   textarea when tapped. Friendly scaffolding without forcing structure. */
+.quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.quick-prompts-label {
+  font-size: 11px;
+  color: var(--on-paper-mute);
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+.quick-prompt-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--paper-2);
+  border: 1px dashed var(--rule-paper-2);
+  border-radius: var(--r-full);
+  color: var(--on-paper-soft);
+  cursor: pointer;
+  transition: background var(--dur-short) var(--ease),
+              color      var(--dur-short) var(--ease),
+              border-color var(--dur-short) var(--ease),
+              transform  var(--dur-micro) var(--ease);
+  /* Touch target — 32px tall + parent gap puts effective tap area at
+     ~40px on mobile, comfortable for one-handed taps. */
+  min-height: 32px;
+}
+.quick-prompt-chip:hover {
+  border-style: solid;
+  border-color: var(--copper);
+  color: var(--copper-deep);
+  background: rgba(184, 85, 44, 0.06);
+}
+.quick-prompt-chip:active { transform: scale(0.97); }
 
 /* ──────────────────────────────────────────────────────────────────
    MIND OVER MOOD: Step 2 sectioned multi-thought/multi-mood UI,
@@ -4772,13 +4887,25 @@ function renderCaptureStep(step, d) {
           ${typeof hot.beliefBefore === "number" ? `<span class="hot-thought-belief">Belief before: <strong>${hot.beliefBefore}%</strong></span>` : ""}
         </div>
       ` : ""}
+      <div class="explainer-card">
+        <div class="explainer-eyebrow">What this step is doing</div>
+        <p class="explainer-body"><strong>Putting the thought on trial.</strong> CBT calls this <em>cognitive restructuring</em> — instead of accepting the automatic thought as fact, you treat it like a claim and look for evidence on both sides. The goal isn't to "win" against the thought; it's to see whether it holds up when you actually examine it.</p>
+      </div>
       <div class="field-group">
         <label class="field-label-paper">Evidence FOR the thought</label>
-        <textarea class="textarea" data-field="evidenceFor" rows="3">${esc(d.evidenceFor)}</textarea>
+        <p class="field-help-paper" style="margin: -4px 0 8px 0;">What facts, observations, or past events would support this thought if you were the prosecutor? Be honest — strawmanning the thought is the failure mode here.</p>
+        <textarea class="textarea" data-field="evidenceFor" rows="3" placeholder="Facts that would back this thought up — only count things you'd be willing to say out loud.">${esc(d.evidenceFor)}</textarea>
       </div>
       <div class="field-group">
         <label class="field-label-paper">Evidence AGAINST the thought</label>
-        <textarea class="textarea" data-field="evidenceAgainst" rows="3">${esc(d.evidenceAgainst)}</textarea>
+        <p class="field-help-paper" style="margin: -4px 0 8px 0;">What facts or past experiences would push back? Often the strongest counter-evidence is "I've thought this before and was wrong" or "I'd never apply this label to a friend in the same spot."</p>
+        <textarea class="textarea" data-field="evidenceAgainst" rows="3" placeholder="Facts that complicate the thought. Times the predicted bad thing didn't happen. What you'd tell a friend.">${esc(d.evidenceAgainst)}</textarea>
+      </div>
+
+      <div class="explainer-card explainer-card--socratic">
+        <div class="explainer-eyebrow">What a Socratic question is</div>
+        <p class="explainer-body">Named after Socrates, who taught by asking — never by lecturing. A <strong>Socratic question</strong> is one that invites you to examine the thought from a new angle rather than agreeing or arguing with it. It's not rhetorical and it's not loaded. You ask it of yourself, in good faith, and then answer it honestly.</p>
+        <p class="explainer-body" style="margin-top: 8px;">Pick a question <em>type</em> below based on what the thought is doing (catastrophizing, mind-reading, etc.) — the template gives you a starting line you can customize.</p>
       </div>
       <div class="field-group">
         <label class="field-label-paper">Socratic question type</label>
@@ -4789,8 +4916,9 @@ function renderCaptureStep(step, d) {
         ${d.socraticType ? `<div class="field-help-paper">${esc(SOCRATIC_TYPES.find(s => s.type === d.socraticType)?.when || "")}</div>` : ""}
       </div>
       <div class="field-group">
-        <label class="field-label-paper">Socratic question</label>
+        <label class="field-label-paper">Your Socratic question</label>
         <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="If I saw a stranger break a chair, would I think they're an idiot?">${esc(d.socraticQuestion)}</textarea>
+        <p class="field-help-paper" style="margin-top: 8px;">Picking a type above pre-fills a starting question — feel free to rewrite it in your own words. The point is to <em>genuinely consider</em> the answer, so the wording has to be one you can take seriously.</p>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All question types</summary>
           <div class="ref-inline-body">
@@ -5647,12 +5775,26 @@ function renderModal() {
     `;
   } else if (state.modal === "quick") {
     const q = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
+    // Starter prompts the user can tap to seed the textarea — scaffolding
+    // for moments when "where do I even start" is the actual blocker. Each
+    // prompts a different facet so the user can pick whichever fits.
+    const QUICK_PROMPTS = [
+      { label: "What happened",    seed: "Here's what just happened: " },
+      { label: "The thought",      seed: "The thought running through my head: " },
+      { label: "The feeling",      seed: "What I'm feeling right now: " },
+      { label: "The body",         seed: "Where this sits in my body: " },
+    ];
     inner = `
       <h3 class="display">Quick capture</h3>
-      <p class="modal-sub">For when a full 7-step entry is too much. Just naming what's there is already work — you don't have to do anything else with it.</p>
+      <p class="modal-sub">For when a full 7-step entry is too much. Naming what's there is already work — you don't have to do anything else with it.</p>
       <div class="modal-body">
         <label class="field-label-paper">What's here right now?</label>
+        <p class="field-help-paper" style="margin: -4px 0 8px 0;">Write whatever comes — the event, a thought, a feeling, what your body's doing. One sentence is plenty.</p>
         <textarea class="textarea input-large" id="quickThought" rows="5" autofocus placeholder="One sentence is fine. No structure needed.">${esc(q.thought)}</textarea>
+        <div class="quick-prompts" role="group" aria-label="Starter prompts">
+          <span class="quick-prompts-label">Or tap a starter:</span>
+          ${QUICK_PROMPTS.map(p => `<button type="button" class="quick-prompt-chip" data-action="insert-quick-prompt" data-seed="${esc(p.seed)}">${esc(p.label)}</button>`).join("")}
+        </div>
         <div style="margin-top: 16px;">
           <label class="field-label-paper">Intensity, right now</label>
           <div class="belief-control">
@@ -6630,6 +6772,25 @@ function bindModal() {
   if (qt) qt.addEventListener("input", () => {
     state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
     state.quickDraft.thought = qt.value;
+  });
+
+  // Tap-to-insert starter prompts. Seeds the textarea (or appends if the
+  // user has already written something) and refocuses + moves the caret
+  // to the end so they can keep typing.
+  document.querySelectorAll('[data-action="insert-quick-prompt"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (!qt) return;
+      const seed = btn.dataset.seed || "";
+      const cur = qt.value;
+      const next = cur.trim()
+        ? (cur.replace(/\s+$/, "") + "\n\n" + seed)
+        : seed;
+      qt.value = next;
+      state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
+      state.quickDraft.thought = next;
+      qt.focus();
+      qt.setSelectionRange(next.length, next.length);
+    });
   });
   if (qi) qi.addEventListener("input", () => {
     state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
