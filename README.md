@@ -22,15 +22,16 @@ to your home screen and run as a local, private app. No account, no server, no
 analytics — everything lives in your browser's `localStorage`. You can import
 and export your entries as JSON for backup.
 
-The CBT workflow: capture a situation and an automatic thought, rate how
-strongly you believe it, label the distortions you notice, gather evidence
-for and against, generate a balanced reframe, then re-rate — the shift in
-emotion intensity and belief is the work showing up. End on one small
-behavioral pivot. The "Patterns" tab surfaces recurring distortions, the
-average intensity drop across your entries, and a 30-day activity heatmap.
-The "Reference" tab is an in-app primer plus a crisis-resources block.
+**Four ways to capture.** Pick whichever fits the moment:
 
-When a full thought record is too much in the moment, the **⚡ icon in the
+- **Thought record** — the full Mind Over Mood walk: situation, multi-thought + multi-mood capture, distortion check, evidence for/against, Socratic prompt, balanced reframe, behavioral pivot, then a re-rate after both reframe and pivot. The shift in mood intensity + belief % is the work showing up.
+- **Free write** — open page, no structure. For moments without a clear thought to challenge. Optional title + optional mood tag.
+- **Plan activity** — behavioral activation: pick something concrete (a category + a datetime), predict pleasure + mastery on a 0–10 scale, then come back after to log actual values. The gap between predicted and actual is the lesson.
+- **Park a worry** — worry postponement (Borkovec): write the worry, set urgency, schedule it for your worry-window time. A calm banner surfaces in-window with three resolutions: dissolved on its own, work it through (escalates to a thought record), or postpone again.
+
+The "Patterns" tab surfaces recurring distortions, the average mood intensity drop across re-rated entries, the activity categories that lift the mood most, the % of worries that dissolved without action, and a 30-day activity heatmap. The "Reference" tab is an in-app primer plus a crisis-resources block.
+
+When even a free-form entry is too much in the moment, the **⚡ icon in the
 top-right** opens a 30-second quick capture (just the thought + intensity).
 The entry lands in your journal flagged for finishing later.
 
@@ -49,9 +50,12 @@ write down — it's what teaches you next time. Saved on blur, included in
 Markdown export, searchable.
 
 **Scope filters.** Above the search, chips let you narrow to All /
-★ Coping / ⚡ Unfinished / This week / Pivoted / Pivot due. Stacks with
-the per-distortion chips below the search. Reset everything via the
-"Reset filters" button in the empty results state.
+★ Coping / ⚡ Unfinished / Free writes / Activities / Worries /
+This week / Pivoted / Pivot due. Each chip auto-hides when its count
+is zero. Stacks with the per-distortion chips below the search.
+Picking a kind-filter with zero matching entries shows a friendly
+empty state with a "Start one" CTA that drops straight into Capture
+with the right mode preselected.
 
 **Settings.** The gear icon in the top-right opens a settings modal:
 
@@ -60,6 +64,10 @@ the per-distortion chips below the search. Reset everything via the
   soft banner the next time you open the app if your last entry is
   older than the chosen interval. No notifications go out. "Not
   today" snoozes the banner for 18 hours.
+- **Worry window** — the time of day parked worries reappear for review.
+  Defaults to 18:00 (6pm). The window stays open for 20 minutes. If the
+  time has already passed today, parking a new worry schedules it for
+  tomorrow.
 
 **Print / Save as PDF.** The Export modal has a "Print / Save as PDF"
 option that expands every entry, opens your browser's print dialog,

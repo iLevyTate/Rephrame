@@ -648,6 +648,41 @@ body.kb-open .bottom-nav {
 }
 /* slideDown keyframe retired — superseded by the grid-rows transition. */
 .detail-row { margin-bottom: 18px; }
+.entry-link-row { margin-bottom: 14px; }
+.entry-link-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-left: 3px solid var(--copper);
+  border-radius: var(--r-2);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-short) var(--ease),
+              border-color var(--dur-short) var(--ease),
+              transform var(--dur-micro) var(--ease);
+}
+.entry-link-btn:hover { background: var(--paper-3); border-color: var(--copper-line); }
+.entry-link-btn:active { transform: scale(0.99); }
+.entry-link-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+}
+.entry-link-text {
+  font-family: var(--display);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--on-paper);
+  line-height: 1.4;
+}
 .detail-row:last-child { margin-bottom: 0; }
 .detail-label {
   font-family: var(--mono);
@@ -1397,6 +1432,25 @@ html[data-theme="light"] .capture-footer { background: rgba(235, 227, 213, 0.94)
   color: var(--on-paper-soft);
   margin-top: 6px;
 }
+.pattern-stat-pct {
+  font-size: 28px;
+  color: var(--on-paper-mute);
+  font-weight: 500;
+  margin-left: 2px;
+}
+.pattern-card-foot {
+  margin: 10px 0 0 0;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--on-paper-mute);
+  line-height: 1.5;
+}
+.bar-row-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--on-paper-mute);
+  margin-left: 4px;
+}
 
 .activity-grid {
   display: flex;
@@ -1974,6 +2028,26 @@ html[data-theme="light"] .lock-error { color: var(--copper-deep); }
   font-size: 13px;
   margin-top: 4px;
 }
+.lock-help-panel {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-2);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--on-ink-mute);
+  text-align: left;
+}
+.lock-help-panel p { margin: 0; }
+.lock-help-panel p + p { margin-top: 8px; }
+.lock-help-panel strong { color: var(--on-ink); }
+html[data-theme="light"] .lock-help-panel {
+  background: var(--paper-2);
+  border-color: var(--rule-paper);
+  color: var(--on-paper-mute);
+}
+html[data-theme="light"] .lock-help-panel strong { color: var(--on-paper); }
 
 /* PIN-form modal (set / change / remove) */
 .pin-form { display: flex; flex-direction: column; }
@@ -2269,6 +2343,36 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--pap
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.settings-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-3);
+}
+.settings-time-label {
+  font-family: var(--body);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--on-paper);
+}
+.settings-time-input {
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 6px 10px;
+  background: var(--paper);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-2);
+  color: var(--on-paper);
+  cursor: pointer;
+}
+.settings-time-input:focus-visible {
+  outline: 2px solid var(--copper);
+  outline-offset: 1px;
 }
 .settings-choice {
   text-align: left;
@@ -4222,6 +4326,9 @@ const state = {
   // of the journal. Initialized in the boot block below.
   locked: false,
   lockError: "",
+  // Inline-toggle for the "Forgot PIN?" explainer on the lock screen.
+  // Replaces the old browser alert() with a quieter on-screen panel.
+  lockHelpOpen: false,
   // Transient buffer for the set-pin / remove-pin modal forms — keeps the
   // ongoing PIN-entry attempt off the persistent state.
   pinForm: { current: "", next: "", confirm: "", error: "" },
@@ -4469,7 +4576,13 @@ function renderLockScreen() {
         ${state.lockError ? `<p class="lock-error" role="alert">${esc(state.lockError)}</p>` : ""}
         <button type="submit" class="btn btn-primary lock-submit">Unlock</button>
       </form>
-      <button type="button" class="link-button lock-forgot" data-action="lock-forgot">Forgot PIN?</button>
+      <button type="button" class="link-button lock-forgot" data-action="lock-forgot">${state.lockHelpOpen ? "Hide" : "Forgot PIN?"}</button>
+      ${state.lockHelpOpen ? `
+        <div class="lock-help-panel" role="region" aria-label="PIN recovery info">
+          <p><strong>No PIN recovery.</strong> Reframe is offline and stores everything locally — there's no server-side reset. If you've forgotten the PIN, the only way back in is to clear this site's data in your browser, which also deletes every entry.</p>
+          <p><strong>Tip:</strong> export to JSON or Markdown regularly from Settings while the app is unlocked. That export is your recovery copy — you can re-import it on a fresh install.</p>
+        </div>
+      ` : ""}
     </div>
   `;
   // Wire form submission. Doing this here (rather than in a bind* function)
@@ -4497,17 +4610,8 @@ function renderLockScreen() {
   });
   el.querySelectorAll('[data-action="lock-forgot"]').forEach(b =>
     b.addEventListener("click", () => {
-      alert([
-        "There's no PIN recovery path that preserves your entries.",
-        "",
-        "Reframe is offline and stores everything locally — there's no",
-        "server-side reset. If you've forgotten the PIN, the only way",
-        "back into the app is to clear this site's data in your browser",
-        "settings, which also deletes every entry.",
-        "",
-        "Tip: export to JSON or Markdown regularly via Settings while",
-        "the app is unlocked. That export is your recovery copy.",
-      ].join("\n"));
+      state.lockHelpOpen = !state.lockHelpOpen;
+      render();
     })
   );
 }
@@ -4562,6 +4666,40 @@ function renderCopingCards(favorites) {
   `;
 }
 
+// Filtered-Journal empty state. Picks copy + a CTA appropriate to the
+// active view-filter — when the user has just selected "Worries" and
+// has none parked, point them at the park-a-worry capture instead of
+// the generic "reset filters" advice.
+function renderJournalFilteredEmpty() {
+  const filter = state.viewFilter;
+  const copy = {
+    freeform:   { title: "No free writes yet.",        body: "An open page for moments that don't have a clear thought to challenge.", ctaLabel: "Start a free write",     ctaKind: "freeform" },
+    activities: { title: "No activities planned yet.", body: "Pick something concrete, predict how it'll feel, then compare after.",   ctaLabel: "Plan an activity",      ctaKind: "activity" },
+    worries:    { title: "No worries parked yet.",     body: "Park a worry, set it aside, come back at your worry-window time.",       ctaLabel: "Park a worry",          ctaKind: "worry"    },
+  }[filter];
+  if (!copy) {
+    return `
+      <div class="empty-state" style="margin-top: 20px;">
+        <h2 class="empty-state-title display" style="font-size: 20px;">Nothing matches that.</h2>
+        <p class="empty-state-body">Try clearing the search, the scope, or the distortion filter.</p>
+        <div class="empty-state-actions">
+          <button class="btn btn-ghost" data-action="reset-filters">Reset filters</button>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="empty-state" style="margin-top: 20px;">
+      <h2 class="empty-state-title display" style="font-size: 20px;">${esc(copy.title)}</h2>
+      <p class="empty-state-body">${esc(copy.body)}</p>
+      <div class="empty-state-actions">
+        <button class="btn btn-primary" data-action="start-kind" data-kind="${esc(copy.ctaKind)}">${esc(copy.ctaLabel)}</button>
+        <button class="btn btn-ghost" data-action="reset-filters">Show all entries</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderJournal() {
   const entries = state.entries;
   const hasDraft = hasDraftContent(state.draft) && !state.editingId;
@@ -4576,7 +4714,7 @@ function renderJournal() {
       <div class="empty-state">
         <div class="empty-state-mark" aria-hidden="true"></div>
         <h2 class="empty-state-title display">A quiet start.</h2>
-        <p class="empty-state-body">Capture a triggering thought when it happens. Walk it through six steps. Re-rate after the reframe so you can see the work shift the dial. End on one small action. Everything lives in this browser only.</p>
+        <p class="empty-state-body">Four ways to capture: a structured thought record, a free-form journal entry, a planned activity, or a parked worry. Pick whatever fits the moment. Everything lives in this browser only.</p>
         <div class="empty-state-actions">
           <button class="btn btn-primary" data-action="goto-capture">Begin first entry</button>
           <button class="btn btn-ghost" data-action="load-sample">Load an example</button>
@@ -4688,15 +4826,7 @@ function renderJournal() {
       </div>
     ` : ""}
 
-    ${filtered.length === 0 ? `
-      <div class="empty-state" style="margin-top: 20px;">
-        <h2 class="empty-state-title display" style="font-size: 20px;">Nothing matches that.</h2>
-        <p class="empty-state-body">Try clearing the search, the scope, or the distortion filter.</p>
-        <div class="empty-state-actions">
-          <button class="btn btn-ghost" data-action="reset-filters">Reset filters</button>
-        </div>
-      </div>
-    ` : groups.map(g => `
+    ${filtered.length === 0 ? renderJournalFilteredEmpty() : groups.map(g => `
       <div class="date-group">
         <div class="date-group-label">
           <span class="kicker">${esc(g.label)}</span>
@@ -5020,8 +5150,22 @@ function renderEntryDetails(entry) {
     `;
   }).join("");
 
+  // If this thought-record was escalated from a worry, surface the link
+  // back so the user can see (and re-read) the worry that prompted it.
+  const linkedWorry = entry.linkedEntryId
+    ? state.entries.find(x => x.id === entry.linkedEntryId && x.kind === "worry")
+    : null;
+
   return `
     <div class="entry-body">
+      ${linkedWorry ? `
+        <div class="detail-row entry-link-row">
+          <button class="entry-link-btn" data-action="open-linked" data-id="${esc(linkedWorry.id)}" aria-label="Open the parked worry that started this entry">
+            <span class="entry-link-eyebrow">From a parked worry</span>
+            <span class="entry-link-text">"${esc((linkedWorry.worryText || "").slice(0, 80))}${linkedWorry.worryText && linkedWorry.worryText.length > 80 ? "…" : ""}"</span>
+          </button>
+        </div>
+      ` : ""}
       ${thoughts.length ? `
         <div class="detail-row">
           <div class="detail-label">1 · Automatic Thoughts</div>
@@ -5201,6 +5345,9 @@ function renderActivityDetails(entry) {
 function renderWorryDetails(entry) {
   const r = entry.resolution;
   const showWindow = !r; // parked worries can still be resolved
+  const linkedRecord = entry.linkedEntryId
+    ? state.entries.find(x => x.id === entry.linkedEntryId && x.kind === "thought-record")
+    : null;
   return `
     <div class="entry-body">
       <div class="detail-row">
@@ -5216,6 +5363,14 @@ function renderWorryDetails(entry) {
         <div class="detail-row">
           <div class="detail-label">Resolved</div>
           <p class="detail-text">${esc(r === "dissolved" ? "Dissolved on its own" : r === "escalated" ? "Worked through (converted to a thought record)" : "Postponed to next window")}${entry.resolvedAt ? " — " + esc(fmtDateTime(entry.resolvedAt)) : ""}</p>
+        </div>
+      ` : ""}
+      ${linkedRecord ? `
+        <div class="detail-row entry-link-row">
+          <button class="entry-link-btn" data-action="open-linked" data-id="${esc(linkedRecord.id)}" aria-label="Open the thought record that worked through this worry">
+            <span class="entry-link-eyebrow">Worked through here →</span>
+            <span class="entry-link-text">"${esc((linkedRecord.trigger || "").slice(0, 80))}${linkedRecord.trigger && linkedRecord.trigger.length > 80 ? "…" : ""}"</span>
+          </button>
         </div>
       ` : ""}
       ${showWindow ? `
@@ -6134,6 +6289,12 @@ function bindOutcome() {
 
 function renderPatterns() {
   const entries = state.entries;
+  // Thought-record aggregations (distortions, belief deltas, mood drops,
+  // pivot follow-through) only make sense for kind:"thought-record" entries.
+  // Free-form/activity/worry have empty/undefined fields for those stats,
+  // so including them silently inflates denominators. We keep `entries` for
+  // the activity grid since any kind of entry counts as "showed up today."
+  const thoughtRecords = entries.filter(e => e.kind === "thought-record");
   if (entries.length === 0) {
     return `
       <div class="page-header">
@@ -6148,9 +6309,9 @@ function renderPatterns() {
     `;
   }
 
-  const total = entries.length;
-  const pivotsDone = entries.filter(e => e.pivotDone).length;
-  const pivotPct = Math.round((pivotsDone / total) * 100);
+  const total = thoughtRecords.length;
+  const pivotsDone = thoughtRecords.filter(e => e.pivotDone).length;
+  const pivotPct = total > 0 ? Math.round((pivotsDone / total) * 100) : 0;
 
   // Headline: average mood-intensity drop *per mood* across re-rated moods.
   // Multi-mood entries contribute multiple data points — each mood's drop
@@ -6158,7 +6319,7 @@ function renderPatterns() {
   // we use the latest available stage so post-pivot drops show up too.
   function moodDeltaSamples(stage) {
     const out = [];
-    entries.forEach(e => (e.moods || []).forEach(m => {
+    thoughtRecords.forEach(e => (e.moods || []).forEach(m => {
       const after = stage === "pivot" ? m.intensityAfterPivot : m.intensityAfterReframe;
       if (typeof after === "number" && typeof m.intensity === "number") {
         out.push(m.intensity - after);
@@ -6177,7 +6338,7 @@ function renderPatterns() {
 
   // Belief drop on hot thoughts.
   const beliefDrops = [];
-  entries.forEach(e => {
+  thoughtRecords.forEach(e => {
     const h = hotThought(e);
     if (h && typeof h.beliefBefore === "number" && typeof h.beliefAfter === "number") {
       beliefDrops.push(h.beliefBefore - h.beliefAfter);
@@ -6186,17 +6347,59 @@ function renderPatterns() {
   const avgBeliefDrop = beliefDrops.length
     ? Math.round(beliefDrops.reduce((a, b) => a + b, 0) / beliefDrops.length)
     : null;
+  // Aliases so the render-card template reads naturally — "rerated entries"
+  // matches the sample arrays one-for-one. Naming this twice avoids the
+  // late-discovered ReferenceError that crashed the Patterns view once any
+  // user had re-rated even one mood.
+  const rerated       = reframeDrops;
+  const beliefRerated = beliefDrops;
+
+  // ── Activity P/M aggregation ──────────────────────────────────────
+  // For completed activity entries, group by category and compute the
+  // mean of (actualP + actualM) / 2. Surfaces the category that's
+  // consistently lifting the mood most, with a sample-count gate so a
+  // one-off doesn't dominate.
+  const completedActivities = entries.filter(e =>
+    e.kind === "activity" && e.completedAt &&
+    typeof e.actualP === "number" && typeof e.actualM === "number"
+  );
+  const activityByCat = {};
+  completedActivities.forEach(e => {
+    const key = e.category || "other";
+    if (!activityByCat[key]) activityByCat[key] = { sum: 0, n: 0 };
+    activityByCat[key].sum += (e.actualP + e.actualM) / 2;
+    activityByCat[key].n += 1;
+  });
+  const activityCatRanked = Object.entries(activityByCat)
+    .map(([cat, v]) => ({ cat, mean: v.sum / v.n, n: v.n }))
+    .sort((a, b) => b.mean - a.mean);
+
+  // ── Worry dissolution rate (last 30 days) ─────────────────────────
+  // The headline therapeutic number: of all worries that have reached
+  // *any* resolution in the last 30 days, what fraction dissolved on
+  // their own? Filtering to resolved worries (not all parked) avoids
+  // skewing the % with worries that are still in the window.
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const resolvedWorries = entries.filter(e =>
+    e.kind === "worry" && e.resolution &&
+    e.resolvedAt && new Date(e.resolvedAt).getTime() >= thirtyDaysAgo
+  );
+  const dissolvedCount = resolvedWorries.filter(e => e.resolution === "dissolved").length;
+  const dissolvedPct = resolvedWorries.length >= 3
+    ? Math.round((dissolvedCount / resolvedWorries.length) * 100)
+    : null;
 
   const distCounts = {};
-  entries.forEach(e => e.distortions.forEach(d => distCounts[d] = (distCounts[d] || 0) + 1));
+  thoughtRecords.forEach(e => e.distortions.forEach(d => distCounts[d] = (distCounts[d] || 0) + 1));
   const sortedDist = Object.entries(distCounts).sort((a, b) => b[1] - a[1]).slice(0, 7);
   const maxDist = sortedDist[0]?.[1] || 1;
 
-  // Emotion families: count occurrences across all moods on all entries
-  // (so a single entry with both Anxiety + Shame contributes one to each).
+  // Emotion families: count occurrences across all moods on all thought
+  // records (so a single entry with both Anxiety + Shame contributes one
+  // to each).
   const emoCounts = {};
   Object.keys(EMOTION_FAMILIES).forEach(f => emoCounts[f] = 0);
-  entries.forEach(e => (e.moods || []).forEach(m => {
+  thoughtRecords.forEach(e => (e.moods || []).forEach(m => {
     if (m.family) emoCounts[m.family] = (emoCounts[m.family] || 0) + 1;
   }));
   const maxEmo = Math.max(...Object.values(emoCounts), 1);
@@ -6212,10 +6415,12 @@ function renderPatterns() {
 
   // Sparkline plots peak initial mood intensity per entry (the loudest mood
   // in the moment, since multi-mood entries don't fit on a single Y-axis).
+  // Skip entries with no moods — activity/worry/freeform entries that don't
+  // carry a mood would otherwise plot at peak=0 and tank the line.
   function peakIntensity(e) {
     return (e.moods || []).reduce((a, m) => Math.max(a, m.intensity || 0), 0);
   }
-  const recent = entries.slice(0, 20).reverse();
+  const recent = entries.filter(e => (e.moods || []).some(m => typeof m.intensity === "number")).slice(0, 20).reverse();
   const sparkW = 280, sparkH = 50, pad = 4;
   const sparkPath = recent.length > 1
     ? recent.map((e, i) => {
@@ -6313,6 +6518,40 @@ function renderPatterns() {
           <span class="activity-legend-item"><span class="activity-dot has-many"></span> Multiple</span>
         </div>
       </div>
+
+      ${activityCatRanked.length > 0 ? `
+        <div class="pattern-card span-2">
+          <div class="pattern-card-head">
+            <span class="pattern-card-title">What lifts the mood</span>
+            <span class="pattern-card-meta">${completedActivities.length} ${completedActivities.length === 1 ? "activity" : "activities"} logged</span>
+          </div>
+          <div class="bar-list">
+            ${activityCatRanked.map(({ cat, mean, n }) => {
+              const meta = ACTIVITY_CATEGORIES.find(c => c.value === cat) || { label: cap(cat), emoji: "•" };
+              const pct = (mean / 10) * 100;
+              return `
+                <div class="bar-row">
+                  <div class="bar-row-label"><span aria-hidden="true">${meta.emoji}</span> ${esc(meta.label)} <span class="bar-row-sub">· ${n}</span></div>
+                  <div class="bar-track"><div class="bar-fill" style="width: ${pct.toFixed(1)}%"></div></div>
+                  <div class="bar-row-value">${mean.toFixed(1)}</div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+          <p class="pattern-card-foot">Mean of pleasure + mastery, out of 10. The category at the top is the one your data says is most worth the time.</p>
+        </div>
+      ` : ""}
+
+      ${dissolvedPct !== null ? `
+        <div class="pattern-card">
+          <div class="pattern-card-head">
+            <span class="pattern-card-title">Worries that dissolved</span>
+            <span class="pattern-card-meta">last 30 days · ${resolvedWorries.length} resolved</span>
+          </div>
+          <div class="pattern-stat-big display">${dissolvedPct}<span class="pattern-stat-pct">%</span></div>
+          <div class="pattern-stat-label">went away on their own. Most worries didn't need the work.</div>
+        </div>
+      ` : ""}
 
       <div class="pattern-card span-2">
         <div class="pattern-card-head">
@@ -6688,7 +6927,7 @@ function renderModal() {
   } else if (state.modal === "onboarding") {
     inner = `
       <h3 class="display">Welcome to Reframe</h3>
-      <p class="modal-sub">A private, offline CBT journal. Every entry walks one triggering thought through six steps: capture it, name any distortions, weigh the evidence, write a reframe you'd actually accept, and end on one small action. Then re-rate — the shift is awareness, not a grade.</p>
+      <p class="modal-sub">A private, offline CBT journal. Four ways to capture what's happening — walk a thought through a structured reframe, write free-form, plan an activity worth doing, or park a worry for later. Pick whatever fits the moment. Everything stays in this browser only.</p>
       <div class="onboard-caveat">
         <strong>When this tool fits.</strong> Reframe is built for ordinary distress — the daily frustrations, disappointments, and worries that benefit from a structured pause. <strong>It's not built for</strong> active trauma processing, severe depression, psychosis, or acute crisis. For those, please use this alongside professional care, and reach for <button class="link-button" data-action="open-safety">crisis support</button> if you need it now.
       </div>
@@ -6774,6 +7013,15 @@ function renderSettingsModal() {
           </button>
         `).join("")}
       </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Worry window</div>
+      <p class="settings-section-help">When parked worries reappear for review. The window stays open for 20 minutes around this time. If the time has already passed today, parking a new worry schedules it for tomorrow.</p>
+      <label class="settings-time-row">
+        <span class="settings-time-label">Time of day</span>
+        <input type="time" class="settings-time-input" data-action="set-worry-window-time" value="${esc(s.worryWindowTime || "18:00")}">
+      </label>
     </div>
 
     <div class="settings-section">
@@ -7071,6 +7319,52 @@ function bindJournal() {
       render();
     });
   });
+  // "From a parked worry → / Worked through here →" cross-link buttons
+  // that surface on bidirectionally-linked entries. Scroll the target
+  // into view and expand its detail body so the user lands on context.
+  document.querySelectorAll('[data-action="open-linked"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const id = el.dataset.id;
+      const target = state.entries.find(x => x.id === id);
+      if (!target) return;
+      state.expandedIds.add(id);
+      // If the linked entry is filtered out by the active view-chip
+      // (e.g., user is on the "Worries" chip and the linked record is a
+      // thought-record), reset the view so the target is reachable.
+      const filterMap = {
+        "thought-record": ["all", "favorites", "unfinished", "week", "pivoted", "pending"],
+        "freeform":       ["all", "freeform", "week"],
+        "activity":       ["all", "activities", "week"],
+        "worry":          ["all", "worries", "week"],
+      };
+      const ok = (filterMap[target.kind] || []).includes(state.viewFilter);
+      if (!ok) state.viewFilter = "all";
+      render();
+      // Defer the scroll until after the new DOM lands.
+      requestAnimationFrame(() => {
+        const node = document.getElementById("entry-" + id);
+        if (node) smoothScrollIntoView(node, { block: "start" });
+      });
+    });
+  });
+  // "Start a worry / activity / free write" from a kind-filtered empty
+  // state. Swap the draft to the right factory and jump into Capture.
+  document.querySelectorAll('[data-action="start-kind"]').forEach(el => {
+    el.addEventListener("click", () => {
+      const kind = el.dataset.kind;
+      const factory =
+        kind === "freeform" ? emptyFreeform :
+        kind === "activity" ? emptyActivity :
+        kind === "worry"    ? emptyWorry    :
+                              emptyEntry;
+      state.draft = factory();
+      state.editingId = null;
+      state.captureStep = 1;
+      saveDraft(state.draft);
+      setView("capture");
+    });
+  });
   // "Not today" snooze — suppress the nudge banner for 18 hours so the user
   // can dismiss without permanently turning the feature off.
   document.querySelectorAll('[data-action="snooze-nudge"]').forEach(el => {
@@ -7269,11 +7563,10 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
-      // Bump scheduledFor to the next window after now. Preserve "postponed"
-      // resolution so the patterns card tracks it as deliberately deferred.
+      // Bump scheduledFor to the next window. The worry stays parked
+      // (resolution stays null) so it reappears in the next worry-window
+      // banner — that's the whole point of postponement.
       entry.scheduledFor = computeNextWorryWindow();
-      entry.resolution = "postponed";
-      entry.resolvedAt = new Date().toISOString();
       persist();
       render();
       toast("Postponed to the next worry window.");
@@ -7287,7 +7580,12 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
+      // Pre-mint the new thought-record's id so we can set bidirectional
+      // linkedEntryId now — without it, the worry has no way to point
+      // back to the entry it was escalated into.
+      const newEntryId = newId();
       const draft = emptyEntry();
+      draft.id = newEntryId;
       draft.trigger = "From a parked worry";
       draft.thoughts = [normalizeThought({ text: entry.worryText, isHot: true })];
       draft.linkedEntryId = entry.id;
@@ -7296,6 +7594,7 @@ function bindJournal() {
       state.captureStep = 1;
       entry.resolution = "escalated";
       entry.resolvedAt = new Date().toISOString();
+      entry.linkedEntryId = newEntryId;
       persist();
       setView("capture");
     });
@@ -7616,7 +7915,10 @@ function bindCapture() {
         : e);
       toast("Entry updated");
     } else {
-      state.entries = [{ ...state.draft, id: newId(), createdAt: now }, ...state.entries];
+      // Honor a pre-assigned draft.id (used by worry-escalate to set up
+      // bidirectional linking before the new entry exists). Otherwise mint
+      // a fresh id.
+      state.entries = [{ ...state.draft, id: state.draft.id || newId(), createdAt: now }, ...state.entries];
       toast("Entry saved");
     }
     persist();
@@ -7756,6 +8058,15 @@ function bindModal() {
       state.settings.nudgeSnoozedUntil = 0;
       saveSettings(state.settings);
       render();
+    });
+  });
+  document.querySelectorAll('[data-action="set-worry-window-time"]').forEach(el => {
+    el.addEventListener("change", () => {
+      const v = el.value;
+      // input[type=time] always returns HH:MM in 24-hour form (or empty).
+      // Fall back to the default if the user somehow clears it.
+      state.settings.worryWindowTime = v || "18:00";
+      saveSettings(state.settings);
     });
   });
 
@@ -7958,6 +8269,10 @@ function bindModal() {
     const removed = idx >= 0 ? state.entries[idx] : null;
     if (idx < 0) { setState({ modal: null }); return; }
     state.entries = state.entries.filter(e => e.id !== id);
+    // Drop a dangling log-activity draft if it referenced the deleted
+    // entry. The modal handles missing entries gracefully but it's
+    // cleaner to clear the state.
+    if (state.logActivityDraft?.entryId === id) state.logActivityDraft = null;
     persist();
     setState({ modal: null });
     toast("Entry deleted", {

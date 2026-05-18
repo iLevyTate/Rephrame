@@ -1,7 +1,7 @@
 {
   "name": "Reframe — A Private CBT Journal",
   "short_name": "Reframe",
-  "id": "./",
+  "id": "reframe-cbt-journal",
   "description": "A private, offline-first cognitive behavioral therapy journal. Capture thoughts, identify distortions, and reframe them. All data stays on your device — no account, no server, no tracking.",
   "start_url": "./",
   "scope": "./",
