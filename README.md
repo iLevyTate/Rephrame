@@ -1,4 +1,21 @@
-# Reframe — a private CBT journal (PWA)
+<p align="center">
+  <img src="icons/icon.svg" alt="Reframe — italic r monogram with copper framing rule" width="132">
+</p>
+
+<h1 align="center">Reframe</h1>
+
+<p align="center">
+  <strong>A private, offline-first CBT journal.</strong><br>
+  <sub>No account · no server · no tracking · everything stays on your device.</sub>
+</p>
+
+<p align="center">
+  <a href="https://ilevytate.github.io/pwacbt/"><img alt="Live demo" src="https://img.shields.io/badge/live-ilevytate.github.io%2Fpwacbt-b8552c?style=flat-square&labelColor=1a1715"></a>
+  <img alt="PWA" src="https://img.shields.io/badge/PWA-installable-1a1715?style=flat-square&labelColor=b8552c">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-1a1715?style=flat-square">
+</p>
+
+---
 
 A single-page, offline-first cognitive behavioral therapy journal you can install
 to your home screen and run as a local, private app. No account, no server, no
