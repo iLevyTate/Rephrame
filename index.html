@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#1a1715">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -300,6 +300,17 @@ main {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border-top: 1px solid var(--rule-ink);
+  /* Slide off when the virtual keyboard is up so it can't overlap a focused
+     field. `translateY(100%)` is cheaper than `display:none` and keeps the
+     element in flow for predictable layout when the kb dismisses. */
+  transition: transform 180ms var(--ease);
+}
+body.kb-open .bottom-nav {
+  transform: translateY(100%);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav { transition: none; }
 }
 .bottom-nav-inner {
   max-width: var(--app-max);
@@ -2507,6 +2518,298 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
 }
 
 /* ──────────────────────────────────────────────────────────────────
+   MIND OVER MOOD: Step 2 sectioned multi-thought/multi-mood UI,
+   hot-thought cards, three-stage mood arcs, Step 8 outcome screen.
+   ────────────────────────────────────────────────────────────────── */
+
+.step2-section {
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+  border-bottom: 1px dashed var(--rule-paper);
+}
+.step2-section:last-of-type { border-bottom: none; padding-bottom: 0; }
+.step2-section-head { margin-bottom: 14px; }
+.step2-eyebrow {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.step2-title {
+  font-size: 19px;
+  margin: 0 0 6px 0;
+  color: var(--on-paper);
+  letter-spacing: -0.01em;
+}
+.step2-sub {
+  font-size: 13px;
+  color: var(--on-paper-mute);
+  line-height: 1.55;
+  margin: 0 0 14px 0;
+}
+.step2-sub em { font-style: italic; color: var(--on-paper-soft); }
+
+/* Row list (thoughts / moods cards inside Step 2). */
+.row-list { display: flex; flex-direction: column; gap: 12px; }
+.row-card {
+  background: var(--paper-2);
+  border: 1px solid var(--rule-paper);
+  border-radius: var(--r-3);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.row-card.is-hot {
+  border-color: var(--copper);
+  background: rgba(184, 85, 44, 0.06);
+}
+.row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.row-hot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--on-paper-mute);
+  user-select: none;
+}
+.row-hot input { width: 16px; height: 16px; accent-color: var(--copper); margin: 0; cursor: pointer; }
+.row-card.is-hot .row-hot-label { color: var(--copper-deep); font-weight: 600; }
+.row-remove {
+  width: 28px; height: 28px;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--on-paper-faint);
+  border: 1px solid transparent;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s var(--ease);
+}
+.row-remove:hover {
+  color: var(--copper-deep);
+  border-color: var(--rule-paper);
+  background: var(--paper-3);
+}
+.row-textarea {
+  background: var(--paper);
+  border: 1px solid var(--rule-paper);
+}
+.row-belief {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+}
+.row-belief-label { font-size: 12px; color: var(--on-paper-mute); }
+.row-belief-num {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--on-paper);
+}
+.row-card--mood .field-row-split { flex: 1; }
+.intensity-control--row {
+  background: var(--paper);
+  border-radius: var(--r-2);
+  padding: 10px 12px;
+}
+.row-add {
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1px dashed var(--rule-paper-2);
+  border-radius: var(--r-2);
+  color: var(--copper);
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+  width: 100%;
+  justify-content: center;
+}
+.row-add:hover {
+  border-color: var(--copper);
+  background: rgba(184, 85, 44, 0.05);
+  color: var(--copper-deep);
+}
+.row-add:active { transform: scale(0.99); }
+
+/* Hot-thought "on trial" card at top of Step 4 and Step 5. */
+.hot-thought-card {
+  background: linear-gradient(to right, rgba(184, 85, 44, 0.08), rgba(184, 85, 44, 0.02));
+  border-left: 3px solid var(--copper);
+  border-radius: var(--r-3);
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hot-thought-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+}
+.hot-thought-quote {
+  font-size: 17px;
+  line-height: 1.4;
+  margin: 0;
+  color: var(--on-paper);
+}
+.hot-thought-belief {
+  font-size: 12px;
+  color: var(--on-paper-mute);
+  font-family: var(--mono);
+}
+.hot-thought-belief strong { color: var(--on-paper); }
+
+/* Thought list inside expanded entry details. */
+.thought-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.thought-list-item {
+  background: var(--paper-2);
+  border-left: 2px solid transparent;
+  border-radius: var(--r-2);
+  padding: 8px 12px;
+}
+.thought-list-item.is-hot {
+  border-left-color: var(--copper);
+  background: rgba(184, 85, 44, 0.05);
+}
+.thought-hot-tag { color: var(--copper); }
+.thought-belief-line {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--on-paper-mute);
+  margin-top: 4px;
+}
+.thought-belief-line strong { color: var(--on-paper); font-family: var(--mono); }
+
+/* Three-stage mood arc in entry details. */
+.mood-arc-list { display: flex; flex-direction: column; gap: 8px; }
+.mood-arc {
+  background: var(--paper-2);
+  border-radius: var(--r-2);
+  padding: 8px 12px;
+}
+.mood-arc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.mood-arc-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-paper);
+}
+.mood-arc-stages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--on-paper-soft);
+}
+.mood-arc-stage {
+  display: inline-block;
+  padding: 1px 8px;
+  background: var(--paper);
+  border-radius: var(--r-full);
+  font-weight: 600;
+  color: var(--on-paper);
+}
+.mood-arc-sep { color: var(--on-paper-faint); }
+.mood-arc-stage-key {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--on-paper-faint);
+  letter-spacing: 0.04em;
+}
+
+/* Step 8 outcome screen + CTA on entry cards. */
+.outcome-cta {
+  margin-top: 12px;
+  font-size: 13px;
+  padding: 10px 14px;
+}
+.outcome-done-line {
+  margin: 12px 0 0 0;
+  font-size: 12px;
+  color: var(--copper-deep);
+  font-family: var(--mono);
+}
+.outcome-context {
+  background: var(--paper-2);
+  border-radius: var(--r-3);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.outcome-context-row { display: flex; flex-direction: column; gap: 2px; }
+.outcome-context-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper-deep);
+  font-weight: 600;
+}
+.outcome-context-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--on-paper);
+  line-height: 1.5;
+}
+.flag-outcome {
+  background: rgba(184, 85, 44, 0.10);
+  color: var(--copper-deep);
+  border: 1px solid var(--copper-line);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--r-full);
+}
+
+/* ──────────────────────────────────────────────────────────────────
    TIER 1: belief slider, deltas, rerate, quick-capture, safety
    ────────────────────────────────────────────────────────────────── */
 
@@ -2920,19 +3223,26 @@ const STEP_HINTS = [
 // complete thought record looks like before they have to write one. Loaded
 // on demand from the empty-state "Load example" button and from onboarding.
 // isSample:true marks it as removable in one tap.
+// Sample uses v2 schema directly: two moods (shame + dread), two thoughts
+// with the catastrophizing one marked hot, full three-stage mood arc so
+// users can see what a complete entry looks like end to end.
 const SAMPLE_ENTRY = {
-  id: "sample-" + Date.now().toString(36),
+  id: "sample-seed",
   createdAt: new Date().toISOString(),
   trigger: "Stood up too fast at the pedicure place and broke the chair. Two other clients turned to look. I paid and walked out without finishing.",
-  automaticThought: "Everyone saw that. They all think I'm a huge clumsy idiot and I can never go back there.",
-  emotionFamily: "Shame",
-  emotionVariant: "humiliated",
-  emotionIntensity: 80,
-  emotionEstimated: false,
+  thoughts: [
+    { id: "sample-t1", text: "Everyone saw that. They all think I'm a huge clumsy idiot and I can never go back there.", beliefBefore: 85, beliefAfter: 30, isHot: true },
+    { id: "sample-t2", text: "I should have laughed it off instead of running out — I made it weird.", beliefBefore: 65, beliefAfter: 50, isHot: false }
+  ],
+  moods: [
+    { id: "sample-m1", family: "Shame",   variant: "humiliated", intensity: 80, intensityAfterReframe: 35, intensityAfterPivot: 15, estimated: false },
+    { id: "sample-m2", family: "Anxiety", variant: "dread",      intensity: 60, intensityAfterReframe: 30, intensityAfterPivot: 10, estimated: false }
+  ],
   bodyCheck: "Face flushing, chest tight, urge to flee. Hands cold.",
   bodyInferred: false,
   distortions: ["Mind Reading", "Catastrophizing", "Labeling"],
   distortionNote: "Read two strangers' minds, then attached a permanent label to myself from one moment.",
+  thoughtsAccurate: false,
   evidenceFor: "The chair did break. People did look. I felt embarrassed enough to leave.",
   evidenceAgainst: "Pedicure chairs are old and have weight ratings; one breaking says more about the chair. The looks were a half-second of curiosity, not judgment. I've never thought another person was 'an idiot' for an accident.",
   socraticType: "Double standard",
@@ -2943,9 +3253,7 @@ const SAMPLE_ENTRY = {
   pivotDone: true,
   pivotDoneAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
   pivotReflection: "Sent the text. They replied within an hour, were warm about it, and even joked that the chair had been wobbling for weeks. Rebooked for Saturday. The dread before sending was way worse than anything that actually happened — same pattern as last time.",
-  beliefBefore: 85,
-  beliefAfter: 30,
-  emotionIntensityAfter: 35,
+  outcomeRecorded: true,
   isQuick: false,
   isSample: true,
   isFavorite: true,
@@ -3024,19 +3332,27 @@ const REMINDER_LABELS = {
 // Fields added after v1 shipped. Existing JSON exports won't carry them, so
 // we normalize on read to a stable shape. null (not 0) means "not rated" —
 // that distinction matters for the before/after delta display.
+// Schema v2 (Mind Over Mood–aligned): moods and thoughts are arrays so a
+// single triggering moment can carry the multiple feelings and competing
+// automatic thoughts canonical thought-records capture. One thought is
+// marked `isHot` — that's the one Steps 4 and 5 challenge and reframe.
+// Legacy v1 entries (single emotion + single automaticThought) are
+// converted on read; the v1 scalar fields are dropped from the output so
+// we never have stale duplicates to keep in sync.
 function normalizeEntry(e) {
-  return {
+  const out = {
     id: e.id || "",
     createdAt: e.createdAt || "",
     updatedAt: e.updatedAt || undefined,
+
     trigger: e.trigger || "",
-    automaticThought: e.automaticThought || "",
-    emotionFamily: e.emotionFamily || "",
-    emotionVariant: e.emotionVariant || "",
-    emotionIntensity: typeof e.emotionIntensity === "number" ? e.emotionIntensity : 40,
-    emotionEstimated: !!e.emotionEstimated,
+
+    moods: Array.isArray(e.moods) ? e.moods.map(normalizeMood) : [],
+    thoughts: Array.isArray(e.thoughts) ? e.thoughts.map(normalizeThought) : [],
+
     bodyCheck: e.bodyCheck || "",
     bodyInferred: !!e.bodyInferred,
+
     distortions: Array.isArray(e.distortions) ? e.distortions : [],
     distortionNote: e.distortionNote || "",
     // "I looked at the thought and it actually feels accurate to me" — a
@@ -3044,25 +3360,88 @@ function normalizeEntry(e) {
     // otherwise users in real grief / valid distress get nudged into
     // pathologizing healthy reactions.
     thoughtsAccurate: !!e.thoughtsAccurate,
+
     evidenceFor: e.evidenceFor || "",
     evidenceAgainst: e.evidenceAgainst || "",
     socraticType: e.socraticType || "",
     socraticQuestion: e.socraticQuestion || "",
+
     reframeMethod: e.reframeMethod || "",
     newThought: e.newThought || "",
+
     pivot: e.pivot || "",
     pivotDone: !!e.pivotDone,
-    pivotDoneAt: e.pivotDoneAt || "",         // ISO timestamp the pivot was marked done
-    pivotReflection: e.pivotReflection || "", // "What happened?" follow-up
-    // Re-rating fields. null = not yet rated.
-    beliefBefore: typeof e.beliefBefore === "number" ? e.beliefBefore : null,
-    beliefAfter: typeof e.beliefAfter === "number" ? e.beliefAfter : null,
-    emotionIntensityAfter: typeof e.emotionIntensityAfter === "number" ? e.emotionIntensityAfter : null,
-    // Provenance flags.
-    isQuick: !!e.isQuick,         // entered via the quick-capture path; needs finishing
-    isSample: !!e.isSample,       // pre-loaded demo entry the user can delete
-    isFavorite: !!e.isFavorite,   // pinned as a coping card
+    pivotDoneAt: e.pivotDoneAt || "",
+    pivotReflection: e.pivotReflection || "",
+    // Marks that Step 8 (the post-pivot outcome screen) has been completed
+    // at least once. Independent of pivotDone — the user can mark pivot done
+    // without re-rating moods, and vice versa.
+    outcomeRecorded: !!e.outcomeRecorded,
+
+    isQuick: !!e.isQuick,
+    isSample: !!e.isSample,
+    isFavorite: !!e.isFavorite,
   };
+
+  // Migrate v1 single-emotion/single-thought entries.
+  if (out.moods.length === 0 && (e.emotionFamily || typeof e.emotionIntensity === "number")) {
+    out.moods.push(normalizeMood({
+      family: e.emotionFamily,
+      variant: e.emotionVariant,
+      intensity: e.emotionIntensity,
+      estimated: e.emotionEstimated,
+      intensityAfterReframe: e.emotionIntensityAfter,
+    }));
+  }
+  if (out.thoughts.length === 0 && (e.automaticThought || typeof e.beliefBefore === "number")) {
+    out.thoughts.push(normalizeThought({
+      text: e.automaticThought,
+      beliefBefore: e.beliefBefore,
+      beliefAfter: e.beliefAfter,
+      isHot: true,
+    }));
+  }
+  // Guarantee at least one thought is hot. If the array is empty, no hot
+  // thought; if it's non-empty and nothing is marked, pin the first.
+  if (out.thoughts.length > 0 && !out.thoughts.some(t => t.isHot)) {
+    out.thoughts[0].isHot = true;
+  }
+  return out;
+}
+
+function normalizeMood(m) {
+  m = m || {};
+  return {
+    id: m.id || newId(),
+    family: m.family || "",
+    variant: m.variant || "",
+    intensity: typeof m.intensity === "number" ? m.intensity : 40,
+    estimated: !!m.estimated,
+    intensityAfterReframe: typeof m.intensityAfterReframe === "number" ? m.intensityAfterReframe : null,
+    intensityAfterPivot:   typeof m.intensityAfterPivot   === "number" ? m.intensityAfterPivot   : null,
+  };
+}
+function normalizeThought(t) {
+  t = t || {};
+  return {
+    id: t.id || newId(),
+    text: t.text || "",
+    beliefBefore: typeof t.beliefBefore === "number" ? t.beliefBefore : null,
+    beliefAfter:  typeof t.beliefAfter  === "number" ? t.beliefAfter  : null,
+    isHot: !!t.isHot,
+  };
+}
+
+// Convenience accessors used across renderers and exporters. Centralizing
+// the "hot thought" lookup keeps the rest of the code from re-implementing
+// the search and lets us swap selection rules in one place.
+function hotThought(entry) {
+  const list = (entry && entry.thoughts) || [];
+  return list.find(t => t.isHot) || list[0] || null;
+}
+function firstMood(entry) {
+  const list = (entry && entry.moods) || [];
+  return list[0] || null;
 }
 
 function loadEntries() {
@@ -3081,8 +3460,7 @@ function loadDraft() {
   catch { return null; }
 }
 function saveDraft(d) {
-  const has = d && (d.trigger || d.automaticThought || d.evidenceFor || d.evidenceAgainst || d.newThought || d.pivot || (d.distortions && d.distortions.length));
-  if (has) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+  if (hasDraftContent(d)) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
   else localStorage.removeItem(DRAFT_KEY);
 }
 function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
@@ -3097,17 +3475,21 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const band = n => INTENSITY_BANDS.find(b => n <= b.max) || INTENSITY_BANDS[4];
 
 function emptyEntry() {
+  // Start with one empty thought (auto-hot) and one empty mood so the v2
+  // capture form has rows to render. The user can add more or leave it at
+  // one — single-thought / single-mood remains a perfectly valid entry.
   return {
     id: "", createdAt: "",
-    trigger: "", automaticThought: "",
-    emotionFamily: "", emotionVariant: "", emotionIntensity: 40, emotionEstimated: false,
+    trigger: "",
+    thoughts: [normalizeThought({ isHot: true })],
+    moods: [normalizeMood({})],
     bodyCheck: "", bodyInferred: false,
     distortions: [], distortionNote: "", thoughtsAccurate: false,
     evidenceFor: "", evidenceAgainst: "",
     socraticType: "", socraticQuestion: "",
     reframeMethod: "", newThought: "",
     pivot: "", pivotDone: false, pivotDoneAt: "", pivotReflection: "",
-    beliefBefore: null, beliefAfter: null, emotionIntensityAfter: null,
+    outcomeRecorded: false,
     isQuick: false, isSample: false, isFavorite: false,
   };
 }
@@ -3146,16 +3528,41 @@ function entryToMd(e, idx) {
   const L = [];
   L.push("---", "", "### Entry " + (idx + 1), "");
   L.push("**1. Trigger (Antecedent)**", "", e.trigger || "—", "");
+
   L.push("**2. Initial Reaction**", "");
-  L.push('- **Automatic Thought:** "' + e.automaticThought + '"', "");
-  const emoLabel = e.emotionVariant ? (cap(e.emotionVariant) + " (" + e.emotionFamily + ")") : (e.emotionFamily || "—");
-  const estTag = e.emotionEstimated ? " *(estimated)*" : "";
-  L.push("- **Emotion:** " + emoLabel + " — **Intensity:** " + e.emotionIntensity + "/100" + estTag, "");
-  if (e.beliefBefore !== null && e.beliefBefore !== undefined) {
-    L.push("- **Belief in thought (before):** " + e.beliefBefore + "%", "");
+
+  // Thoughts: list each, highlight hot.
+  const thoughts = e.thoughts || [];
+  if (thoughts.length) {
+    L.push("*Automatic thoughts:*", "");
+    thoughts.forEach((t, i) => {
+      const hotTag = t.isHot ? " 🔥 **(hot)**" : "";
+      const belief = typeof t.beliefBefore === "number" ? " — belief " + t.beliefBefore + "%" : "";
+      L.push(`${i + 1}. "${t.text || "—"}"${hotTag}${belief}`);
+    });
+    L.push("");
   }
-  const infTag = e.bodyInferred ? " *(inferred from speech)*" : "";
-  L.push("- **Body Check:** " + (e.bodyCheck || "—") + infTag, "");
+
+  // Moods: list each with three-stage arc where present.
+  const moods = e.moods || [];
+  if (moods.length) {
+    L.push("*Moods:*", "");
+    moods.forEach(m => {
+      const label = m.variant ? (cap(m.variant) + " (" + m.family + ")") : (m.family || "Mood");
+      const estTag = m.estimated ? " *(est.)*" : "";
+      let arc = m.intensity + "/100";
+      if (typeof m.intensityAfterReframe === "number") arc += " → " + m.intensityAfterReframe + " after reframe";
+      if (typeof m.intensityAfterPivot   === "number") arc += " → " + m.intensityAfterPivot   + " after pivot";
+      L.push(`- ${label} — ${arc}${estTag}`);
+    });
+    L.push("");
+  }
+
+  if (e.bodyCheck) {
+    const infTag = e.bodyInferred ? " *(inferred from speech)*" : "";
+    L.push("- **Body Check:** " + e.bodyCheck + infTag, "");
+  }
+
   L.push("**3. Distortion Identified**", "");
   if (e.thoughtsAccurate) {
     L.push("*Marked as accurate, not distorted — the thought here was true to the writer; the rest of the entry holds it rather than arguing with it.*", "");
@@ -3163,25 +3570,38 @@ function entryToMd(e, idx) {
     L.push(e.distortions.length ? e.distortions.map(d => "**" + d + "**").join(" + ") : "—", "");
     if (e.distortionNote) L.push(e.distortionNote, "");
   }
+
   L.push("**4. Challenge (The Trial)**", "");
   L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
   L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
-  L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
+  if (e.socraticQuestion) L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
+  else L.push("");
+
   L.push("**5. Reframe**", "");
   L.push("- **Method:** " + (e.reframeMethod || "—"), "");
-  L.push('- **New Thought:** "' + e.newThought + '"', "");
-  if (e.beliefAfter !== null && e.beliefAfter !== undefined) {
-    const drop = e.beliefBefore !== null && e.beliefBefore !== undefined ? (" (Δ " + (e.beliefAfter - e.beliefBefore) + ")") : "";
-    L.push("- **Belief in thought (after):** " + e.beliefAfter + "%" + drop, "");
+  L.push('- **New Thought:** "' + (e.newThought || "—") + '"', "");
+  const hot = hotThought(e);
+  if (hot && typeof hot.beliefAfter === "number") {
+    const drop = typeof hot.beliefBefore === "number" ? (" (Δ " + (hot.beliefAfter - hot.beliefBefore) + ")") : "";
+    L.push("- **Belief in hot thought (after):** " + hot.beliefAfter + "%" + drop, "");
   }
-  if (e.emotionIntensityAfter !== null && e.emotionIntensityAfter !== undefined) {
-    L.push("- **Emotion intensity (after):** " + e.emotionIntensityAfter + "/100 (Δ " + (e.emotionIntensityAfter - e.emotionIntensity) + ")", "");
-  }
+
   L.push("**6. The Pivot**", "", e.pivot || "—", "");
   if (e.pivotDone) {
     L.push("", "*Pivot completed" + (e.pivotDoneAt ? " — " + fmtDateTime(e.pivotDoneAt) : "") + ".*", "");
     if (e.pivotReflection) {
       L.push("**What happened**", "", e.pivotReflection, "");
+    }
+    // Post-pivot mood ratings (Step 8) — only render if any are present.
+    const afterPivot = moods.filter(m => typeof m.intensityAfterPivot === "number");
+    if (afterPivot.length) {
+      L.push("**Moods after acting**", "");
+      afterPivot.forEach(m => {
+        const label = m.variant ? cap(m.variant) : (m.family || "Mood");
+        const delta = m.intensityAfterPivot - m.intensity;
+        L.push(`- ${label}: ${m.intensity} → ${m.intensityAfterPivot} (Δ ${delta > 0 ? "+" : ""}${delta})`);
+      });
+      L.push("");
     }
   }
   if (e.isFavorite) L.push("", "★ *Coping card — pinned.*", "");
@@ -3243,6 +3663,8 @@ const state = {
   search: "",
   filter: "",             // distortion-name filter
   viewFilter: "all",      // scope: all | favorites | unfinished | week | pivoted | pending
+  // ID of the entry being viewed/edited in the Step 8 outcome screen.
+  outcomeEntryId: null,
   expandedIds: new Set(),
   modal: null,
   // Working buffer for the quick-capture modal so the textarea + slider can
@@ -3352,7 +3774,11 @@ function setView(v) {
 }
 
 function hasDraftContent(d) {
-  return !!(d.trigger || d.automaticThought || d.evidenceFor || d.evidenceAgainst || d.newThought || d.pivot || d.distortions.length);
+  if (!d) return false;
+  const anyThought = (d.thoughts || []).some(t => (t.text || "").trim());
+  const anyMood    = (d.moods    || []).some(m => m.family);
+  return !!(d.trigger || anyThought || anyMood || d.evidenceFor || d.evidenceAgainst ||
+           d.newThought || d.pivot || (d.distortions && d.distortions.length));
 }
 
 function persist() { saveEntries(state.entries); }
@@ -3390,9 +3816,11 @@ function render() {
   else if (state.view === "capture")   view.innerHTML = renderCapture();
   else if (state.view === "patterns")  view.innerHTML = renderPatterns();
   else if (state.view === "reference") view.innerHTML = renderReference();
+  else if (state.view === "outcome")   view.innerHTML = renderOutcomeView();
 
   if (state.view === "journal")      bindJournal();
   else if (state.view === "capture") bindCapture();
+  else if (state.view === "outcome") bindOutcome();
 
   renderModal();
 }
@@ -3499,9 +3927,9 @@ function renderCopingCards(favorites) {
       </div>
       <div class="coping-scroller">
         ${favorites.map(e => {
-          const hasDelta = e.beliefBefore !== null && e.beliefBefore !== undefined &&
-                          e.beliefAfter  !== null && e.beliefAfter  !== undefined;
-          const bDelta = hasDelta ? (e.beliefAfter - e.beliefBefore) : null;
+          const h = hotThought(e);
+          const hasDelta = h && typeof h.beliefBefore === "number" && typeof h.beliefAfter === "number";
+          const bDelta = hasDelta ? (h.beliefAfter - h.beliefBefore) : null;
           return `
             <article class="coping-card" data-action="jump-to-entry" data-id="${e.id}" tabindex="0" role="button" aria-label="Open coping card">
               <div class="coping-card-head">
@@ -3568,11 +3996,12 @@ function renderJournal() {
   if (state.filter) filtered = filtered.filter(e => e.distortions.includes(state.filter));
   if (q) {
     filtered = filtered.filter(e => {
+      const thoughtText = (e.thoughts || []).map(t => t.text).join(" ");
+      const moodText    = (e.moods    || []).map(m => `${m.family || ""} ${m.variant || ""}`).join(" ");
       const blob = [
-        e.trigger, e.automaticThought, e.newThought, e.pivot,
+        e.trigger, thoughtText, moodText, e.newThought, e.pivot,
         e.pivotReflection, e.distortionNote, e.evidenceFor, e.evidenceAgainst,
         e.socraticQuestion,
-        e.emotionFamily, e.emotionVariant,
         e.distortions.join(" ")
       ].join(" ").toLowerCase();
       return blob.includes(q);
@@ -3684,7 +4113,8 @@ function renderNudgeBanner() {
 }
 
 function renderResumeBanner() {
-  const preview = state.draft.trigger || state.draft.automaticThought || "(unfinished entry)";
+  const firstThought = (state.draft.thoughts || []).find(t => (t.text || "").trim());
+  const preview = state.draft.trigger || (firstThought && firstThought.text) || "(unfinished entry)";
   return `
     <div class="resume-banner">
       <div class="resume-banner-info">
@@ -3706,22 +4136,33 @@ function renderResumeBanner() {
 }
 
 function renderEntryCard(entry, index) {
-  // Print mode forces every card open so the print dialog gets a full
-  // transcript regardless of which cards the user had expanded.
   const expanded = state.printMode || state.expandedIds.has(entry.id);
-  const emoLabel = entry.emotionVariant ? cap(entry.emotionVariant) : entry.emotionFamily;
+  const moods = entry.moods || [];
+  const hot = hotThought(entry);
+  const namedMoods = moods.filter(m => m.family);
 
-  const hasIntensityDelta = entry.emotionIntensityAfter !== null && entry.emotionIntensityAfter !== undefined;
-  const intensityDelta = hasIntensityDelta ? (entry.emotionIntensityAfter - entry.emotionIntensity) : null;
-  const hasBeliefDelta = entry.beliefBefore !== null && entry.beliefBefore !== undefined &&
-                        entry.beliefAfter  !== null && entry.beliefAfter  !== undefined;
-  const beliefDelta = hasBeliefDelta ? (entry.beliefAfter - entry.beliefBefore) : null;
+  // Hot-thought belief delta — the single number users glance at to see
+  // whether the reframe moved anything.
+  const hasBeliefDelta = hot && typeof hot.beliefBefore === "number" && typeof hot.beliefAfter === "number";
+  const beliefDelta = hasBeliefDelta ? (hot.beliefAfter - hot.beliefBefore) : null;
 
-  // The two flag pills (Quick / Sample) sit at the top-right of the meta row,
-  // displacing the "Pivoted" pill only if both happen to be true at once.
+  // Compact mood pills — show the first mood inline with its three-stage
+  // arc; any additional moods collapse to a "+N more" badge that opens with
+  // the card expansion. Stays one row on mobile.
+  const primaryMood = namedMoods[0];
+  const moodLabel = primaryMood ? (primaryMood.variant ? cap(primaryMood.variant) : primaryMood.family) : null;
+  const after = primaryMood && typeof primaryMood.intensityAfterPivot === "number"
+                  ? primaryMood.intensityAfterPivot
+              : primaryMood && typeof primaryMood.intensityAfterReframe === "number"
+                  ? primaryMood.intensityAfterReframe
+              : null;
+  const hasMoodDelta = primaryMood && after !== null;
+  const moodDelta = hasMoodDelta ? (after - primaryMood.intensity) : null;
+
   const flagPills = [];
   if (entry.isQuick) flagPills.push('<span class="entry-flag flag-quick">⚡ Finish this</span>');
   if (entry.isSample) flagPills.push('<span class="entry-flag flag-sample">Sample</span>');
+  if (entry.pivotDone && !entry.outcomeRecorded) flagPills.push('<span class="entry-flag flag-outcome">Step 8 open</span>');
 
   return `
     <article class="entry-card ${expanded ? "expanded" : ""} ${entry.isQuick ? "is-quick" : ""} ${entry.isFavorite ? "is-favorite" : ""}" id="entry-${entry.id}">
@@ -3744,17 +4185,18 @@ function renderEntryCard(entry, index) {
           ${entry.trigger ? esc(entry.trigger) : "(no trigger)"}
         </h3>
         <div class="entry-tags-row">
-          ${emoLabel ? `
+          ${moodLabel ? `
             <span class="felt-pill">
-              Felt <span class="felt-emo">${esc(emoLabel)}</span>
-              ${hasIntensityDelta
-                ? `<span class="intensity-delta"><span class="intensity-mini">${entry.emotionIntensity}</span> → <span class="intensity-mini">${entry.emotionIntensityAfter}</span> <span class="delta-tag ${intensityDelta < 0 ? "good" : "flat"}">${intensityDelta > 0 ? "+" : ""}${intensityDelta}</span></span>`
-                : `<span class="intensity-mini">${entry.emotionIntensity}</span>`}
+              Felt <span class="felt-emo">${esc(moodLabel)}</span>
+              ${hasMoodDelta
+                ? `<span class="intensity-delta"><span class="intensity-mini">${primaryMood.intensity}</span> → <span class="intensity-mini">${after}</span> <span class="delta-tag ${moodDelta < 0 ? "good" : "flat"}">${moodDelta > 0 ? "+" : ""}${moodDelta}</span></span>`
+                : `<span class="intensity-mini">${primaryMood.intensity}</span>`}
             </span>
           ` : ""}
+          ${namedMoods.length > 1 ? `<span class="dist-more" title="${esc(namedMoods.slice(1).map(m => m.variant ? cap(m.variant) : m.family).join(", "))}">+${namedMoods.length - 1} more</span>` : ""}
           ${hasBeliefDelta ? `
             <span class="belief-pill">
-              Belief <span class="belief-mini">${entry.beliefBefore}%</span> → <span class="belief-mini">${entry.beliefAfter}%</span>
+              Belief <span class="belief-mini">${hot.beliefBefore}%</span> → <span class="belief-mini">${hot.beliefAfter}%</span>
               <span class="delta-tag ${beliefDelta < 0 ? "good" : "flat"}">${beliefDelta > 0 ? "+" : ""}${beliefDelta}</span>
             </span>
           ` : ""}
@@ -3768,12 +4210,62 @@ function renderEntryCard(entry, index) {
 }
 
 function renderEntryDetails(entry) {
+  const thoughts = entry.thoughts || [];
+  const moods = entry.moods || [];
+  const hot = hotThought(entry);
+
+  // Three-stage mood arc per mood: initial → after reframe → after pivot.
+  // Renders as a row per mood for legibility.
+  const moodArc = moods.filter(m => m.family).map(m => {
+    const label = m.variant ? cap(m.variant) + " · " + m.family : m.family;
+    const stages = [{label: "start", value: m.intensity}];
+    if (typeof m.intensityAfterReframe === "number") stages.push({label: "after reframe", value: m.intensityAfterReframe});
+    if (typeof m.intensityAfterPivot   === "number") stages.push({label: "after pivot",   value: m.intensityAfterPivot});
+    const last = stages[stages.length - 1].value;
+    const delta = last - m.intensity;
+    return `
+      <div class="mood-arc">
+        <div class="mood-arc-head">
+          <span class="mood-arc-label">${esc(label)}</span>
+          ${stages.length > 1 ? `<span class="delta-tag ${delta < 0 ? "good" : "flat"}">${delta > 0 ? "+" : ""}${delta}</span>` : ""}
+        </div>
+        <div class="mood-arc-stages">
+          ${stages.map((s, i) => `
+            <span class="mood-arc-stage">${s.value}</span>
+            ${i < stages.length - 1 ? '<span class="mood-arc-sep" aria-hidden="true">→</span>' : ""}
+          `).join("")}
+          <span class="mood-arc-stage-key">${esc(stages.map(s => s.label).join(" → "))}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+
   return `
     <div class="entry-body">
-      <div class="detail-row">
-        <div class="detail-label">1 · Automatic Thought</div>
-        <p class="detail-text italic">"${esc(entry.automaticThought)}"</p>
-      </div>
+      ${thoughts.length ? `
+        <div class="detail-row">
+          <div class="detail-label">1 · Automatic Thoughts</div>
+          <ol class="thought-list">
+            ${thoughts.map(t => `
+              <li class="thought-list-item ${t.isHot ? "is-hot" : ""}">
+                <p class="detail-text italic">${t.isHot ? '<span class="thought-hot-tag">🔥</span> ' : ""}"${esc(t.text) || "—"}"</p>
+                ${typeof t.beliefBefore === "number" || typeof t.beliefAfter === "number" ? `
+                  <div class="thought-belief-line">
+                    ${typeof t.beliefBefore === "number" ? `<span>Belief start: <strong>${t.beliefBefore}%</strong></span>` : ""}
+                    ${typeof t.beliefAfter  === "number" ? `<span>→ after reframe: <strong>${t.beliefAfter}%</strong></span>` : ""}
+                  </div>
+                ` : ""}
+              </li>
+            `).join("")}
+          </ol>
+        </div>
+      ` : ""}
+      ${moodArc ? `
+        <div class="detail-row">
+          <div class="detail-label">2 · Moods</div>
+          <div class="mood-arc-list">${moodArc}</div>
+        </div>
+      ` : ""}
       ${entry.bodyCheck ? `
         <div class="detail-row">
           <div class="detail-label">2 · Body Check</div>
@@ -3785,10 +4277,11 @@ function renderEntryDetails(entry) {
           <div class="detail-label">3 · Distortions</div>
           <p class="detail-text"><span class="accurate-detail">Marked as accurate, not distorted — these thoughts feel true to you, and the rest of the entry holds them rather than arguing with them.</span></p>
         </div>
-      ` : entry.distortionNote ? `
+      ` : entry.distortions.length || entry.distortionNote ? `
         <div class="detail-row">
-          <div class="detail-label">3 · Distortion note</div>
-          <p class="detail-text">${esc(entry.distortionNote)}</p>
+          <div class="detail-label">3 · Distortion${entry.distortions.length > 1 ? "s" : ""}</div>
+          ${entry.distortions.length ? `<p class="detail-text">${entry.distortions.map(d => `<strong>${esc(d)}</strong>`).join(" + ")}</p>` : ""}
+          ${entry.distortionNote ? `<p class="detail-text" style="margin-top: 4px;">${esc(entry.distortionNote)}</p>` : ""}
         </div>
       ` : ""}
       <div class="detail-row">
@@ -3831,6 +4324,11 @@ function renderEntryDetails(entry) {
             ${entry.pivotDoneAt ? `<span class="pivot-followup-when">marked done ${esc(fmtDateTime(entry.pivotDoneAt))}</span>` : ""}
           </div>
           <textarea class="textarea pivot-reflection-input" data-action="edit-reflection" data-id="${entry.id}" rows="3" placeholder="A line on how it went. The dread vs. the actual outcome is the part to write down — that's what teaches you the next time.">${esc(entry.pivotReflection)}</textarea>
+          ${!entry.outcomeRecorded ? `
+            <button class="btn btn-primary outcome-cta" data-action="open-outcome" data-id="${entry.id}">
+              Step 8 · Re-rate moods after acting
+            </button>
+          ` : `<p class="outcome-done-line">✓ Step 8 complete — moods re-rated after the pivot.</p>`}
         </div>
       ` : ""}
     </div>
@@ -3897,7 +4395,9 @@ function renderCapture() {
 
 function canAdvance(step, d) {
   if (step === 1) return d.trigger.trim().length > 0;
-  if (step === 2) return d.automaticThought.trim().length > 0;
+  // Step 2 now: require at least one thought with text. Moods are nice to
+  // have but not required to advance — body-check stays optional.
+  if (step === 2) return (d.thoughts || []).some(t => (t.text || "").trim().length > 0);
   return true;
 }
 
@@ -3909,80 +4409,113 @@ function renderCaptureStep(step, d) {
       </div>
     `;
 
-    case 2: return `
-      <div class="field-group">
-        <label class="field-label-paper">Automatic Thought</label>
-        <textarea class="textarea input-large" data-field="automaticThought" rows="3" placeholder="Everyone saw that. They all think I'm a huge clumsy idiot.">${esc(d.automaticThought)}</textarea>
-      </div>
-
-      <div class="field-group">
-        <label class="field-label-paper">Emotion</label>
-        <div class="field-row-split">
-          <select class="select" data-field="emotionFamily">
-            <option value="">— family —</option>
-            ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${f}" ${d.emotionFamily === f ? "selected" : ""}>${f}</option>`).join("")}
-          </select>
-          <select class="select" data-field="emotionVariant" ${!d.emotionFamily ? "disabled" : ""}>
-            <option value="">— variant —</option>
-            ${(d.emotionFamily ? EMOTION_FAMILIES[d.emotionFamily] : []).map(v => `<option value="${v}" ${d.emotionVariant === v ? "selected" : ""}>${v}</option>`).join("")}
-          </select>
+    case 2: {
+      // Sectioned layout: Thoughts → Moods → Body. Multi-row, each row
+      // editable in place. Hot-thought radio drives Steps 4 and 5.
+      const thoughts = d.thoughts.length ? d.thoughts : [normalizeThought({ isHot: true })];
+      const moods    = d.moods.length    ? d.moods    : [normalizeMood({})];
+      return `
+      <div class="step2-section">
+        <div class="step2-section-head">
+          <span class="step2-eyebrow">A · Thoughts</span>
+          <h3 class="step2-title display">What thoughts came up?</h3>
+          <p class="step2-sub">List every automatic thought, not just one. Mark the one that's hottest — the most distressing or believable — and we'll put that one on trial in Step 4.</p>
         </div>
+        <div class="row-list" data-list="thoughts">
+          ${thoughts.map((t, idx) => `
+            <div class="row-card${t.isHot ? " is-hot" : ""}" data-row-id="${esc(t.id)}">
+              <div class="row-head">
+                <label class="row-hot">
+                  <input type="radio" name="hotThought" data-action="set-hot" data-id="${esc(t.id)}" ${t.isHot ? "checked" : ""}>
+                  <span class="row-hot-label">${t.isHot ? "🔥 Hot thought" : "Mark hot"}</span>
+                </label>
+                ${thoughts.length > 1 ? `<button type="button" class="row-remove" data-action="remove-thought" data-id="${esc(t.id)}" aria-label="Remove this thought">×</button>` : ""}
+              </div>
+              <textarea class="textarea row-textarea" data-action="edit-thought-text" data-id="${esc(t.id)}" rows="3"
+                placeholder="${idx === 0 ? "Everyone saw that. They all think I'm a huge clumsy idiot." : "Another thought that came up…"}">${esc(t.text)}</textarea>
+              <div class="row-belief">
+                <span class="row-belief-label">Belief, right now</span>
+                <span class="row-belief-num"><span data-slider-display="belief-${esc(t.id)}">${t.beliefBefore ?? 70}</span><span class="belief-num-suffix">%</span></span>
+              </div>
+              <input type="range" min="0" max="100" value="${t.beliefBefore ?? 70}" data-action="edit-thought-belief" data-id="${esc(t.id)}" class="intensity-slider">
+              <div class="intensity-bands">
+                <span>don't buy it</span><span>50%</span><span>fully convinced</span>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+        <button type="button" class="row-add" data-action="add-thought">＋ Add another thought</button>
       </div>
 
-      <div class="field-group">
-        <div class="intensity-control">
-          <div class="intensity-head">
-            <div>
-              <span class="intensity-num-big">${d.emotionIntensity}<span class="intensity-num-suffix">/100</span></span>
+      <div class="step2-section">
+        <div class="step2-section-head">
+          <span class="step2-eyebrow">B · Moods</span>
+          <h3 class="step2-title display">What feelings did you notice?</h3>
+          <p class="step2-sub">Real moments often carry more than one — anxious <em>and</em> ashamed, hurt <em>and</em> angry. List each separately so we can re-rate each one after the reframe and after you act.</p>
+        </div>
+        <div class="row-list" data-list="moods">
+          ${moods.map(m => `
+            <div class="row-card row-card--mood" data-row-id="${esc(m.id)}">
+              <div class="row-head">
+                <div class="field-row-split">
+                  <select class="select" data-action="edit-mood-family" data-id="${esc(m.id)}">
+                    <option value="">— family —</option>
+                    ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${f}" ${m.family === f ? "selected" : ""}>${f}</option>`).join("")}
+                  </select>
+                  <select class="select" data-action="edit-mood-variant" data-id="${esc(m.id)}" ${!m.family ? "disabled" : ""}>
+                    <option value="">— variant —</option>
+                    ${(m.family ? (EMOTION_FAMILIES[m.family] || []) : []).map(v => `<option value="${v}" ${m.variant === v ? "selected" : ""}>${v}</option>`).join("")}
+                  </select>
+                </div>
+                ${moods.length > 1 ? `<button type="button" class="row-remove" data-action="remove-mood" data-id="${esc(m.id)}" aria-label="Remove this mood">×</button>` : ""}
+              </div>
+              <div class="intensity-control intensity-control--row">
+                <div class="intensity-head">
+                  <span class="intensity-num-big"><span data-slider-display="mood-${esc(m.id)}">${m.intensity}</span><span class="intensity-num-suffix">/100</span></span>
+                  <div class="intensity-band-label">
+                    <div class="intensity-band-name display" data-slider-band-name="mood-${esc(m.id)}">${esc(band(m.intensity).label)}</div>
+                    <div class="intensity-band-sig" data-slider-band-sig="mood-${esc(m.id)}">${esc(band(m.intensity).signals)}</div>
+                  </div>
+                </div>
+                <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider">
+                <div class="intensity-bands">
+                  <span>Mild</span><span>Mod</span><span>Sig</span><span>High</span><span>Severe</span>
+                </div>
+                <label class="checkbox-flag">
+                  <input type="checkbox" data-action="edit-mood-estimated" data-id="${esc(m.id)}" ${m.estimated ? "checked" : ""}>
+                  <span>Mark as estimated</span>
+                </label>
+              </div>
             </div>
-            <div class="intensity-band-label">
-              <div class="intensity-band-name display">${esc(band(d.emotionIntensity).label)}</div>
-              <div class="intensity-band-sig">${esc(band(d.emotionIntensity).signals)}</div>
-            </div>
-          </div>
-          <input type="range" min="0" max="100" value="${d.emotionIntensity}" data-field="emotionIntensity" class="intensity-slider">
-          <div class="intensity-bands">
-            <span>Mild</span><span>Mod</span><span>Sig</span><span>High</span><span>Severe</span>
-          </div>
+          `).join("")}
+        </div>
+        <button type="button" class="row-add" data-action="add-mood">＋ Add another mood</button>
+      </div>
+
+      <div class="step2-section">
+        <div class="step2-section-head">
+          <span class="step2-eyebrow">C · Body</span>
+          <h3 class="step2-title display">Where did it land in the body?</h3>
+          <p class="step2-sub">Optional. Names the somatic signal — useful as an early-warning sign for the next time this pattern shows up.</p>
+        </div>
+        <div class="field-group">
+          <textarea class="textarea" data-field="bodyCheck" rows="2" placeholder="Face flushing, urge to flee…">${esc(d.bodyCheck)}</textarea>
           <label class="checkbox-flag">
-            <input type="checkbox" data-field="emotionEstimated" ${d.emotionEstimated ? "checked" : ""}>
-            <span>Mark as estimated</span>
+            <input type="checkbox" data-field="bodyInferred" ${d.bodyInferred ? "checked" : ""}>
+            <span>Inferred from speech, not directly felt</span>
           </label>
-        </div>
-      </div>
-
-      <div class="field-group">
-        <label class="field-label-paper">Body Check</label>
-        <textarea class="textarea" data-field="bodyCheck" rows="2" placeholder="Face flushing, urge to flee…">${esc(d.bodyCheck)}</textarea>
-        <label class="checkbox-flag">
-          <input type="checkbox" data-field="bodyInferred" ${d.bodyInferred ? "checked" : ""}>
-          <span>Inferred from speech, not directly felt</span>
-        </label>
-        <details class="ref-inline">
-          <summary><span class="chev">▸</span> Body region reference</summary>
-          <div class="ref-inline-body">
-            <table>
-              ${BODY_REGIONS.map(b => `<tr><td>${b.region}</td><td class="muted">${esc(b.examples)}</td></tr>`).join("")}
-            </table>
-          </div>
-        </details>
-      </div>
-
-      <div class="field-group">
-        <label class="field-label-paper">Belief in the thought, right now</label>
-        <div class="belief-control">
-          <div class="belief-head">
-            <span class="belief-num display"><span data-slider-display="beliefBefore">${d.beliefBefore ?? 70}</span><span class="belief-num-suffix">%</span></span>
-            <span class="belief-hint">How much do you believe the automatic thought as you write it?</span>
-          </div>
-          <input type="range" min="0" max="100" value="${d.beliefBefore ?? 70}" data-field="beliefBefore" class="intensity-slider">
-          <div class="intensity-bands">
-            <span>0% (don't buy it)</span><span>50%</span><span>100% (fully convinced)</span>
-          </div>
-          <div class="field-help-paper" style="margin-top: 8px;">This sets the baseline. After you reframe in Step 5, you'll re-rate — that delta is the work showing up.</div>
+          <details class="ref-inline">
+            <summary><span class="chev">▸</span> Body region reference</summary>
+            <div class="ref-inline-body">
+              <table>
+                ${BODY_REGIONS.map(b => `<tr><td>${b.region}</td><td class="muted">${esc(b.examples)}</td></tr>`).join("")}
+              </table>
+            </div>
+          </details>
         </div>
       </div>
     `;
+    }
 
     case 3: return `
       <div class="field-group">
@@ -4027,15 +4560,27 @@ function renderCaptureStep(step, d) {
       `}
     `;
 
-    case 4: return `
-      ${d.emotionIntensity >= 80 ? `
+    case 4: {
+      const hot = hotThought(d);
+      // Grounding gate now keys off the highest-intensity mood, since
+      // there may be several. If anything is ≥80 we surface the prompt.
+      const peakIntensity = (d.moods || []).reduce((a, m) => Math.max(a, m.intensity || 0), 0);
+      return `
+      ${peakIntensity >= 80 ? `
         <div class="grounding-note" role="note">
           <div class="grounding-note-eyebrow">Pause first</div>
           <div class="grounding-note-body">
-            <p>You rated this at <strong>${d.emotionIntensity}/100</strong>. Cognitive work tends to land better after you've taken a moment to settle the body — and what you write here will still be here when you come back.</p>
+            <p>One of your moods is at <strong>${peakIntensity}/100</strong>. Cognitive work tends to land better after you've taken a moment to settle the body — and what you write here will still be here when you come back.</p>
             <p><strong>Try 5-4-3-2-1:</strong> name 5 things you can see, 4 you can hear, 3 you can touch, 2 you can smell, 1 you can taste. Slow each one down. Then continue.</p>
             <p class="grounding-note-foot">If this level of distress is more than you can sit with right now, <button class="link-button" data-action="open-safety">crisis support is here</button>.</p>
           </div>
+        </div>
+      ` : ""}
+      ${hot && hot.text ? `
+        <div class="hot-thought-card" aria-label="Hot thought you're challenging">
+          <span class="hot-thought-eyebrow">🔥 Hot thought on trial</span>
+          <p class="hot-thought-quote display italic">"${esc(hot.text)}"</p>
+          ${typeof hot.beliefBefore === "number" ? `<span class="hot-thought-belief">Belief before: <strong>${hot.beliefBefore}%</strong></span>` : ""}
         </div>
       ` : ""}
       <div class="field-group">
@@ -4071,8 +4616,11 @@ function renderCaptureStep(step, d) {
         </details>
       </div>
     `;
+    }
 
-    case 5: return `
+    case 5: {
+      const hot = hotThought(d);
+      return `
       ${d.thoughtsAccurate ? `
         <div class="grounding-note" role="note">
           <div class="grounding-note-eyebrow">You marked these thoughts as accurate</div>
@@ -4081,7 +4629,13 @@ function renderCaptureStep(step, d) {
             <p>Skip what doesn't apply. The pivot in Step 6 is often where the work lands when the thought itself isn't the problem.</p>
           </div>
         </div>
-      ` : ""}
+      ` : (hot && hot.text ? `
+        <div class="hot-thought-card" aria-label="Hot thought you're reframing">
+          <span class="hot-thought-eyebrow">🔥 Reframing the hot thought</span>
+          <p class="hot-thought-quote display italic">"${esc(hot.text)}"</p>
+          ${typeof hot.beliefBefore === "number" ? `<span class="hot-thought-belief">Belief before: <strong>${hot.beliefBefore}%</strong></span>` : ""}
+        </div>
+      ` : "")}
       <div class="field-group">
         <label class="field-label-paper">${d.thoughtsAccurate ? "Method (optional)" : "Method"}</label>
         <select class="select" data-field="reframeMethod">
@@ -4111,30 +4665,40 @@ function renderCaptureStep(step, d) {
         <div class="rerate-head">
           <span class="rerate-eyebrow">Re-rate</span>
           <h3 class="rerate-title display">After writing that, where are you now?</h3>
-          <p class="rerate-sub">Rate honestly. Small shifts are still real shifts; no shift is information too — the reframe may need more time, or the situation may just be heavy. The numbers are awareness, not a grade.</p>
+          <p class="rerate-sub">Rate honestly. Small shifts are still real shifts; no shift is information too. The numbers are awareness, not a grade.</p>
         </div>
 
-        <label class="field-label-paper">Belief in the original thought, now</label>
-        <div class="belief-control">
-          <div class="belief-head">
-            <span class="belief-num display"><span data-slider-display="beliefAfter">${d.beliefAfter ?? (d.beliefBefore ?? 50)}</span><span class="belief-num-suffix">%</span></span>
-            ${d.beliefBefore !== null && d.beliefBefore !== undefined ? `
-              <span class="belief-hint">Before: <strong>${d.beliefBefore}%</strong>${d.beliefAfter !== null && d.beliefAfter !== undefined ? ` · Δ <strong class="${(d.beliefAfter - d.beliefBefore) < 0 ? "delta-good" : "delta-flat"}">${d.beliefAfter - d.beliefBefore > 0 ? "+" : ""}${d.beliefAfter - d.beliefBefore}</strong>` : ""}</span>
-            ` : `<span class="belief-hint">No baseline set in Step 2 — that's fine, just rate now.</span>`}
+        ${hot ? `
+          <label class="field-label-paper">Belief in the hot thought, now</label>
+          <div class="belief-control">
+            <div class="belief-head">
+              <span class="belief-num display"><span data-slider-display="hotBeliefAfter">${hot.beliefAfter ?? (hot.beliefBefore ?? 50)}</span><span class="belief-num-suffix">%</span></span>
+              ${typeof hot.beliefBefore === "number" ? `
+                <span class="belief-hint">Before: <strong>${hot.beliefBefore}%</strong>${typeof hot.beliefAfter === "number" ? ` · Δ <strong class="${(hot.beliefAfter - hot.beliefBefore) < 0 ? "delta-good" : "delta-flat"}">${hot.beliefAfter - hot.beliefBefore > 0 ? "+" : ""}${hot.beliefAfter - hot.beliefBefore}</strong>` : ""}</span>
+              ` : `<span class="belief-hint">No baseline set in Step 2 — that's fine, just rate now.</span>`}
+            </div>
+            <input type="range" min="0" max="100" value="${hot.beliefAfter ?? (hot.beliefBefore ?? 50)}" data-action="edit-hot-belief-after" class="intensity-slider">
           </div>
-          <input type="range" min="0" max="100" value="${d.beliefAfter ?? (d.beliefBefore ?? 50)}" data-field="beliefAfter" class="intensity-slider">
-        </div>
+        ` : ""}
 
-        <label class="field-label-paper" style="margin-top: 18px;">Emotion intensity, now</label>
-        <div class="belief-control">
-          <div class="belief-head">
-            <span class="belief-num display"><span data-slider-display="emotionIntensityAfter">${d.emotionIntensityAfter ?? d.emotionIntensity}</span><span class="belief-num-suffix">/100</span></span>
-            <span class="belief-hint">Before: <strong>${d.emotionIntensity}</strong>${d.emotionIntensityAfter !== null && d.emotionIntensityAfter !== undefined ? ` · Δ <strong class="${(d.emotionIntensityAfter - d.emotionIntensity) < 0 ? "delta-good" : "delta-flat"}">${d.emotionIntensityAfter - d.emotionIntensity > 0 ? "+" : ""}${d.emotionIntensityAfter - d.emotionIntensity}</strong>` : ""}</span>
-          </div>
-          <input type="range" min="0" max="100" value="${d.emotionIntensityAfter ?? d.emotionIntensity}" data-field="emotionIntensityAfter" class="intensity-slider">
-        </div>
+        ${(d.moods || []).filter(m => m.family || typeof m.intensity === "number").map(m => {
+          const label = m.variant ? cap(m.variant) : (m.family || "Mood");
+          const cur = m.intensityAfterReframe ?? m.intensity;
+          const delta = m.intensityAfterReframe !== null && m.intensityAfterReframe !== undefined ? (m.intensityAfterReframe - m.intensity) : null;
+          return `
+            <label class="field-label-paper" style="margin-top: 18px;">${esc(label)}, now</label>
+            <div class="belief-control">
+              <div class="belief-head">
+                <span class="belief-num display"><span data-slider-display="mood-after-${esc(m.id)}">${cur}</span><span class="belief-num-suffix">/100</span></span>
+                <span class="belief-hint">Before: <strong>${m.intensity}</strong>${delta !== null ? ` · Δ <strong class="${delta < 0 ? "delta-good" : "delta-flat"}">${delta > 0 ? "+" : ""}${delta}</strong>` : ""}</span>
+              </div>
+              <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-reframe" data-id="${esc(m.id)}" class="intensity-slider">
+            </div>
+          `;
+        }).join("")}
       </div>
     `;
+    }
 
     case 6: return `
       <div class="field-group">
@@ -4149,7 +4713,9 @@ function renderCaptureStep(step, d) {
 }
 
 function renderReview(d) {
-  const emoLabel = d.emotionVariant ? (cap(d.emotionVariant) + " · " + d.emotionFamily) : d.emotionFamily;
+  const thoughts = d.thoughts || [];
+  const moods = d.moods || [];
+  const hot = hotThought(d);
   return `
     <div class="review-card">
       <div class="review-card-head">
@@ -4164,11 +4730,26 @@ function renderReview(d) {
         <span class="review-card-num">2 · Initial Reaction</span>
         <button class="review-edit-btn" data-action="goto-step" data-step="2">Edit</button>
       </div>
-      <div class="review-card-content italic">"${esc(d.automaticThought)}"</div>
-      <div class="review-meta-row">
-        ${emoLabel ? `<div class="review-meta-item"><strong>${esc(emoLabel)}</strong> · ${d.emotionIntensity}/100${d.emotionEstimated ? " (estimated)" : ""}</div>` : ""}
-        ${d.bodyCheck ? `<div class="review-meta-item">Body: ${esc(d.bodyCheck)}${d.bodyInferred ? " (inferred)" : ""}</div>` : ""}
-      </div>
+      ${thoughts.length ? `
+        <div class="review-meta-row">
+          ${thoughts.map(t => `
+            <div class="review-meta-item">
+              ${t.isHot ? '<span class="thought-hot-tag">🔥</span> ' : ""}
+              <span class="italic">"${esc(t.text) || "(empty)"}"</span>
+              ${typeof t.beliefBefore === "number" ? `<span class="muted"> — belief ${t.beliefBefore}%</span>` : ""}
+            </div>
+          `).join("")}
+        </div>
+      ` : '<div class="review-card-content"><span class="empty">no thoughts captured</span></div>'}
+      ${moods.filter(m => m.family).length ? `
+        <div class="review-meta-row" style="margin-top: 8px;">
+          ${moods.filter(m => m.family).map(m => {
+            const label = m.variant ? (cap(m.variant) + " · " + m.family) : m.family;
+            return `<div class="review-meta-item"><strong>${esc(label)}</strong> · ${m.intensity}/100${m.estimated ? " (est.)" : ""}</div>`;
+          }).join("")}
+        </div>
+      ` : ""}
+      ${d.bodyCheck ? `<div class="review-meta-row" style="margin-top: 8px;"><div class="review-meta-item">Body: ${esc(d.bodyCheck)}${d.bodyInferred ? " (inferred)" : ""}</div></div>` : ""}
     </div>
 
     <div class="review-card">
@@ -4190,6 +4771,7 @@ function renderReview(d) {
         <button class="review-edit-btn" data-action="goto-step" data-step="4">Edit</button>
       </div>
       <div class="review-card-content">
+        ${hot && hot.text ? `<div class="review-meta-item" style="margin-bottom: 6px;"><span class="muted italic">Putting on trial:</span> "${esc(hot.text)}"</div>` : ""}
         <div class="review-meta-item"><strong>For:</strong> ${d.evidenceFor ? esc(d.evidenceFor) : '<span class="empty">—</span>'}</div>
         <div class="review-meta-item" style="margin-top: 4px;"><strong>Against:</strong> ${d.evidenceAgainst ? esc(d.evidenceAgainst) : '<span class="empty">—</span>'}</div>
         ${d.socraticQuestion ? `<div class="italic" style="margin-top: 8px; color: var(--on-paper-soft);">"${esc(d.socraticQuestion)}"</div>` : ""}
@@ -4203,15 +4785,19 @@ function renderReview(d) {
       </div>
       <div class="review-card-content italic">"${d.newThought ? esc(d.newThought) : '<span class="empty">missing</span>'}"</div>
       ${(() => {
-        const hasI = d.emotionIntensityAfter !== null && d.emotionIntensityAfter !== undefined;
-        const hasB = d.beliefBefore !== null && d.beliefBefore !== undefined && d.beliefAfter !== null && d.beliefAfter !== undefined;
-        if (!hasI && !hasB) return "";
-        const iD = hasI ? (d.emotionIntensityAfter - d.emotionIntensity) : null;
-        const bD = hasB ? (d.beliefAfter - d.beliefBefore) : null;
+        // Hot-thought belief delta + per-mood after-reframe deltas.
+        const hasHotB = hot && typeof hot.beliefAfter === "number" && typeof hot.beliefBefore === "number";
+        const bD = hasHotB ? (hot.beliefAfter - hot.beliefBefore) : null;
+        const ratedMoods = moods.filter(m => typeof m.intensityAfterReframe === "number");
+        if (!hasHotB && ratedMoods.length === 0) return "";
         return `
           <div class="review-rerate">
-            ${hasI ? `<div class="review-meta-item"><strong>Intensity:</strong> ${d.emotionIntensity} → ${d.emotionIntensityAfter} <span class="delta-tag ${iD < 0 ? "good" : "flat"}">${iD > 0 ? "+" : ""}${iD}</span></div>` : ""}
-            ${hasB ? `<div class="review-meta-item" style="margin-top: 4px;"><strong>Belief:</strong> ${d.beliefBefore}% → ${d.beliefAfter}% <span class="delta-tag ${bD < 0 ? "good" : "flat"}">${bD > 0 ? "+" : ""}${bD}</span></div>` : ""}
+            ${hasHotB ? `<div class="review-meta-item"><strong>Belief in hot thought:</strong> ${hot.beliefBefore}% → ${hot.beliefAfter}% <span class="delta-tag ${bD < 0 ? "good" : "flat"}">${bD > 0 ? "+" : ""}${bD}</span></div>` : ""}
+            ${ratedMoods.map(m => {
+              const label = m.variant ? cap(m.variant) : (m.family || "Mood");
+              const delta = m.intensityAfterReframe - m.intensity;
+              return `<div class="review-meta-item" style="margin-top: 4px;"><strong>${esc(label)}:</strong> ${m.intensity} → ${m.intensityAfterReframe} <span class="delta-tag ${delta < 0 ? "good" : "flat"}">${delta > 0 ? "+" : ""}${delta}</span></div>`;
+            }).join("")}
           </div>
         `;
       })()}
@@ -4225,6 +4811,150 @@ function renderReview(d) {
       <div class="review-card-content">${d.pivot ? esc(d.pivot) : '<span class="empty">missing</span>'}</div>
     </div>
   `;
+}
+
+// Step 8 — Outcome screen. Reached by tapping the "Re-rate moods after
+// acting" CTA on an entry whose pivot has been marked done. Lives outside
+// the 1-7 capture flow because it's a return visit: the user has done
+// the pivot in the real world and is now logging what happened. Reads/
+// writes the entry directly (not state.draft); state.outcomeEntryId says
+// which one. Once recorded, the entry's outcomeRecorded flag flips and
+// the CTA disappears from the entry card.
+function renderOutcomeView() {
+  const entry = state.entries.find(e => e.id === state.outcomeEntryId);
+  if (!entry) {
+    return `
+      <div class="page-header">
+        <div class="page-eyebrow">Outcome</div>
+        <h1 class="page-title display">Entry not found</h1>
+        <p class="page-sub">It may have been deleted. <button class="link-button" data-action="back-to-journal">Return to the journal</button>.</p>
+      </div>
+    `;
+  }
+  const hot = hotThought(entry);
+  const moods = entry.moods || [];
+
+  return `
+    <div class="page-header">
+      <div class="page-eyebrow">Step 8 · Outcome</div>
+      <h1 class="page-title display">How did the pivot go?</h1>
+      <p class="page-sub">A return visit — log what actually happened so the next time this pattern shows up, your prediction has data behind it. Skip what doesn't apply.</p>
+    </div>
+
+    <div class="capture-shell">
+      <div class="capture-screen">
+        <div class="outcome-context">
+          <div class="outcome-context-row">
+            <span class="outcome-context-label">Trigger</span>
+            <p class="outcome-context-text">${esc(entry.trigger) || "—"}</p>
+          </div>
+          ${hot && hot.text ? `
+            <div class="outcome-context-row">
+              <span class="outcome-context-label">Hot thought</span>
+              <p class="outcome-context-text italic">"${esc(hot.text)}"</p>
+            </div>
+          ` : ""}
+          ${entry.newThought ? `
+            <div class="outcome-context-row">
+              <span class="outcome-context-label">Reframe</span>
+              <p class="outcome-context-text italic">"${esc(entry.newThought)}"</p>
+            </div>
+          ` : ""}
+          <div class="outcome-context-row">
+            <span class="outcome-context-label">Pivot</span>
+            <p class="outcome-context-text">${esc(entry.pivot) || "—"}</p>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label-paper">What happened?</label>
+          <textarea class="textarea" id="outcomeReflection" rows="4" placeholder="A line on how it went. The dread vs. the actual outcome is the part to write down — that's what teaches you next time.">${esc(entry.pivotReflection)}</textarea>
+        </div>
+
+        ${moods.filter(m => m.family).length ? `
+          <div class="field-group rerate-group">
+            <div class="rerate-head">
+              <span class="rerate-eyebrow">After acting</span>
+              <h3 class="rerate-title display">Where are the moods now?</h3>
+              <p class="rerate-sub">Re-rate each mood after you actually did the pivot. The gap between predicted and actual is the most useful number in this whole record.</p>
+            </div>
+
+            ${moods.filter(m => m.family).map(m => {
+              const label = m.variant ? cap(m.variant) : (m.family || "Mood");
+              const cur = m.intensityAfterPivot ?? m.intensityAfterReframe ?? m.intensity;
+              return `
+                <label class="field-label-paper" style="margin-top: 14px;">${esc(label)}, after the pivot</label>
+                <div class="belief-control">
+                  <div class="belief-head">
+                    <span class="belief-num display"><span data-slider-display="outcome-${esc(m.id)}">${cur}</span><span class="belief-num-suffix">/100</span></span>
+                    <span class="belief-hint">Start: <strong>${m.intensity}</strong>${typeof m.intensityAfterReframe === "number" ? ` · after reframe: <strong>${m.intensityAfterReframe}</strong>` : ""}</span>
+                  </div>
+                  <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-pivot" data-id="${esc(m.id)}" class="intensity-slider">
+                </div>
+              `;
+            }).join("")}
+          </div>
+        ` : `
+          <div class="grounding-note" role="note">
+            <div class="grounding-note-body">
+              <p>No moods were captured in this entry's Step 2, so there's nothing to re-rate here. You can still log a reflection above.</p>
+            </div>
+          </div>
+        `}
+      </div>
+
+      <div class="capture-footer">
+        <div class="capture-footer-left">
+          <button class="btn-back" data-action="back-to-journal">← Back</button>
+        </div>
+        <button class="btn btn-primary" data-action="save-outcome">Save outcome</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindOutcome() {
+  const entry = state.entries.find(e => e.id === state.outcomeEntryId);
+  if (!entry) {
+    document.querySelectorAll('[data-action="back-to-journal"]').forEach(el =>
+      el.addEventListener("click", () => { state.outcomeEntryId = null; setView("journal"); }));
+    return;
+  }
+
+  document.querySelectorAll('[data-action="edit-mood-after-pivot"]').forEach(el => {
+    el.addEventListener("input", () => {
+      const m = (entry.moods || []).find(x => x.id === el.dataset.id);
+      if (!m) return;
+      m.intensityAfterPivot = parseInt(el.value, 10);
+      const target = document.querySelector('[data-slider-display="outcome-' + el.dataset.id + '"]');
+      if (target) target.textContent = el.value;
+    });
+  });
+
+  const save = document.querySelector('[data-action="save-outcome"]');
+  if (save) save.addEventListener("click", () => {
+    const ref = document.getElementById("outcomeReflection");
+    if (ref) entry.pivotReflection = ref.value;
+    entry.outcomeRecorded = true;
+    persist();
+    state.outcomeEntryId = null;
+    state.expandedIds.add(entry.id);
+    setView("journal");
+    toast("Outcome saved. The loop is closed.");
+  });
+
+  const back = document.querySelector('[data-action="back-to-journal"]');
+  if (back) back.addEventListener("click", () => {
+    // Save reflection text even when the user backs out without saving the
+    // outcome — it's harmless and stops accidental data loss.
+    const ref = document.getElementById("outcomeReflection");
+    if (ref && ref.value !== entry.pivotReflection) {
+      entry.pivotReflection = ref.value;
+      persist();
+    }
+    state.outcomeEntryId = null;
+    setView("journal");
+  });
 }
 
 function renderPatterns() {
@@ -4247,23 +4977,37 @@ function renderPatterns() {
   const pivotsDone = entries.filter(e => e.pivotDone).length;
   const pivotPct = Math.round((pivotsDone / total) * 100);
 
-  // Intensity drop per entry, averaged across only those entries that have a
-  // re-rating. This is the headline efficacy number — "your reframes pulled
-  // intensity down by an average of N points." If no entry has been re-rated
-  // yet, the card prompts users to add one.
-  const rerated = entries.filter(e =>
-    e.emotionIntensityAfter !== null && e.emotionIntensityAfter !== undefined
-  );
-  const intensityDrops = rerated.map(e => e.emotionIntensity - e.emotionIntensityAfter);
-  const avgIntensityDrop = intensityDrops.length
-    ? Math.round(intensityDrops.reduce((a, b) => a + b, 0) / intensityDrops.length)
+  // Headline: average mood-intensity drop *per mood* across re-rated moods.
+  // Multi-mood entries contribute multiple data points — each mood's drop
+  // counts independently. After-reframe and after-pivot are both eligible;
+  // we use the latest available stage so post-pivot drops show up too.
+  function moodDeltaSamples(stage) {
+    const out = [];
+    entries.forEach(e => (e.moods || []).forEach(m => {
+      const after = stage === "pivot" ? m.intensityAfterPivot : m.intensityAfterReframe;
+      if (typeof after === "number" && typeof m.intensity === "number") {
+        out.push(m.intensity - after);
+      }
+    }));
+    return out;
+  }
+  const reframeDrops = moodDeltaSamples("reframe");
+  const pivotDrops   = moodDeltaSamples("pivot");
+  const avgIntensityDrop = reframeDrops.length
+    ? Math.round(reframeDrops.reduce((a, b) => a + b, 0) / reframeDrops.length)
+    : null;
+  const avgPivotDrop = pivotDrops.length
+    ? Math.round(pivotDrops.reduce((a, b) => a + b, 0) / pivotDrops.length)
     : null;
 
-  const beliefRerated = entries.filter(e =>
-    e.beliefBefore !== null && e.beliefBefore !== undefined &&
-    e.beliefAfter  !== null && e.beliefAfter  !== undefined
-  );
-  const beliefDrops = beliefRerated.map(e => e.beliefBefore - e.beliefAfter);
+  // Belief drop on hot thoughts.
+  const beliefDrops = [];
+  entries.forEach(e => {
+    const h = hotThought(e);
+    if (h && typeof h.beliefBefore === "number" && typeof h.beliefAfter === "number") {
+      beliefDrops.push(h.beliefBefore - h.beliefAfter);
+    }
+  });
   const avgBeliefDrop = beliefDrops.length
     ? Math.round(beliefDrops.reduce((a, b) => a + b, 0) / beliefDrops.length)
     : null;
@@ -4273,9 +5017,13 @@ function renderPatterns() {
   const sortedDist = Object.entries(distCounts).sort((a, b) => b[1] - a[1]).slice(0, 7);
   const maxDist = sortedDist[0]?.[1] || 1;
 
+  // Emotion families: count occurrences across all moods on all entries
+  // (so a single entry with both Anxiety + Shame contributes one to each).
   const emoCounts = {};
   Object.keys(EMOTION_FAMILIES).forEach(f => emoCounts[f] = 0);
-  entries.forEach(e => { if (e.emotionFamily) emoCounts[e.emotionFamily] = (emoCounts[e.emotionFamily] || 0) + 1; });
+  entries.forEach(e => (e.moods || []).forEach(m => {
+    if (m.family) emoCounts[m.family] = (emoCounts[m.family] || 0) + 1;
+  }));
   const maxEmo = Math.max(...Object.values(emoCounts), 1);
 
   const today = startOfDay(new Date());
@@ -4287,12 +5035,17 @@ function renderPatterns() {
   const last30Total = dayCounts.reduce((a, b) => a + b, 0);
   const activeDays = dayCounts.filter(c => c > 0).length;
 
+  // Sparkline plots peak initial mood intensity per entry (the loudest mood
+  // in the moment, since multi-mood entries don't fit on a single Y-axis).
+  function peakIntensity(e) {
+    return (e.moods || []).reduce((a, m) => Math.max(a, m.intensity || 0), 0);
+  }
   const recent = entries.slice(0, 20).reverse();
   const sparkW = 280, sparkH = 50, pad = 4;
   const sparkPath = recent.length > 1
     ? recent.map((e, i) => {
         const x = pad + (i / (recent.length - 1)) * (sparkW - 2 * pad);
-        const y = pad + ((100 - e.emotionIntensity) / 100) * (sparkH - 2 * pad);
+        const y = pad + ((100 - peakIntensity(e)) / 100) * (sparkH - 2 * pad);
         return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
       }).join(" ")
     : "";
@@ -4437,7 +5190,7 @@ function renderPatterns() {
               <path d="${sparkPath}" fill="none" stroke="var(--copper)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               ${recent.map((e, i) => {
                 const x = pad + (i / (recent.length - 1)) * (sparkW - 2 * pad);
-                const y = pad + ((100 - e.emotionIntensity) / 100) * (sparkH - 2 * pad);
+                const y = pad + ((100 - peakIntensity(e)) / 100) * (sparkH - 2 * pad);
                 return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="var(--copper)"/>`;
               }).join("")}
             </svg>
@@ -5215,12 +5968,18 @@ function bindJournal() {
       if (!entry) return;
       state.draft = { ...entry };
       state.editingId = entry.id;
-      // Clear the isQuick flag for the in-progress draft; we re-stamp it
-      // false on save (via the spread of state.draft) so the badge goes away
-      // once the user actually finishes.
       state.draft.isQuick = false;
       state.captureStep = 1;
       setView("capture");
+    });
+  });
+
+  // Step 8 entry point — opens the outcome screen for this entry.
+  document.querySelectorAll('[data-action="open-outcome"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      state.outcomeEntryId = el.dataset.id;
+      setView("outcome");
     });
   });
 }
@@ -5242,6 +6001,9 @@ function renderJournalListOnly() {
 }
 
 function bindCapture() {
+  // Generic data-field handler — handles whole-entry scalar fields that
+  // still exist (trigger, bodyCheck, evidence, socratic, reframe, pivot,
+  // and the legacy single-field path during draft hydration).
   document.querySelectorAll('[data-field]').forEach(el => {
     const field = el.dataset.field;
     const handler = () => {
@@ -5250,28 +6012,9 @@ function bindCapture() {
       else if (el.type === "range") v = parseInt(el.value, 10);
       else v = el.value;
       state.draft[field] = v;
-      if (field === "emotionFamily") state.draft.emotionVariant = "";
       saveDraft(state.draft);
 
-      if (field === "emotionIntensity") {
-        const b = band(v);
-        const num = document.querySelector(".intensity-num-big");
-        if (num) num.innerHTML = v + '<span class="intensity-num-suffix">/100</span>';
-        const bn = document.querySelector(".intensity-band-name");
-        if (bn) bn.textContent = b.label;
-        const bs = document.querySelector(".intensity-band-sig");
-        if (bs) bs.textContent = b.signals;
-        return;
-      }
-      // Belief + after-intensity sliders own their own live readout via the
-      // data-slider-display hook. Avoid a full re-render here so the user's
-      // drag doesn't snap or lose focus mid-gesture.
-      if (field === "beliefBefore" || field === "beliefAfter" || field === "emotionIntensityAfter") {
-        const target = document.querySelector('[data-slider-display="' + field + '"]');
-        if (target) target.textContent = v;
-        return;
-      }
-      if (["emotionFamily", "socraticType", "reframeMethod"].includes(field)) render();
+      if (["socraticType", "reframeMethod"].includes(field)) render();
 
       const cont = document.querySelector('[data-action="next-step"]');
       if (cont) {
@@ -5281,6 +6024,155 @@ function bindCapture() {
     };
     el.addEventListener("input", handler);
     el.addEventListener("change", handler);
+  });
+
+  // ── Step 2 multi-thought handlers ───────────────────────────────────
+  // Each thought row carries its own textarea, belief slider, hot radio,
+  // and remove button. We mutate state.draft.thoughts in place and avoid
+  // re-rendering for text/slider inputs so the user's cursor / drag stays
+  // smooth. Hot-radio and add/remove require a render because they change
+  // structure.
+  function thoughtById(id) {
+    return (state.draft.thoughts || []).find(t => t.id === id);
+  }
+  function moodById(id) {
+    return (state.draft.moods || []).find(m => m.id === id);
+  }
+  function refreshNextButton() {
+    const cont = document.querySelector('[data-action="next-step"]');
+    if (!cont) return;
+    if (canAdvance(state.captureStep, state.draft)) cont.removeAttribute("disabled");
+    else cont.setAttribute("disabled", "");
+  }
+
+  document.querySelectorAll('[data-action="edit-thought-text"]').forEach(el => {
+    el.addEventListener("input", () => {
+      const t = thoughtById(el.dataset.id);
+      if (!t) return;
+      t.text = el.value;
+      saveDraft(state.draft);
+      refreshNextButton();
+    });
+  });
+  document.querySelectorAll('[data-action="edit-thought-belief"]').forEach(el => {
+    el.addEventListener("input", () => {
+      const t = thoughtById(el.dataset.id);
+      if (!t) return;
+      t.beliefBefore = parseInt(el.value, 10);
+      const target = document.querySelector('[data-slider-display="belief-' + el.dataset.id + '"]');
+      if (target) target.textContent = el.value;
+      saveDraft(state.draft);
+    });
+  });
+  document.querySelectorAll('[data-action="set-hot"]').forEach(el => {
+    el.addEventListener("change", () => {
+      const id = el.dataset.id;
+      (state.draft.thoughts || []).forEach(t => { t.isHot = (t.id === id); });
+      saveDraft(state.draft);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="add-thought"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.draft.thoughts = state.draft.thoughts || [];
+      state.draft.thoughts.push(normalizeThought({}));
+      saveDraft(state.draft);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="remove-thought"]').forEach(el => {
+    el.addEventListener("click", () => {
+      const id = el.dataset.id;
+      const list = state.draft.thoughts || [];
+      const wasHot = (list.find(t => t.id === id) || {}).isHot;
+      state.draft.thoughts = list.filter(t => t.id !== id);
+      // Re-assign hot if we removed the hot thought.
+      if (wasHot && state.draft.thoughts.length) state.draft.thoughts[0].isHot = true;
+      saveDraft(state.draft);
+      render();
+    });
+  });
+
+  // ── Step 2 multi-mood handlers ─────────────────────────────────────
+  document.querySelectorAll('[data-action="edit-mood-family"]').forEach(el => {
+    el.addEventListener("change", () => {
+      const m = moodById(el.dataset.id);
+      if (!m) return;
+      m.family = el.value;
+      m.variant = ""; // family change resets variant
+      saveDraft(state.draft);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="edit-mood-variant"]').forEach(el => {
+    el.addEventListener("change", () => {
+      const m = moodById(el.dataset.id);
+      if (!m) return;
+      m.variant = el.value;
+      saveDraft(state.draft);
+    });
+  });
+  document.querySelectorAll('[data-action="edit-mood-intensity"]').forEach(el => {
+    el.addEventListener("input", () => {
+      const m = moodById(el.dataset.id);
+      if (!m) return;
+      const v = parseInt(el.value, 10);
+      m.intensity = v;
+      const id = el.dataset.id;
+      const numEl = document.querySelector('[data-slider-display="mood-' + id + '"]');
+      if (numEl) numEl.textContent = v;
+      const b = band(v);
+      const bn = document.querySelector('[data-slider-band-name="mood-' + id + '"]');
+      if (bn) bn.textContent = b.label;
+      const bs = document.querySelector('[data-slider-band-sig="mood-' + id + '"]');
+      if (bs) bs.textContent = b.signals;
+      saveDraft(state.draft);
+    });
+  });
+  document.querySelectorAll('[data-action="edit-mood-estimated"]').forEach(el => {
+    el.addEventListener("change", () => {
+      const m = moodById(el.dataset.id);
+      if (!m) return;
+      m.estimated = el.checked;
+      saveDraft(state.draft);
+    });
+  });
+  document.querySelectorAll('[data-action="add-mood"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.draft.moods = state.draft.moods || [];
+      state.draft.moods.push(normalizeMood({}));
+      saveDraft(state.draft);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="remove-mood"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.draft.moods = (state.draft.moods || []).filter(m => m.id !== el.dataset.id);
+      saveDraft(state.draft);
+      render();
+    });
+  });
+
+  // ── Step 5 per-mood / hot-belief re-rate sliders ────────────────────
+  document.querySelectorAll('[data-action="edit-hot-belief-after"]').forEach(el => {
+    el.addEventListener("input", () => {
+      const hot = hotThought(state.draft);
+      if (!hot) return;
+      hot.beliefAfter = parseInt(el.value, 10);
+      const target = document.querySelector('[data-slider-display="hotBeliefAfter"]');
+      if (target) target.textContent = el.value;
+      saveDraft(state.draft);
+    });
+  });
+  document.querySelectorAll('[data-action="edit-mood-after-reframe"]').forEach(el => {
+    el.addEventListener("input", () => {
+      const m = moodById(el.dataset.id);
+      if (!m) return;
+      m.intensityAfterReframe = parseInt(el.value, 10);
+      const target = document.querySelector('[data-slider-display="mood-after-' + el.dataset.id + '"]');
+      if (target) target.textContent = el.value;
+      saveDraft(state.draft);
+    });
   });
 
   document.querySelectorAll('[data-action="toggle-distortion"]').forEach(btn => {
@@ -5530,17 +6422,15 @@ function bindModal() {
     const thought = (q.thought || "").trim();
     if (!thought) { toast("Write something first — even one word"); return; }
     const now = new Date().toISOString();
+    // Park the thought as the (hot) first thought and the intensity as the
+    // single mood — the user can flesh out family/variant later if they
+    // pick the entry up via "Finish this entry".
     const entry = {
       ...emptyEntry(),
       id: newId(),
       createdAt: now,
-      // Park the thought in the automaticThought field where Step 2 lives;
-      // the trigger stays empty so resuming jumps cleanly to "what happened".
-      automaticThought: thought,
-      emotionIntensity: q.intensity,
-      emotionEstimated: true,
-      // Vent-only entries are complete by user's choice; no "finish this"
-      // pressure.
+      thoughts: [normalizeThought({ text: thought, isHot: true })],
+      moods: [normalizeMood({ intensity: q.intensity, estimated: true })],
       isQuick: !q.ventOnly,
     };
     state.entries = [entry, ...state.entries];
@@ -5766,6 +6656,53 @@ document.addEventListener("keydown", e => {
       state.modal = "onboarding";
     }
   } catch(_) {}
+})();
+
+// Keyboard avoidance: a three-layer fix. The viewport meta tag handles
+// Chromium/Firefox by shrinking the layout viewport when the VK rises;
+// the .kb-open CSS slides bottom-nav off so it can't occlude focused
+// fields; this IIFE handles iOS (which ignores interactive-widget) and
+// re-centers the focused element on every visualViewport resize so the
+// VK animation doesn't strand the field.
+(function initKeyboardAvoidance(){
+  const vv = window.visualViewport;
+  const FIELD = 'input, textarea, [contenteditable="true"]';
+  let lastFocused = null;
+
+  document.addEventListener('focusin', e => {
+    const t = e.target;
+    if (!t || !t.matches || !t.matches(FIELD)) return;
+    lastFocused = t;
+    // Two rAFs: first lets the browser paint the focus state, second
+    // gives the VK a moment to start rising so the post-VK viewport
+    // height is what scrollIntoView sees.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      smoothScrollIntoView(lastFocused, { block: 'center' });
+    }));
+  });
+  document.addEventListener('focusout', e => {
+    if (e.target === lastFocused) lastFocused = null;
+  });
+
+  if (vv) {
+    const onVV = () => {
+      // 150px threshold to ignore URL-bar chrome shifts on iOS. A real
+      // keyboard is always at least ~250px tall.
+      const kbUp = (window.innerHeight - vv.height) > 150;
+      document.body.classList.toggle('kb-open', kbUp);
+      document.documentElement.style.setProperty(
+        '--keyboard-h',
+        kbUp ? (window.innerHeight - vv.height) + 'px' : '0px'
+      );
+      // Re-center if the user is still in the same field — VK animation
+      // can drift the field off-center after the initial scroll.
+      if (kbUp && lastFocused && document.activeElement === lastFocused) {
+        smoothScrollIntoView(lastFocused, { block: 'center' });
+      }
+    };
+    vv.addEventListener('resize', onVV);
+    vv.addEventListener('scroll', onVV);
+  }
 })();
 
 applyTheme();
