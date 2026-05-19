@@ -110,7 +110,15 @@ input, textarea, select { font: inherit; }
 :focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; border-radius: var(--r-2); }
 ::selection { background: var(--copper-glow); color: var(--copper-deep); }
 
-html { -webkit-tap-highlight-color: transparent; }
+html {
+  -webkit-tap-highlight-color: transparent;
+  /* Reserve scrollbar gutter so the centered container doesn't shift
+     left when content grows past the viewport and the vertical
+     scrollbar appears mid-render. Chrome 94+, Firefox 97+, Safari 16+;
+     ignored on older engines and on platforms with overlay scrollbars
+     (mobile, macOS) so it never causes a regression there. */
+  scrollbar-gutter: stable;
+}
 body {
   background: var(--ink);
   color: var(--on-ink);
@@ -8759,13 +8767,24 @@ if (state.pendingOpenImport) {
   setState({ modal: "import" });
 }
 
-// Schedule the boot fade-in after the first paint. Two rAFs because some
-// browsers (Safari) do font swapping in the first frame after layout —
-// removing the class on the second frame guarantees the fade plays over
-// rendered content, not blank space.
-requestAnimationFrame(() => requestAnimationFrame(() => {
-  document.body.classList.remove("is-booting");
-}));
+// Hold the boot fade-in until web fonts (Fraunces + Manrope + JetBrains
+// Mono) have actually loaded. Otherwise the display=swap reflow happens
+// *after* the app is visible — every line shifts vertically when the
+// custom fonts replace the system fallbacks, which is the "down to up"
+// glitch users were seeing. Cap the wait at 1500 ms so a flaky network
+// can never strand the screen on the parchment background.
+const _unfreezeBoot = () => requestAnimationFrame(() =>
+  document.body.classList.remove("is-booting"));
+if (document.fonts && document.fonts.ready) {
+  Promise.race([
+    document.fonts.ready,
+    new Promise(r => setTimeout(r, 1500)),
+  ]).then(_unfreezeBoot);
+} else {
+  // Very old engines without the CSS Font Loading API — fall back to
+  // the original two-rAF gate so the fade still plays.
+  requestAnimationFrame(() => requestAnimationFrame(_unfreezeBoot));
+}
 </script>
 </body>
 </html>
