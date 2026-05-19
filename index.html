@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#1a1715">
+<!-- Two media-scoped theme-color metas so the browser picks the right
+     status-bar / tab-strip color at first paint, before applyTheme()
+     runs. The third (un-scoped) meta is owned by applyTheme() and added
+     dynamically only when the user picks an explicit Light/Dark
+     override, so it can win over the media-scoped pair via "last
+     declared in head" precedence. -->
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5efe6">
+<meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#1a1715">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Reframe">
@@ -103,7 +110,15 @@ input, textarea, select { font: inherit; }
 :focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; border-radius: var(--r-2); }
 ::selection { background: var(--copper-glow); color: var(--copper-deep); }
 
-html { -webkit-tap-highlight-color: transparent; }
+html {
+  -webkit-tap-highlight-color: transparent;
+  /* Reserve scrollbar gutter so the centered container doesn't shift
+     left when content grows past the viewport and the vertical
+     scrollbar appears mid-render. Chrome 94+, Firefox 97+, Safari 16+;
+     ignored on older engines and on platforms with overlay scrollbars
+     (mobile, macOS) so it never causes a regression there. */
+  scrollbar-gutter: stable;
+}
 body {
   background: var(--ink);
   color: var(--on-ink);
@@ -1038,6 +1053,40 @@ body.kb-open .bottom-nav {
   display: block;
   font-weight: 500;
 }
+/* "Suggested for X" inline pill rendered next to a field label when the
+   current selection matches what the user's first-picked distortion
+   would auto-fill. Informational only — clicking does nothing, the
+   regular dropdown is still in charge. */
+.suggested-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--copper-line, rgba(184,85,44,0.32));
+  border-radius: 999px;
+  background: rgba(184,85,44,0.08);
+  color: var(--copper-deep, #a14d24);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+  vertical-align: middle;
+}
+/* Step-3 footnote that fires once the user has picked at least one
+   distortion, setting expectations that steps 4 and 5 will be seeded
+   for them. */
+.auto-suggest-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--copper, #b8552c);
+  background: rgba(184,85,44,0.06);
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-paper-soft, inherit);
+}
+.auto-suggest-note strong { color: var(--copper-deep, #a14d24); }
 .field-help-paper {
   font-size: 12px;
   color: var(--on-paper-mute);
@@ -3583,7 +3632,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
     </div>
   </main>
 
-  <nav class="bottom-nav">
+  <nav class="bottom-nav" aria-label="Primary">
     <div class="bottom-nav-inner">
       <button class="nav-item" data-nav="journal">
         <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -3618,7 +3667,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
 </div>
 
 <input type="file" id="import-file" accept=".json,application/json" class="file-input">
-<div class="toast-stack" id="toasts"></div>
+<div class="toast-stack" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 <div id="modal-root"></div>
 
 <script>
@@ -3645,6 +3694,33 @@ const DISTORTIONS = [
   { name: "Control Fallacy (external)", desc: "Powerlessness.", cues: '"there\'s nothing I can do"' },
   { name: "Control Fallacy (internal)", desc: "Overresponsibility.", cues: '"it\'s all on me to fix everything"' },
 ];
+
+// Default Socratic type + reframe method per distortion. Lets step 3
+// (the distortion picker) seed steps 4 and 5 automatically so a first-
+// time user isn't asked to map jargon-to-jargon mid-flow. The pairings
+// come from the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS;
+// this constant just encodes them as a lookup so the picker handler
+// can apply them. Keys must exactly match a DISTORTIONS[].name; values
+// must exactly match a SOCRATIC_TYPES[].type and REFRAME_METHODS[].method.
+const DISTORTION_DEFAULTS = {
+  "All-or-Nothing Thinking":    { socratic: "Perspective broadening",  reframe: "vs. Absolutes" },
+  "Overgeneralization":         { socratic: "Historical testing",      reframe: "vs. Absolutes" },
+  "Mental Filtering":           { socratic: "Perspective broadening",  reframe: "Growth-Oriented" },
+  "Disqualifying the Positive": { socratic: "Evidence examination",    reframe: "Growth-Oriented" },
+  "Mind Reading":               { socratic: "Alternative explanation", reframe: "Behavioral experiment" },
+  "Fortune Telling":            { socratic: "Probability testing",     reframe: "Realism" },
+  "Catastrophizing":            { socratic: "Decatastrophizing",       reframe: "Realism" },
+  "Minimization":               { socratic: "Perspective broadening",  reframe: "Growth-Oriented" },
+  "Emotional Reasoning":        { socratic: "Evidence examination",    reframe: "Realism" },
+  "Should Statements":          { socratic: "Cost-benefit",            reframe: "vs. Absolutes" },
+  "Labeling":                   { socratic: "Double standard",         reframe: "Compassionate reattribution" },
+  "Personalization":            { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
+  "Blame":                      { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
+  "Fallacy of Fairness":        { socratic: "Cost-benefit",            reframe: "Realism" },
+  "Fallacy of Change":          { socratic: "Cost-benefit",            reframe: "Behavioral experiment" },
+  "Control Fallacy (external)": { socratic: "Evidence examination",    reframe: "Behavioral experiment" },
+  "Control Fallacy (internal)": { socratic: "Double standard",         reframe: "Compassionate reattribution" },
+};
 
 const COMMON_PAIRS = [
   "Catastrophizing + Fortune Telling",
@@ -4048,11 +4124,19 @@ function emptyWorry() {
 function fmtDate(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // Guard against corrupted timestamps (hand-edited backups, half-
+  // written entries) — printing the literal "Invalid Date" string in
+  // the UI is worse than rendering nothing.
+  if (isNaN(d.getTime())) return "";
+  // `undefined` locale = use the browser's default so a German user sees
+  // "5. Nov. 2025" and an en-US user still sees "Nov 5, 2025".
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 function fmtTime(iso) {
   if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 function fmtDateTime(iso) { return fmtDate(iso) + " · " + fmtTime(iso); }
 
@@ -4367,11 +4451,25 @@ function resolveTheme(setting) {
 function applyTheme() {
   const resolved = resolveTheme(state.settings.theme);
   document.documentElement.setAttribute("data-theme", resolved);
-  // Update the PWA theme-color meta so the browser chrome (status bar / tab
-  // strip on mobile) matches the resolved theme rather than always reading
-  // the dark value baked into <head>.
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", resolved === "light" ? "#f5efe6" : "#1a1715");
+  // The <head> ships with two media-scoped theme-color metas (one per
+  // color-scheme) so first paint matches OS preference without waiting
+  // on JS. When the user picks an explicit Light/Dark override (i.e.
+  // setting !== "auto"), we want to win over the media-scoped pair —
+  // append (or update) a third un-scoped meta last in the head so the
+  // browser uses it. For "auto" we remove the override so the media
+  // metas take back over.
+  let override = document.getElementById("themeColorOverride");
+  if (state.settings.theme === "auto") {
+    if (override) override.remove();
+  } else {
+    if (!override) {
+      override = document.createElement("meta");
+      override.id = "themeColorOverride";
+      override.name = "theme-color";
+      document.head.appendChild(override);
+    }
+    override.setAttribute("content", resolved === "light" ? "#f5efe6" : "#1a1715");
+  }
 }
 // Watch the OS preference so "auto" updates live without a reload.
 if (window.matchMedia) {
@@ -4534,7 +4632,12 @@ function render() {
   if (existingLock) existingLock.remove();
 
   document.querySelectorAll(".nav-item").forEach(b => {
-    b.classList.toggle("active", b.dataset.nav === state.view);
+    const active = b.dataset.nav === state.view;
+    b.classList.toggle("active", active);
+    // aria-current orients screen-reader users to which view is showing;
+    // the active class is purely visual.
+    if (active) b.setAttribute("aria-current", "page");
+    else        b.removeAttribute("aria-current");
   });
 
   const view = document.getElementById("view");
@@ -4572,10 +4675,15 @@ function renderLockScreen() {
     document.body.appendChild(el);
   }
   el.className = "lock-screen" + (state.lockError ? " has-error" : "");
+  // Lock card is functionally a modal — block everything else on the
+  // page until the PIN is correct — so expose it as a dialog with an
+  // accessible name. The first focused control (the PIN input) carries
+  // its own aria-label, but the dialog itself needs a labelledby so
+  // screen readers announce "Reframe Locked, dialog" on entry.
   el.innerHTML = `
-    <div class="lock-card">
-      <div class="lock-brand">
-        <span class="brand-mark">r</span>
+    <div class="lock-card" role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+      <div class="lock-brand" id="lockTitle">
+        <span class="brand-mark" aria-hidden="true">r</span>
         <div>
           <div class="brand-name">Reframe</div>
           <div class="brand-sub">Locked</div>
@@ -4853,17 +4961,23 @@ function renderJournal() {
       </div>
     ` : ""}
 
-    ${filtered.length === 0 ? renderJournalFilteredEmpty() : groups.map(g => `
-      <div class="date-group">
-        <div class="date-group-label">
-          <span class="kicker">${esc(g.label)}</span>
-          <span class="date-group-rule"></span>
+    ${filtered.length === 0 ? renderJournalFilteredEmpty() : (() => {
+      // Precompute id → index lookup once. The previous form did
+      // entries.indexOf(e) inside the inner map, which made render() O(n²)
+      // in the number of entries — visibly stuttery past ~500.
+      const indexById = new Map(entries.map((e, i) => [e.id, i]));
+      return groups.map(g => `
+        <div class="date-group">
+          <div class="date-group-label">
+            <span class="kicker">${esc(g.label)}</span>
+            <span class="date-group-rule"></span>
+          </div>
+          <div class="entry-stack">
+            ${g.entries.map(e => renderEntryCard(e, indexById.get(e.id))).join("")}
+          </div>
         </div>
-        <div class="entry-stack">
-          ${g.entries.map(e => renderEntryCard(e, entries.indexOf(e))).join("")}
-        </div>
-      </div>
-    `).join("")}
+      `).join("");
+    })()}
   `;
 }
 
@@ -5893,6 +6007,11 @@ function renderCaptureStep(step, d) {
             }).join("")}
           </div>
           <p class="step-hint" style="margin-top: 10px;">Pick any that apply. Zero is also fine — the question is whether you notice these patterns, not whether you must find one.</p>
+          ${(d.distortions && d.distortions[0] && DISTORTION_DEFAULTS[d.distortions[0]]) ? `
+            <div class="auto-suggest-note" role="note">
+              <strong>You picked ${esc(d.distortions[0])}.</strong> The next two steps will start with a Socratic question and reframe style that usually fit — adapt or swap if a different angle lands better for you.
+            </div>
+          ` : ""}
           <details class="ref-inline">
             <summary><span class="chev">▸</span> Common pairs</summary>
             <div class="ref-inline-body">
@@ -5952,7 +6071,16 @@ function renderCaptureStep(step, d) {
         <p class="explainer-body" style="margin-top: 8px;">Pick a question <em>type</em> below based on what the thought is doing (catastrophizing, mind-reading, etc.) — the template gives you a starting line you can customize.</p>
       </div>
       <div class="field-group">
-        <label class="field-label-paper">Socratic question type</label>
+        <label class="field-label-paper">
+          Socratic question type
+          ${(() => {
+            const primary = (d.distortions || [])[0];
+            const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
+            return (sugg && d.socraticType === sugg.socratic)
+              ? `<span class="suggested-pill" title="Auto-selected based on the distortion you picked">Suggested for ${esc(primary)}</span>`
+              : "";
+          })()}
+        </label>
         <select class="select" data-field="socraticType">
           <option value="">— pick one —</option>
           ${SOCRATIC_TYPES.map(s => `<option value="${esc(s.type)}" ${d.socraticType === s.type ? "selected" : ""}>${esc(s.type)}</option>`).join("")}
@@ -5998,7 +6126,16 @@ function renderCaptureStep(step, d) {
         </div>
       ` : "")}
       <div class="field-group">
-        <label class="field-label-paper">${d.thoughtsAccurate ? "Method (optional)" : "Method"}</label>
+        <label class="field-label-paper">
+          ${d.thoughtsAccurate ? "Method (optional)" : "Method"}
+          ${(() => {
+            const primary = (d.distortions || [])[0];
+            const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
+            return (sugg && d.reframeMethod === sugg.reframe)
+              ? `<span class="suggested-pill" title="Auto-selected based on the distortion you picked">Suggested for ${esc(primary)}</span>`
+              : "";
+          })()}
+        </label>
         <select class="select" data-field="reframeMethod">
           <option value="">— pick one —</option>
           ${REFRAME_METHODS.map(r => `<option value="${esc(r.method)}" ${d.reframeMethod === r.method ? "selected" : ""}>${esc(r.method)}</option>`).join("")}
@@ -6282,6 +6419,15 @@ function bindOutcome() {
     return;
   }
 
+  // Trailing-edge debounce for persist() — slider drag fires ~30 "input"
+  // events per second and each persist() serializes the full entries
+  // array to localStorage. Without this, a one-second drag wrote 30 KB+
+  // 30 times, which stutters on slow Android.
+  let _outcomePersistTimer = null;
+  const _schedulePersist = () => {
+    clearTimeout(_outcomePersistTimer);
+    _outcomePersistTimer = setTimeout(() => persist(), 300);
+  };
   document.querySelectorAll('[data-action="edit-mood-after-pivot"]').forEach(el => {
     el.addEventListener("input", () => {
       const m = (entry.moods || []).find(x => x.id === el.dataset.id);
@@ -6289,10 +6435,9 @@ function bindOutcome() {
       m.intensityAfterPivot = parseInt(el.value, 10);
       const target = document.querySelector('[data-slider-display="outcome-' + el.dataset.id + '"]');
       if (target) target.textContent = el.value;
-      // The entry is mutated in-memory; persist on every change so backing
-      // out (or a tab close) preserves the re-rate even without tapping
-      // "Save outcome".
-      persist();
+      // In-memory mutation is immediate; persist on the trailing edge so
+      // backing out (or a tab close) still preserves the re-rate.
+      _schedulePersist();
     });
   });
 
@@ -6301,6 +6446,7 @@ function bindOutcome() {
     const ref = document.getElementById("outcomeReflection");
     if (ref) entry.pivotReflection = ref.value;
     entry.outcomeRecorded = true;
+    clearTimeout(_outcomePersistTimer);
     persist();
     state.outcomeEntryId = null;
     state.expandedIds.add(entry.id);
@@ -6310,13 +6456,14 @@ function bindOutcome() {
 
   const back = document.querySelector('[data-action="back-to-journal"]');
   if (back) back.addEventListener("click", () => {
-    // Save reflection text even when the user backs out without saving the
-    // outcome — it's harmless and stops accidental data loss.
+    // Flush any pending slider debounce, then save reflection text if the
+    // user typed anything — both keep accidental data loss off the table.
+    clearTimeout(_outcomePersistTimer);
     const ref = document.getElementById("outcomeReflection");
     if (ref && ref.value !== entry.pivotReflection) {
       entry.pivotReflection = ref.value;
-      persist();
     }
+    persist();
     state.outcomeEntryId = null;
     setView("journal");
   });
@@ -7520,7 +7667,15 @@ function bindJournal() {
     el.addEventListener("click", () => setState({ filter: el.dataset.value }));
   });
   const search = document.querySelector('[data-action="search"]');
-  if (search) search.addEventListener("input", () => { state.search = search.value; renderJournalListOnly(); });
+  if (search) search.addEventListener("input", () => {
+    // Update state synchronously so the input stays in sync with the
+    // value the user is seeing — but defer the re-render through a
+    // 150 ms debounce so typing a 6-char word doesn't fire 6 full
+    // journal renders (matters when entries.length is large).
+    state.search = search.value;
+    clearTimeout(state._searchTimer);
+    state._searchTimer = setTimeout(() => renderJournalListOnly(), 150);
+  });
 
   document.querySelectorAll('[data-action="resume-draft"]').forEach(el => {
     el.addEventListener("click", () => {
@@ -7928,12 +8083,33 @@ function bindCapture() {
   document.querySelectorAll('[data-action="toggle-distortion"]').forEach(btn => {
     btn.addEventListener("click", () => {
       const name = btn.dataset.name;
-      const has = state.draft.distortions.includes(name);
-      state.draft.distortions = has
-        ? state.draft.distortions.filter(d => d !== name)
-        : [...state.draft.distortions, name];
+      const prev = state.draft.distortions || [];
+      const has = prev.includes(name);
+      const next = has ? prev.filter(d => d !== name) : [...prev, name];
+      state.draft.distortions = next;
+
+      // First-pick auto-fill: when the user goes from zero distortions
+      // to one, seed step 4 (Socratic type + question) and step 5
+      // (reframe method) from DISTORTION_DEFAULTS so a beginner doesn't
+      // have to map jargon-to-jargon mid-flow. Empty-only — never
+      // overwrite a value the user has already typed or picked.
+      const justAdded = !has && next.length === 1 && prev.length === 0;
+      if (justAdded) {
+        const defaults = DISTORTION_DEFAULTS[name];
+        if (defaults) {
+          if (!state.draft.socraticType)  state.draft.socraticType  = defaults.socratic;
+          if (!state.draft.reframeMethod) state.draft.reframeMethod = defaults.reframe;
+          if (!(state.draft.socraticQuestion || "").trim()) {
+            const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
+            if (t) state.draft.socraticQuestion = t.template;
+          }
+        }
+      }
       saveDraft(state.draft);
-      btn.classList.toggle("active");
+      // Render rather than classList.toggle so the chip's active state,
+      // any newly-applied auto-fills, and the "Suggested for X" hints
+      // on steps 4/5 stay in sync. Same pattern toggle-accurate uses.
+      render();
     });
   });
   // "Thoughts feel accurate" — opt out of the distortion frame entirely so
@@ -8002,13 +8178,18 @@ function bindCapture() {
       toast("Entry saved");
     }
     // Finalize a deferred worry-escalation: now that the thought-record
-    // is real, point the original worry at it and mark it resolved.
+    // is real, point the original worry at it and mark it resolved. If
+    // the worry was deleted in the meantime, save still succeeds but
+    // we let the user know the link is broken rather than silently
+    // dropping the back-reference.
     if (state.pendingEscalateFromWorryId) {
       const w = state.entries.find(x => x.id === state.pendingEscalateFromWorryId && x.kind === "worry");
       if (w && !w.resolution) {
         w.resolution = "escalated";
         w.resolvedAt = now;
         w.linkedEntryId = savedId;
+      } else if (!w) {
+        toast("Original worry was deleted — thought record saved separately.");
       }
       state.pendingEscalateFromWorryId = null;
     }
@@ -8043,6 +8224,11 @@ function bindCapture() {
 // feels confirming rather than abrupt.
 function closeModal() {
   if (!state.modal) return;
+  // Any in-flight kind-switch request is implicitly cancelled when the
+  // modal closes (via Escape, overlay click, or the X button). The
+  // explicit Cancel button already clears this; doing it here too
+  // keeps the state clean for every close path.
+  state.pendingModeSwitch = null;
   const overlay = document.querySelector(".modal-overlay");
   if (!overlay || _prefersReducedMotion()) {
     setState({ modal: null });
@@ -8372,14 +8558,18 @@ function bindModal() {
       action: {
         label: "Undo",
         onClick: () => {
-          // Splice back in at the original index; clamp in case the list
-          // shrank further between delete and undo.
-          const insertAt = Math.min(idx, state.entries.length);
-          state.entries = [
-            ...state.entries.slice(0, insertAt),
-            removed,
-            ...state.entries.slice(insertAt),
-          ];
+          // Restore at the chronologically-correct slot rather than the
+          // pre-delete index. Entries are newest-first by createdAt, so
+          // find the first entry older than `removed` and splice before
+          // it. Handles the case where the user added entries while the
+          // toast was up (which would otherwise misplace the restored
+          // entry).
+          const removedTime = new Date(removed.createdAt).getTime();
+          let insertAt = state.entries.findIndex(
+            e => new Date(e.createdAt).getTime() < removedTime
+          );
+          if (insertAt === -1) insertAt = state.entries.length;
+          state.entries.splice(insertAt, 0, removed);
           persist();
           render();
           toast("Restored");
@@ -8621,13 +8811,29 @@ if (state.pendingOpenImport) {
   setState({ modal: "import" });
 }
 
-// Schedule the boot fade-in after the first paint. Two rAFs because some
-// browsers (Safari) do font swapping in the first frame after layout —
-// removing the class on the second frame guarantees the fade plays over
-// rendered content, not blank space.
-requestAnimationFrame(() => requestAnimationFrame(() => {
-  document.body.classList.remove("is-booting");
-}));
+// Hold the boot fade-in until web fonts (Fraunces + Manrope + JetBrains
+// Mono) have actually loaded. Otherwise the display=swap reflow happens
+// *after* the app is visible — every line shifts vertically when the
+// custom fonts replace the system fallbacks, which is the "down to up"
+// glitch users were seeing. Cap the wait at 1500 ms so a flaky network
+// can never strand the screen on the parchment background.
+const _unfreezeBoot = () => requestAnimationFrame(() =>
+  document.body.classList.remove("is-booting"));
+if (document.fonts && document.fonts.ready) {
+  Promise.race([
+    document.fonts.ready,
+    new Promise(r => setTimeout(r, 1500)),
+  // Two-arg .then — if document.fonts.ready ever rejects (rare:
+  // network error, browser bug), the race rejects and a bare .then()
+  // would never fire, leaving the parchment background up forever.
+  // Calling _unfreezeBoot on either outcome guarantees we always
+  // un-freeze within at most 1500 ms.
+  ]).then(_unfreezeBoot, _unfreezeBoot);
+} else {
+  // Very old engines without the CSS Font Loading API — fall back to
+  // the original two-rAF gate so the fade still plays.
+  requestAnimationFrame(() => requestAnimationFrame(_unfreezeBoot));
+}
 </script>
 </body>
 </html>
