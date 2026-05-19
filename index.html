@@ -971,7 +971,11 @@ body.kb-open .bottom-nav {
 }
 
 .capture-screen {
-  padding: 28px 24px 20px 24px;
+  /* Bottom padding has to clear the sticky .capture-footer, otherwise the
+     last form field (e.g. the distortion-note textarea on Step 3) scrolls
+     under the pinned Continue bar and the user thinks the page has hit the
+     bottom of scroll. ~88px ≈ footer height + a little breathing room. */
+  padding: 28px 24px 88px 24px;
   min-height: 380px;
   /* Animation moved off the always-on rule — render() applies the
      step-entering class only when state.captureStep actually changes,
@@ -992,7 +996,7 @@ body.kb-open .bottom-nav {
 #view.view-entering { animation: viewIn var(--dur-medium) var(--ease-out); }
 .capture-screen.step-entering { animation: viewIn var(--dur-medium) var(--ease-out); }
 @media (min-width: 768px) {
-  .capture-screen { padding: 36px 36px 24px 36px; }
+  .capture-screen { padding: 36px 36px 96px 36px; }
 }
 
 .step-header { margin-bottom: 24px; }
