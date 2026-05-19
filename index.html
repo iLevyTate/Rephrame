@@ -4196,15 +4196,25 @@ function thoughtRecordToMd(e, idx) {
     if (e.distortionNote) L.push(e.distortionNote, "");
   }
 
-  L.push("**4. Challenge (The Trial)**", "");
-  L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
-  L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
-  if (e.socraticQuestion) L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
-  else L.push("");
+  // When thoughtsAccurate is set the writer explicitly opted out of the
+  // distortion / challenge / reframe arc — only emit those sections if
+  // they actually carry content, otherwise the export looks padded with
+  // empty "—" placeholders.
+  const hasChallenge = e.evidenceFor || e.evidenceAgainst || e.socraticQuestion;
+  if (!e.thoughtsAccurate || hasChallenge) {
+    L.push("**4. Challenge (The Trial)**", "");
+    L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
+    L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
+    if (e.socraticQuestion) L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
+    else L.push("");
+  }
 
-  L.push("**5. Reframe**", "");
-  L.push("- **Method:** " + (e.reframeMethod || "—"), "");
-  L.push('- **New Thought:** "' + (e.newThought || "—") + '"', "");
+  const hasReframe = e.reframeMethod || e.newThought;
+  if (!e.thoughtsAccurate || hasReframe) {
+    L.push("**5. Reframe**", "");
+    L.push("- **Method:** " + (e.reframeMethod || "—"), "");
+    L.push('- **New Thought:** "' + (e.newThought || "—") + '"', "");
+  }
   const hot = hotThought(e);
   if (hot && typeof hot.beliefAfter === "number") {
     const drop = typeof hot.beliefBefore === "number" ? (" (Δ " + (hot.beliefAfter - hot.beliefBefore) + ")") : "";
@@ -4322,6 +4332,11 @@ const state = {
   // Same shape as quickDraft but for the log-activity modal — holds the
   // entry id + transient slider values until the user saves.
   logActivityDraft: null,
+  // When a worry-escalate is in progress, holds the worry's id. The worry
+  // itself stays parked (no resolution set) until the thought-record draft
+  // is actually saved — backing out of capture should leave the worry
+  // available for a different resolution rather than orphan-linking it.
+  pendingEscalateFromWorryId: null,
   settings: loadSettings(),
   // Print mode: when true, every entry renders expanded. Used by the
   // Print/PDF flow so the browser print dialog gets a full transcript.
@@ -7493,6 +7508,9 @@ function bindJournal() {
       state.draft = emptyEntry();
       state.editingId = null;
       state.captureStep = 1;
+      // Clear any stale draft from a previous session — without this, closing
+      // the tab before typing would resurface the old draft on next launch.
+      clearDraft();
       setView("capture");
     });
   });
@@ -7597,9 +7615,11 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
-      // Pre-mint the new thought-record's id so we can set bidirectional
-      // linkedEntryId now — without it, the worry has no way to point
-      // back to the entry it was escalated into.
+      // Pre-mint the new thought-record's id so the draft can carry a
+      // back-link from the start. The worry itself stays parked — we
+      // finalize its resolution only when the new entry actually saves
+      // (handled in save-entry below), so backing out leaves the worry
+      // untouched instead of orphan-linked to a never-saved draft.
       const newEntryId = newId();
       const draft = emptyEntry();
       draft.id = newEntryId;
@@ -7609,10 +7629,8 @@ function bindJournal() {
       state.draft = draft;
       state.editingId = null;
       state.captureStep = 1;
-      entry.resolution = "escalated";
-      entry.resolvedAt = new Date().toISOString();
-      entry.linkedEntryId = newEntryId;
-      persist();
+      state.pendingEscalateFromWorryId = entry.id;
+      saveDraft(state.draft);
       setView("capture");
     });
   });
@@ -7926,7 +7944,9 @@ function bindCapture() {
   const save = document.querySelector('[data-action="save-entry"]');
   if (save) save.addEventListener("click", () => {
     const now = new Date().toISOString();
+    let savedId;
     if (state.editingId) {
+      savedId = state.editingId;
       state.entries = state.entries.map(e => e.id === state.editingId
         ? { ...state.draft, id: state.editingId, updatedAt: now }
         : e);
@@ -7935,8 +7955,20 @@ function bindCapture() {
       // Honor a pre-assigned draft.id (used by worry-escalate to set up
       // bidirectional linking before the new entry exists). Otherwise mint
       // a fresh id.
-      state.entries = [{ ...state.draft, id: state.draft.id || newId(), createdAt: now }, ...state.entries];
+      savedId = state.draft.id || newId();
+      state.entries = [{ ...state.draft, id: savedId, createdAt: now }, ...state.entries];
       toast("Entry saved");
+    }
+    // Finalize a deferred worry-escalation: now that the thought-record
+    // is real, point the original worry at it and mark it resolved.
+    if (state.pendingEscalateFromWorryId) {
+      const w = state.entries.find(x => x.id === state.pendingEscalateFromWorryId && x.kind === "worry");
+      if (w && !w.resolution) {
+        w.resolution = "escalated";
+        w.resolvedAt = now;
+        w.linkedEntryId = savedId;
+      }
+      state.pendingEscalateFromWorryId = null;
     }
     persist();
     clearDraft();
@@ -7953,6 +7985,7 @@ function bindCapture() {
       state.draft = emptyEntry();
       state.editingId = null;
       state.captureStep = 1;
+      state.pendingEscalateFromWorryId = null;
       clearDraft();
       setView("journal");
     }
@@ -8319,6 +8352,7 @@ function bindModal() {
     state.draft = emptyEntry();
     state.editingId = null;
     state.captureStep = 1;
+    state.pendingEscalateFromWorryId = null;
     setState({ modal: null });
     setView("journal");
     toast("Draft discarded");
