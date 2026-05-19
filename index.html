@@ -4124,13 +4124,19 @@ function emptyWorry() {
 function fmtDate(iso) {
   if (!iso) return "";
   const d = new Date(iso);
+  // Guard against corrupted timestamps (hand-edited backups, half-
+  // written entries) — printing the literal "Invalid Date" string in
+  // the UI is worse than rendering nothing.
+  if (isNaN(d.getTime())) return "";
   // `undefined` locale = use the browser's default so a German user sees
   // "5. Nov. 2025" and an en-US user still sees "Nov 5, 2025".
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 function fmtTime(iso) {
   if (!iso) return "";
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 function fmtDateTime(iso) { return fmtDate(iso) + " · " + fmtTime(iso); }
 
@@ -4955,17 +4961,23 @@ function renderJournal() {
       </div>
     ` : ""}
 
-    ${filtered.length === 0 ? renderJournalFilteredEmpty() : groups.map(g => `
-      <div class="date-group">
-        <div class="date-group-label">
-          <span class="kicker">${esc(g.label)}</span>
-          <span class="date-group-rule"></span>
+    ${filtered.length === 0 ? renderJournalFilteredEmpty() : (() => {
+      // Precompute id → index lookup once. The previous form did
+      // entries.indexOf(e) inside the inner map, which made render() O(n²)
+      // in the number of entries — visibly stuttery past ~500.
+      const indexById = new Map(entries.map((e, i) => [e.id, i]));
+      return groups.map(g => `
+        <div class="date-group">
+          <div class="date-group-label">
+            <span class="kicker">${esc(g.label)}</span>
+            <span class="date-group-rule"></span>
+          </div>
+          <div class="entry-stack">
+            ${g.entries.map(e => renderEntryCard(e, indexById.get(e.id))).join("")}
+          </div>
         </div>
-        <div class="entry-stack">
-          ${g.entries.map(e => renderEntryCard(e, entries.indexOf(e))).join("")}
-        </div>
-      </div>
-    `).join("")}
+      `).join("");
+    })()}
   `;
 }
 
@@ -6407,6 +6419,15 @@ function bindOutcome() {
     return;
   }
 
+  // Trailing-edge debounce for persist() — slider drag fires ~30 "input"
+  // events per second and each persist() serializes the full entries
+  // array to localStorage. Without this, a one-second drag wrote 30 KB+
+  // 30 times, which stutters on slow Android.
+  let _outcomePersistTimer = null;
+  const _schedulePersist = () => {
+    clearTimeout(_outcomePersistTimer);
+    _outcomePersistTimer = setTimeout(() => persist(), 300);
+  };
   document.querySelectorAll('[data-action="edit-mood-after-pivot"]').forEach(el => {
     el.addEventListener("input", () => {
       const m = (entry.moods || []).find(x => x.id === el.dataset.id);
@@ -6414,10 +6435,9 @@ function bindOutcome() {
       m.intensityAfterPivot = parseInt(el.value, 10);
       const target = document.querySelector('[data-slider-display="outcome-' + el.dataset.id + '"]');
       if (target) target.textContent = el.value;
-      // The entry is mutated in-memory; persist on every change so backing
-      // out (or a tab close) preserves the re-rate even without tapping
-      // "Save outcome".
-      persist();
+      // In-memory mutation is immediate; persist on the trailing edge so
+      // backing out (or a tab close) still preserves the re-rate.
+      _schedulePersist();
     });
   });
 
@@ -6426,6 +6446,7 @@ function bindOutcome() {
     const ref = document.getElementById("outcomeReflection");
     if (ref) entry.pivotReflection = ref.value;
     entry.outcomeRecorded = true;
+    clearTimeout(_outcomePersistTimer);
     persist();
     state.outcomeEntryId = null;
     state.expandedIds.add(entry.id);
@@ -6435,13 +6456,14 @@ function bindOutcome() {
 
   const back = document.querySelector('[data-action="back-to-journal"]');
   if (back) back.addEventListener("click", () => {
-    // Save reflection text even when the user backs out without saving the
-    // outcome — it's harmless and stops accidental data loss.
+    // Flush any pending slider debounce, then save reflection text if the
+    // user typed anything — both keep accidental data loss off the table.
+    clearTimeout(_outcomePersistTimer);
     const ref = document.getElementById("outcomeReflection");
     if (ref && ref.value !== entry.pivotReflection) {
       entry.pivotReflection = ref.value;
-      persist();
     }
+    persist();
     state.outcomeEntryId = null;
     setView("journal");
   });
@@ -7645,7 +7667,15 @@ function bindJournal() {
     el.addEventListener("click", () => setState({ filter: el.dataset.value }));
   });
   const search = document.querySelector('[data-action="search"]');
-  if (search) search.addEventListener("input", () => { state.search = search.value; renderJournalListOnly(); });
+  if (search) search.addEventListener("input", () => {
+    // Update state synchronously so the input stays in sync with the
+    // value the user is seeing — but defer the re-render through a
+    // 150 ms debounce so typing a 6-char word doesn't fire 6 full
+    // journal renders (matters when entries.length is large).
+    state.search = search.value;
+    clearTimeout(state._searchTimer);
+    state._searchTimer = setTimeout(() => renderJournalListOnly(), 150);
+  });
 
   document.querySelectorAll('[data-action="resume-draft"]').forEach(el => {
     el.addEventListener("click", () => {
@@ -8148,13 +8178,18 @@ function bindCapture() {
       toast("Entry saved");
     }
     // Finalize a deferred worry-escalation: now that the thought-record
-    // is real, point the original worry at it and mark it resolved.
+    // is real, point the original worry at it and mark it resolved. If
+    // the worry was deleted in the meantime, save still succeeds but
+    // we let the user know the link is broken rather than silently
+    // dropping the back-reference.
     if (state.pendingEscalateFromWorryId) {
       const w = state.entries.find(x => x.id === state.pendingEscalateFromWorryId && x.kind === "worry");
       if (w && !w.resolution) {
         w.resolution = "escalated";
         w.resolvedAt = now;
         w.linkedEntryId = savedId;
+      } else if (!w) {
+        toast("Original worry was deleted — thought record saved separately.");
       }
       state.pendingEscalateFromWorryId = null;
     }
@@ -8189,6 +8224,11 @@ function bindCapture() {
 // feels confirming rather than abrupt.
 function closeModal() {
   if (!state.modal) return;
+  // Any in-flight kind-switch request is implicitly cancelled when the
+  // modal closes (via Escape, overlay click, or the X button). The
+  // explicit Cancel button already clears this; doing it here too
+  // keeps the state clean for every close path.
+  state.pendingModeSwitch = null;
   const overlay = document.querySelector(".modal-overlay");
   if (!overlay || _prefersReducedMotion()) {
     setState({ modal: null });
@@ -8518,14 +8558,18 @@ function bindModal() {
       action: {
         label: "Undo",
         onClick: () => {
-          // Splice back in at the original index; clamp in case the list
-          // shrank further between delete and undo.
-          const insertAt = Math.min(idx, state.entries.length);
-          state.entries = [
-            ...state.entries.slice(0, insertAt),
-            removed,
-            ...state.entries.slice(insertAt),
-          ];
+          // Restore at the chronologically-correct slot rather than the
+          // pre-delete index. Entries are newest-first by createdAt, so
+          // find the first entry older than `removed` and splice before
+          // it. Handles the case where the user added entries while the
+          // toast was up (which would otherwise misplace the restored
+          // entry).
+          const removedTime = new Date(removed.createdAt).getTime();
+          let insertAt = state.entries.findIndex(
+            e => new Date(e.createdAt).getTime() < removedTime
+          );
+          if (insertAt === -1) insertAt = state.entries.length;
+          state.entries.splice(insertAt, 0, removed);
           persist();
           render();
           toast("Restored");
@@ -8779,7 +8823,12 @@ if (document.fonts && document.fonts.ready) {
   Promise.race([
     document.fonts.ready,
     new Promise(r => setTimeout(r, 1500)),
-  ]).then(_unfreezeBoot);
+  // Two-arg .then — if document.fonts.ready ever rejects (rare:
+  // network error, browser bug), the race rejects and a bare .then()
+  // would never fire, leaving the parchment background up forever.
+  // Calling _unfreezeBoot on either outcome guarantees we always
+  // un-freeze within at most 1500 ms.
+  ]).then(_unfreezeBoot, _unfreezeBoot);
 } else {
   // Very old engines without the CSS Font Loading API — fall back to
   // the original two-rAF gate so the fade still plays.

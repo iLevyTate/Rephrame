@@ -1,7 +1,7 @@
 // Reframe Service Worker — keep CACHE_NAME bumped on every release so old
 // clients drop their caches and pick up the new index.html. The update
 // banner in js/pwa.js relies on this bump to detect that a new SW exists.
-const CACHE_NAME = 'reframe-v11';
+const CACHE_NAME = 'reframe-v12';
 
 const ASSETS = [
   './',
