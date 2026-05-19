@@ -1045,6 +1045,40 @@ body.kb-open .bottom-nav {
   display: block;
   font-weight: 500;
 }
+/* "Suggested for X" inline pill rendered next to a field label when the
+   current selection matches what the user's first-picked distortion
+   would auto-fill. Informational only — clicking does nothing, the
+   regular dropdown is still in charge. */
+.suggested-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--copper-line, rgba(184,85,44,0.32));
+  border-radius: 999px;
+  background: rgba(184,85,44,0.08);
+  color: var(--copper-deep, #a14d24);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+  vertical-align: middle;
+}
+/* Step-3 footnote that fires once the user has picked at least one
+   distortion, setting expectations that steps 4 and 5 will be seeded
+   for them. */
+.auto-suggest-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--copper, #b8552c);
+  background: rgba(184,85,44,0.06);
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-paper-soft, inherit);
+}
+.auto-suggest-note strong { color: var(--copper-deep, #a14d24); }
 .field-help-paper {
   font-size: 12px;
   color: var(--on-paper-mute);
@@ -3653,6 +3687,33 @@ const DISTORTIONS = [
   { name: "Control Fallacy (internal)", desc: "Overresponsibility.", cues: '"it\'s all on me to fix everything"' },
 ];
 
+// Default Socratic type + reframe method per distortion. Lets step 3
+// (the distortion picker) seed steps 4 and 5 automatically so a first-
+// time user isn't asked to map jargon-to-jargon mid-flow. The pairings
+// come from the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS;
+// this constant just encodes them as a lookup so the picker handler
+// can apply them. Keys must exactly match a DISTORTIONS[].name; values
+// must exactly match a SOCRATIC_TYPES[].type and REFRAME_METHODS[].method.
+const DISTORTION_DEFAULTS = {
+  "All-or-Nothing Thinking":    { socratic: "Perspective broadening",  reframe: "vs. Absolutes" },
+  "Overgeneralization":         { socratic: "Historical testing",      reframe: "vs. Absolutes" },
+  "Mental Filtering":           { socratic: "Perspective broadening",  reframe: "Growth-Oriented" },
+  "Disqualifying the Positive": { socratic: "Evidence examination",    reframe: "Growth-Oriented" },
+  "Mind Reading":               { socratic: "Alternative explanation", reframe: "Behavioral experiment" },
+  "Fortune Telling":            { socratic: "Probability testing",     reframe: "Realism" },
+  "Catastrophizing":            { socratic: "Decatastrophizing",       reframe: "Realism" },
+  "Minimization":               { socratic: "Perspective broadening",  reframe: "Growth-Oriented" },
+  "Emotional Reasoning":        { socratic: "Evidence examination",    reframe: "Realism" },
+  "Should Statements":          { socratic: "Cost-benefit",            reframe: "vs. Absolutes" },
+  "Labeling":                   { socratic: "Double standard",         reframe: "Compassionate reattribution" },
+  "Personalization":            { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
+  "Blame":                      { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
+  "Fallacy of Fairness":        { socratic: "Cost-benefit",            reframe: "Realism" },
+  "Fallacy of Change":          { socratic: "Cost-benefit",            reframe: "Behavioral experiment" },
+  "Control Fallacy (external)": { socratic: "Evidence examination",    reframe: "Behavioral experiment" },
+  "Control Fallacy (internal)": { socratic: "Double standard",         reframe: "Compassionate reattribution" },
+};
+
 const COMMON_PAIRS = [
   "Catastrophizing + Fortune Telling",
   "Mind Reading + Personalization",
@@ -5926,6 +5987,11 @@ function renderCaptureStep(step, d) {
             }).join("")}
           </div>
           <p class="step-hint" style="margin-top: 10px;">Pick any that apply. Zero is also fine — the question is whether you notice these patterns, not whether you must find one.</p>
+          ${(d.distortions && d.distortions[0] && DISTORTION_DEFAULTS[d.distortions[0]]) ? `
+            <div class="auto-suggest-note" role="note">
+              <strong>You picked ${esc(d.distortions[0])}.</strong> The next two steps will start with a Socratic question and reframe style that usually fit — adapt or swap if a different angle lands better for you.
+            </div>
+          ` : ""}
           <details class="ref-inline">
             <summary><span class="chev">▸</span> Common pairs</summary>
             <div class="ref-inline-body">
@@ -5985,7 +6051,16 @@ function renderCaptureStep(step, d) {
         <p class="explainer-body" style="margin-top: 8px;">Pick a question <em>type</em> below based on what the thought is doing (catastrophizing, mind-reading, etc.) — the template gives you a starting line you can customize.</p>
       </div>
       <div class="field-group">
-        <label class="field-label-paper">Socratic question type</label>
+        <label class="field-label-paper">
+          Socratic question type
+          ${(() => {
+            const primary = (d.distortions || [])[0];
+            const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
+            return (sugg && d.socraticType === sugg.socratic)
+              ? `<span class="suggested-pill" title="Auto-selected based on the distortion you picked">Suggested for ${esc(primary)}</span>`
+              : "";
+          })()}
+        </label>
         <select class="select" data-field="socraticType">
           <option value="">— pick one —</option>
           ${SOCRATIC_TYPES.map(s => `<option value="${esc(s.type)}" ${d.socraticType === s.type ? "selected" : ""}>${esc(s.type)}</option>`).join("")}
@@ -6031,7 +6106,16 @@ function renderCaptureStep(step, d) {
         </div>
       ` : "")}
       <div class="field-group">
-        <label class="field-label-paper">${d.thoughtsAccurate ? "Method (optional)" : "Method"}</label>
+        <label class="field-label-paper">
+          ${d.thoughtsAccurate ? "Method (optional)" : "Method"}
+          ${(() => {
+            const primary = (d.distortions || [])[0];
+            const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
+            return (sugg && d.reframeMethod === sugg.reframe)
+              ? `<span class="suggested-pill" title="Auto-selected based on the distortion you picked">Suggested for ${esc(primary)}</span>`
+              : "";
+          })()}
+        </label>
         <select class="select" data-field="reframeMethod">
           <option value="">— pick one —</option>
           ${REFRAME_METHODS.map(r => `<option value="${esc(r.method)}" ${d.reframeMethod === r.method ? "selected" : ""}>${esc(r.method)}</option>`).join("")}
@@ -7961,12 +8045,33 @@ function bindCapture() {
   document.querySelectorAll('[data-action="toggle-distortion"]').forEach(btn => {
     btn.addEventListener("click", () => {
       const name = btn.dataset.name;
-      const has = state.draft.distortions.includes(name);
-      state.draft.distortions = has
-        ? state.draft.distortions.filter(d => d !== name)
-        : [...state.draft.distortions, name];
+      const prev = state.draft.distortions || [];
+      const has = prev.includes(name);
+      const next = has ? prev.filter(d => d !== name) : [...prev, name];
+      state.draft.distortions = next;
+
+      // First-pick auto-fill: when the user goes from zero distortions
+      // to one, seed step 4 (Socratic type + question) and step 5
+      // (reframe method) from DISTORTION_DEFAULTS so a beginner doesn't
+      // have to map jargon-to-jargon mid-flow. Empty-only — never
+      // overwrite a value the user has already typed or picked.
+      const justAdded = !has && next.length === 1 && prev.length === 0;
+      if (justAdded) {
+        const defaults = DISTORTION_DEFAULTS[name];
+        if (defaults) {
+          if (!state.draft.socraticType)  state.draft.socraticType  = defaults.socratic;
+          if (!state.draft.reframeMethod) state.draft.reframeMethod = defaults.reframe;
+          if (!(state.draft.socraticQuestion || "").trim()) {
+            const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
+            if (t) state.draft.socraticQuestion = t.template;
+          }
+        }
+      }
       saveDraft(state.draft);
-      btn.classList.toggle("active");
+      // Render rather than classList.toggle so the chip's active state,
+      // any newly-applied auto-fills, and the "Suggested for X" hints
+      // on steps 4/5 stay in sync. Same pattern toggle-accurate uses.
+      render();
     });
   });
   // "Thoughts feel accurate" — opt out of the distortion frame entirely so
