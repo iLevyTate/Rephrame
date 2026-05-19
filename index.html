@@ -4337,6 +4337,9 @@ const state = {
   // is actually saved — backing out of capture should leave the worry
   // available for a different resolution rather than orphan-linking it.
   pendingEscalateFromWorryId: null,
+  // Holds the requested kind while the "switching will lose your draft"
+  // modal is open. Cleared on cancel; consumed on confirm.
+  pendingModeSwitch: null,
   settings: loadSettings(),
   // Print mode: when true, every entry renders expanded. Used by the
   // Print/PDF flow so the browser print dialog gets a full transcript.
@@ -6893,6 +6896,21 @@ function renderModal() {
         <button class="btn-modal btn-modal-danger" data-action="confirm-discard-draft">Discard</button>
       </div>
     `;
+  } else if (state.modal === "switch-kind") {
+    const targetLabel = ({
+      "thought-record": "Thought record",
+      "freeform":       "Free write",
+      "activity":       "Plan activity",
+      "worry":          "Park a worry",
+    })[state.pendingModeSwitch] || "another kind";
+    inner = `
+      <h3 class="display">Switch to ${esc(targetLabel)}?</h3>
+      <p class="modal-sub">Your current draft will be discarded. This can't be undone.</p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="cancel-mode-switch">Keep current</button>
+        <button class="btn-modal btn-modal-danger" data-action="confirm-mode-switch">Switch</button>
+      </div>
+    `;
   } else if (state.modal && state.modal.type === "delete") {
     inner = `
       <h3 class="display">Delete entry?</h3>
@@ -7662,6 +7680,22 @@ function renderJournalListOnly() {
   }
 }
 
+// Swap the in-flight draft for an empty template of the chosen kind.
+// Used by both the immediate "no content yet" path and the post-confirm
+// path from the switch-kind modal.
+function applyCaptureModeSwitch(kind) {
+  const factory =
+    kind === "freeform" ? emptyFreeform :
+    kind === "activity" ? emptyActivity :
+    kind === "worry"    ? emptyWorry    :
+                          emptyEntry;
+  state.draft = factory();
+  state.captureStep = 1;
+  state.pendingEscalateFromWorryId = null;
+  saveDraft(state.draft);
+  render();
+}
+
 function bindCapture() {
   // Entry-kind mode switcher: tap a chip to swap state.draft to the
   // empty-template of that kind. Only enabled when not editing — see
@@ -7671,17 +7705,15 @@ function bindCapture() {
       const kind = el.dataset.kind;
       if (state.draft.kind === kind) return;
       // Discard the current empty / scratch draft for a fresh template.
-      // We keep this behind the no-editingId guard so users can't lose
-      // a half-filled real entry.
-      const factory =
-        kind === "freeform" ? emptyFreeform :
-        kind === "activity" ? emptyActivity :
-        kind === "worry"    ? emptyWorry    :
-                              emptyEntry;
-      state.draft = factory();
-      state.captureStep = 1;
-      saveDraft(state.draft);
-      render();
+      // The editingId guard in renderCapture hides this chip row entirely
+      // for saved entries; for a draft-with-content we ask first so a
+      // half-filled new entry isn't silently destroyed.
+      if (hasDraftContent(state.draft)) {
+        state.pendingModeSwitch = kind;
+        setState({ modal: "switch-kind" });
+        return;
+      }
+      applyCaptureModeSwitch(kind);
     });
   });
 
@@ -8366,6 +8398,21 @@ function bindModal() {
     setState({ modal: null });
     setView("journal");
     toast("Draft discarded");
+  });
+
+  // Mode-switch confirmation (chip tapped while draft had content).
+  const confirmSwitch = document.querySelector('[data-action="confirm-mode-switch"]');
+  if (confirmSwitch) confirmSwitch.addEventListener("click", () => {
+    const kind = state.pendingModeSwitch;
+    state.pendingModeSwitch = null;
+    state.modal = null;
+    if (kind) applyCaptureModeSwitch(kind);
+    else render();
+  });
+  const cancelSwitch = document.querySelector('[data-action="cancel-mode-switch"]');
+  if (cancelSwitch) cancelSwitch.addEventListener("click", () => {
+    state.pendingModeSwitch = null;
+    setState({ modal: null });
   });
 }
 
