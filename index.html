@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#1a1715">
+<!-- Two media-scoped theme-color metas so the browser picks the right
+     status-bar / tab-strip color at first paint, before applyTheme()
+     runs. The third (un-scoped) meta is owned by applyTheme() and added
+     dynamically only when the user picks an explicit Light/Dark
+     override, so it can win over the media-scoped pair via "last
+     declared in head" precedence. -->
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5efe6">
+<meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#1a1715">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Reframe">
@@ -3583,7 +3590,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
     </div>
   </main>
 
-  <nav class="bottom-nav">
+  <nav class="bottom-nav" aria-label="Primary">
     <div class="bottom-nav-inner">
       <button class="nav-item" data-nav="journal">
         <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -3618,7 +3625,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
 </div>
 
 <input type="file" id="import-file" accept=".json,application/json" class="file-input">
-<div class="toast-stack" id="toasts"></div>
+<div class="toast-stack" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 <div id="modal-root"></div>
 
 <script>
@@ -4048,11 +4055,13 @@ function emptyWorry() {
 function fmtDate(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // `undefined` locale = use the browser's default so a German user sees
+  // "5. Nov. 2025" and an en-US user still sees "Nov 5, 2025".
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 function fmtTime(iso) {
   if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 function fmtDateTime(iso) { return fmtDate(iso) + " · " + fmtTime(iso); }
 
@@ -4367,11 +4376,25 @@ function resolveTheme(setting) {
 function applyTheme() {
   const resolved = resolveTheme(state.settings.theme);
   document.documentElement.setAttribute("data-theme", resolved);
-  // Update the PWA theme-color meta so the browser chrome (status bar / tab
-  // strip on mobile) matches the resolved theme rather than always reading
-  // the dark value baked into <head>.
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", resolved === "light" ? "#f5efe6" : "#1a1715");
+  // The <head> ships with two media-scoped theme-color metas (one per
+  // color-scheme) so first paint matches OS preference without waiting
+  // on JS. When the user picks an explicit Light/Dark override (i.e.
+  // setting !== "auto"), we want to win over the media-scoped pair —
+  // append (or update) a third un-scoped meta last in the head so the
+  // browser uses it. For "auto" we remove the override so the media
+  // metas take back over.
+  let override = document.getElementById("themeColorOverride");
+  if (state.settings.theme === "auto") {
+    if (override) override.remove();
+  } else {
+    if (!override) {
+      override = document.createElement("meta");
+      override.id = "themeColorOverride";
+      override.name = "theme-color";
+      document.head.appendChild(override);
+    }
+    override.setAttribute("content", resolved === "light" ? "#f5efe6" : "#1a1715");
+  }
 }
 // Watch the OS preference so "auto" updates live without a reload.
 if (window.matchMedia) {
@@ -4534,7 +4557,12 @@ function render() {
   if (existingLock) existingLock.remove();
 
   document.querySelectorAll(".nav-item").forEach(b => {
-    b.classList.toggle("active", b.dataset.nav === state.view);
+    const active = b.dataset.nav === state.view;
+    b.classList.toggle("active", active);
+    // aria-current orients screen-reader users to which view is showing;
+    // the active class is purely visual.
+    if (active) b.setAttribute("aria-current", "page");
+    else        b.removeAttribute("aria-current");
   });
 
   const view = document.getElementById("view");
@@ -4572,10 +4600,15 @@ function renderLockScreen() {
     document.body.appendChild(el);
   }
   el.className = "lock-screen" + (state.lockError ? " has-error" : "");
+  // Lock card is functionally a modal — block everything else on the
+  // page until the PIN is correct — so expose it as a dialog with an
+  // accessible name. The first focused control (the PIN input) carries
+  // its own aria-label, but the dialog itself needs a labelledby so
+  // screen readers announce "Reframe Locked, dialog" on entry.
   el.innerHTML = `
-    <div class="lock-card">
-      <div class="lock-brand">
-        <span class="brand-mark">r</span>
+    <div class="lock-card" role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+      <div class="lock-brand" id="lockTitle">
+        <span class="brand-mark" aria-hidden="true">r</span>
         <div>
           <div class="brand-name">Reframe</div>
           <div class="brand-sub">Locked</div>
