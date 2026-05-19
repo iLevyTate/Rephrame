@@ -4144,6 +4144,7 @@ function worryToMd(e, idx) {
                 : e.resolution === "postponed" ? "Postponed to next window"
                 : "Parked";
   L.push("- Status: " + resLabel + (e.resolvedAt ? " · " + fmtDateTime(e.resolvedAt) : ""));
+  if (e.linkedEntryId) L.push("- Linked thought record: " + e.linkedEntryId);
   L.push("");
   return L.join("\n");
 }
@@ -4195,15 +4196,25 @@ function thoughtRecordToMd(e, idx) {
     if (e.distortionNote) L.push(e.distortionNote, "");
   }
 
-  L.push("**4. Challenge (The Trial)**", "");
-  L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
-  L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
-  if (e.socraticQuestion) L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
-  else L.push("");
+  // When thoughtsAccurate is set the writer explicitly opted out of the
+  // distortion / challenge / reframe arc — only emit those sections if
+  // they actually carry content, otherwise the export looks padded with
+  // empty "—" placeholders.
+  const hasChallenge = e.evidenceFor || e.evidenceAgainst || e.socraticQuestion;
+  if (!e.thoughtsAccurate || hasChallenge) {
+    L.push("**4. Challenge (The Trial)**", "");
+    L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
+    L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
+    if (e.socraticQuestion) L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
+    else L.push("");
+  }
 
-  L.push("**5. Reframe**", "");
-  L.push("- **Method:** " + (e.reframeMethod || "—"), "");
-  L.push('- **New Thought:** "' + (e.newThought || "—") + '"', "");
+  const hasReframe = e.reframeMethod || e.newThought;
+  if (!e.thoughtsAccurate || hasReframe) {
+    L.push("**5. Reframe**", "");
+    L.push("- **Method:** " + (e.reframeMethod || "—"), "");
+    L.push('- **New Thought:** "' + (e.newThought || "—") + '"', "");
+  }
   const hot = hotThought(e);
   if (hot && typeof hot.beliefAfter === "number") {
     const drop = typeof hot.beliefBefore === "number" ? (" (Δ " + (hot.beliefAfter - hot.beliefBefore) + ")") : "";
@@ -4321,6 +4332,14 @@ const state = {
   // Same shape as quickDraft but for the log-activity modal — holds the
   // entry id + transient slider values until the user saves.
   logActivityDraft: null,
+  // When a worry-escalate is in progress, holds the worry's id. The worry
+  // itself stays parked (no resolution set) until the thought-record draft
+  // is actually saved — backing out of capture should leave the worry
+  // available for a different resolution rather than orphan-linking it.
+  pendingEscalateFromWorryId: null,
+  // Holds the requested kind while the "switching will lose your draft"
+  // modal is open. Cleared on cancel; consumed on confirm.
+  pendingModeSwitch: null,
   settings: loadSettings(),
   // Print mode: when true, every entry renders expanded. Used by the
   // Print/PDF flow so the browser print dialog gets a full transcript.
@@ -4748,8 +4767,11 @@ function renderJournal() {
     worries: entries.filter(e => e.kind === "worry").length,
   };
 
-  let filtered = entries;
-  filtered = applyViewFilter(filtered, state.viewFilter);
+  // Apply the scope filter first; the result feeds both the distortion
+  // chips (so chips for distortions absent from the current scope don't
+  // render) and the list (after search + distortion narrow it further).
+  const scoped = applyViewFilter(entries, state.viewFilter);
+  let filtered = scoped;
   if (state.filter) filtered = filtered.filter(e => e.distortions.includes(state.filter));
   if (q) {
     filtered = filtered.filter(e => {
@@ -4758,14 +4780,15 @@ function renderJournal() {
       const blob = [
         e.trigger, thoughtText, moodText, e.newThought, e.pivot,
         e.pivotReflection, e.distortionNote, e.evidenceFor, e.evidenceAgainst,
-        e.socraticQuestion,
+        e.socraticQuestion, e.bodyCheck,
+        e.body, e.worryText, e.activityNotes,
         e.distortions.join(" ")
       ].join(" ").toLowerCase();
       return blob.includes(q);
     });
   }
 
-  const usedDistortions = Array.from(new Set(entries.flatMap(e => e.distortions))).sort();
+  const usedDistortions = Array.from(new Set(scoped.flatMap(e => e.distortions || []))).sort();
   const favorites = entries.filter(e => e.isFavorite);
 
   const groups = [];
@@ -5564,13 +5587,17 @@ function renderFreeformCapture(d) {
 // Logged completion lives in a separate modal (renderLogActivityModal).
 function renderActivityCapture(d) {
   const cats = ACTIVITY_CATEGORIES;
-  const canSave = (d.body || "").trim().length > 0 && !!d.category && !!d.plannedFor;
-  // Default plannedFor to "today, 1 hour from now" if blank.
-  const defaultPlanned = d.plannedFor || (() => {
+  // Default plannedFor to "today, 1 hour from now" if blank. We seed it into
+  // the draft (not just the rendered value) so the canSave check below and
+  // the data-field handler agree — otherwise the input shows a time but Save
+  // stays disabled until the user manually touches the field.
+  if (!d.plannedFor) {
     const t = new Date(Date.now() + 60 * 60 * 1000);
     t.setSeconds(0, 0);
-    return t.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM for datetime-local
-  })();
+    d.plannedFor = t.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM for datetime-local
+    saveDraft(d);
+  }
+  const canSave = (d.body || "").trim().length > 0 && !!d.category && !!d.plannedFor;
   return `
     <div class="capture-shell">
       <div class="capture-screen">
@@ -5598,7 +5625,7 @@ function renderActivityCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">When</label>
-          <input class="input" type="datetime-local" data-field="plannedFor" value="${esc(defaultPlanned)}">
+          <input class="input" type="datetime-local" data-field="plannedFor" value="${esc(d.plannedFor)}">
         </div>
 
         <div class="field-group">
@@ -6262,6 +6289,10 @@ function bindOutcome() {
       m.intensityAfterPivot = parseInt(el.value, 10);
       const target = document.querySelector('[data-slider-display="outcome-' + el.dataset.id + '"]');
       if (target) target.textContent = el.value;
+      // The entry is mutated in-memory; persist on every change so backing
+      // out (or a tab close) preserves the re-rate even without tapping
+      // "Save outcome".
+      persist();
     });
   });
 
@@ -6665,7 +6696,7 @@ function renderReference() {
       <p class="ref-section-intro">A thought record is for ordinary distress — moments where you can still pause and write. If you can't, please reach out to one of these now. They're free, confidential, and answer 24/7.</p>
       <div class="ref-item">
         <div class="ref-item-name">988 Suicide &amp; Crisis Lifeline · US / Canada</div>
-        <div class="ref-item-desc">Call or text <strong>988</strong>. Online chat at <strong>988lifeline.org/chat</strong>.</div>
+        <div class="ref-item-desc">Call or text <strong>988</strong>. Online chat at <a href="https://988lifeline.org/chat" rel="noopener noreferrer" target="_blank"><strong>988lifeline.org/chat</strong></a>.</div>
       </div>
       <div class="ref-item">
         <div class="ref-item-name">Crisis Text Line · US / UK / Canada / Ireland</div>
@@ -6677,7 +6708,7 @@ function renderReference() {
       </div>
       <div class="ref-item">
         <div class="ref-item-name">International directory</div>
-        <div class="ref-item-desc">Crisis centres in 100+ countries at <strong>iasp.info/resources/Crisis_Centres</strong> and <strong>findahelpline.com</strong>.</div>
+        <div class="ref-item-desc">Crisis centres in 100+ countries at <a href="https://www.iasp.info/resources/Crisis_Centres/" rel="noopener noreferrer" target="_blank"><strong>iasp.info/resources/Crisis_Centres</strong></a> and <a href="https://findahelpline.com" rel="noopener noreferrer" target="_blank"><strong>findahelpline.com</strong></a>.</div>
       </div>
       <div class="ref-item">
         <div class="ref-item-name">Emergency</div>
@@ -6865,6 +6896,21 @@ function renderModal() {
         <button class="btn-modal btn-modal-danger" data-action="confirm-discard-draft">Discard</button>
       </div>
     `;
+  } else if (state.modal === "switch-kind") {
+    const targetLabel = ({
+      "thought-record": "Thought record",
+      "freeform":       "Free write",
+      "activity":       "Plan activity",
+      "worry":          "Park a worry",
+    })[state.pendingModeSwitch] || "another kind";
+    inner = `
+      <h3 class="display">Switch to ${esc(targetLabel)}?</h3>
+      <p class="modal-sub">Your current draft will be discarded. This can't be undone.</p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="cancel-mode-switch">Keep current</button>
+        <button class="btn-modal btn-modal-danger" data-action="confirm-mode-switch">Switch</button>
+      </div>
+    `;
   } else if (state.modal && state.modal.type === "delete") {
     inner = `
       <h3 class="display">Delete entry?</h3>
@@ -6966,7 +7012,17 @@ function renderModal() {
     inner = renderLogActivityModal();
   }
 
-  root.innerHTML = `<div class="modal-overlay" data-action="close-modal"><div class="modal" onclick="event.stopPropagation()">${inner}</div></div>`;
+  root.innerHTML = `<div class="modal-overlay" data-action="close-modal" role="presentation"><div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">${inner}</div></div>`;
+  // Wire the modal's first heading as the accessible name so screen
+  // readers announce "Dialog: <title>" when focus enters.
+  const modalEl = root.querySelector('.modal');
+  if (modalEl) {
+    const heading = modalEl.querySelector('h1, h2, h3');
+    if (heading) {
+      if (!heading.id) heading.id = 'reframe-modal-title';
+      modalEl.setAttribute('aria-labelledby', heading.id);
+    }
+  }
   bindModal();
 }
 
@@ -7480,6 +7536,9 @@ function bindJournal() {
       state.draft = emptyEntry();
       state.editingId = null;
       state.captureStep = 1;
+      // Clear any stale draft from a previous session — without this, closing
+      // the tab before typing would resurface the old draft on next launch.
+      clearDraft();
       setView("capture");
     });
   });
@@ -7584,9 +7643,11 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
-      // Pre-mint the new thought-record's id so we can set bidirectional
-      // linkedEntryId now — without it, the worry has no way to point
-      // back to the entry it was escalated into.
+      // Pre-mint the new thought-record's id so the draft can carry a
+      // back-link from the start. The worry itself stays parked — we
+      // finalize its resolution only when the new entry actually saves
+      // (handled in save-entry below), so backing out leaves the worry
+      // untouched instead of orphan-linked to a never-saved draft.
       const newEntryId = newId();
       const draft = emptyEntry();
       draft.id = newEntryId;
@@ -7596,10 +7657,8 @@ function bindJournal() {
       state.draft = draft;
       state.editingId = null;
       state.captureStep = 1;
-      entry.resolution = "escalated";
-      entry.resolvedAt = new Date().toISOString();
-      entry.linkedEntryId = newEntryId;
-      persist();
+      state.pendingEscalateFromWorryId = entry.id;
+      saveDraft(state.draft);
       setView("capture");
     });
   });
@@ -7621,6 +7680,22 @@ function renderJournalListOnly() {
   }
 }
 
+// Swap the in-flight draft for an empty template of the chosen kind.
+// Used by both the immediate "no content yet" path and the post-confirm
+// path from the switch-kind modal.
+function applyCaptureModeSwitch(kind) {
+  const factory =
+    kind === "freeform" ? emptyFreeform :
+    kind === "activity" ? emptyActivity :
+    kind === "worry"    ? emptyWorry    :
+                          emptyEntry;
+  state.draft = factory();
+  state.captureStep = 1;
+  state.pendingEscalateFromWorryId = null;
+  saveDraft(state.draft);
+  render();
+}
+
 function bindCapture() {
   // Entry-kind mode switcher: tap a chip to swap state.draft to the
   // empty-template of that kind. Only enabled when not editing — see
@@ -7630,17 +7705,15 @@ function bindCapture() {
       const kind = el.dataset.kind;
       if (state.draft.kind === kind) return;
       // Discard the current empty / scratch draft for a fresh template.
-      // We keep this behind the no-editingId guard so users can't lose
-      // a half-filled real entry.
-      const factory =
-        kind === "freeform" ? emptyFreeform :
-        kind === "activity" ? emptyActivity :
-        kind === "worry"    ? emptyWorry    :
-                              emptyEntry;
-      state.draft = factory();
-      state.captureStep = 1;
-      saveDraft(state.draft);
-      render();
+      // The editingId guard in renderCapture hides this chip row entirely
+      // for saved entries; for a draft-with-content we ask first so a
+      // half-filled new entry isn't silently destroyed.
+      if (hasDraftContent(state.draft)) {
+        state.pendingModeSwitch = kind;
+        setState({ modal: "switch-kind" });
+        return;
+      }
+      applyCaptureModeSwitch(kind);
     });
   });
 
@@ -7913,7 +7986,9 @@ function bindCapture() {
   const save = document.querySelector('[data-action="save-entry"]');
   if (save) save.addEventListener("click", () => {
     const now = new Date().toISOString();
+    let savedId;
     if (state.editingId) {
+      savedId = state.editingId;
       state.entries = state.entries.map(e => e.id === state.editingId
         ? { ...state.draft, id: state.editingId, updatedAt: now }
         : e);
@@ -7922,8 +7997,20 @@ function bindCapture() {
       // Honor a pre-assigned draft.id (used by worry-escalate to set up
       // bidirectional linking before the new entry exists). Otherwise mint
       // a fresh id.
-      state.entries = [{ ...state.draft, id: state.draft.id || newId(), createdAt: now }, ...state.entries];
+      savedId = state.draft.id || newId();
+      state.entries = [{ ...state.draft, id: savedId, createdAt: now }, ...state.entries];
       toast("Entry saved");
+    }
+    // Finalize a deferred worry-escalation: now that the thought-record
+    // is real, point the original worry at it and mark it resolved.
+    if (state.pendingEscalateFromWorryId) {
+      const w = state.entries.find(x => x.id === state.pendingEscalateFromWorryId && x.kind === "worry");
+      if (w && !w.resolution) {
+        w.resolution = "escalated";
+        w.resolvedAt = now;
+        w.linkedEntryId = savedId;
+      }
+      state.pendingEscalateFromWorryId = null;
     }
     persist();
     clearDraft();
@@ -7940,6 +8027,7 @@ function bindCapture() {
       state.draft = emptyEntry();
       state.editingId = null;
       state.captureStep = 1;
+      state.pendingEscalateFromWorryId = null;
       clearDraft();
       setView("journal");
     }
@@ -8306,13 +8394,74 @@ function bindModal() {
     state.draft = emptyEntry();
     state.editingId = null;
     state.captureStep = 1;
+    state.pendingEscalateFromWorryId = null;
     setState({ modal: null });
     setView("journal");
     toast("Draft discarded");
   });
+
+  // Mode-switch confirmation (chip tapped while draft had content).
+  const confirmSwitch = document.querySelector('[data-action="confirm-mode-switch"]');
+  if (confirmSwitch) confirmSwitch.addEventListener("click", () => {
+    const kind = state.pendingModeSwitch;
+    state.pendingModeSwitch = null;
+    state.modal = null;
+    if (kind) applyCaptureModeSwitch(kind);
+    else render();
+  });
+  const cancelSwitch = document.querySelector('[data-action="cancel-mode-switch"]');
+  if (cancelSwitch) cancelSwitch.addEventListener("click", () => {
+    state.pendingModeSwitch = null;
+    setState({ modal: null });
+  });
+}
+
+// Process a JSON backup file (from the file picker OR a manifest
+// file_handler launch) into state.entries. Both code paths go through
+// here so import behavior stays consistent.
+function processImportFile(file, mode) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = JSON.parse(reader.result);
+      if (!Array.isArray(imported)) throw new Error("Not a valid backup");
+      // Normalize every record through the schema migrator so old / hand-
+      // edited backups don't crash renderers, and dedupe by id so the same
+      // backup re-imported in replace mode doesn't double up entries.
+      const normalized = imported
+        .filter(x => x && typeof x === "object")
+        .map(normalizeEntry);
+      const dedupedById = [...new Map(normalized.map(e => [e.id, e])).values()];
+      if (mode === "replace") {
+        state.entries = dedupedById;
+      } else {
+        const existing = new Set(state.entries.map(x => x.id));
+        const adds = dedupedById.filter(x => !existing.has(x.id));
+        state.entries = [...adds, ...state.entries];
+      }
+      persist();
+      setState({ modal: null });
+      toast("Imported " + dedupedById.length + " entries");
+    } catch (err) {
+      // Replace native alert() — out of design and unstylable — with a
+      // persistent error toast carrying the same information.
+      toast("Couldn't read that backup — " + (err && err.message ? err.message : "invalid file"),
+            { variant: "error", persist: true });
+    }
+  };
+  reader.readAsText(file);
 }
 
 function triggerImport(mode) {
+  // If a file came in via the manifest file_handler (Window Launch Queue
+  // API), use it directly instead of prompting for another picker — the
+  // user already picked the file at the OS level.
+  if (window._reframeLaunchedFile) {
+    const f = window._reframeLaunchedFile;
+    window._reframeLaunchedFile = null;
+    processImportFile(f, mode);
+    return;
+  }
   const input = document.getElementById("import-file");
   input.dataset.mode = mode;
   input.click();
@@ -8322,30 +8471,8 @@ document.getElementById("import-file").addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
   const mode = e.target.dataset.mode;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const imported = JSON.parse(reader.result);
-      if (!Array.isArray(imported)) throw new Error("Not a valid backup");
-      if (mode === "replace") {
-        state.entries = imported;
-      } else {
-        const existing = new Set(state.entries.map(x => x.id));
-        const adds = imported.filter(x => !existing.has(x.id));
-        state.entries = [...adds, ...state.entries];
-      }
-      persist();
-      setState({ modal: null });
-      toast("Imported " + imported.length + " entries");
-    } catch (err) {
-      // Replace native alert() — out of design and unstylable — with a
-      // persistent error toast carrying the same information.
-      toast("Couldn't read that backup — " + (err && err.message ? err.message : "invalid file"),
-            { variant: "error", persist: true });
-    }
-    e.target.value = "";
-  };
-  reader.readAsText(file);
+  processImportFile(file, mode);
+  e.target.value = "";
 });
 
 document.querySelectorAll(".nav-item").forEach(b => {
@@ -8394,13 +8521,18 @@ document.addEventListener("keydown", e => {
 
 // Honor ?nav=<view> from PWA shortcuts (e.g. "Capture" tile on the home
 // screen passes ?nav=capture). Whitelist views so a bad value can't push us
-// into an unknown render branch.
+// into an unknown render branch. Also honor ?openfile=1 from the manifest's
+// file_handlers — opens the Import modal so the user picks the backup
+// deliberately (the URL alone doesn't carry the chosen file's contents).
 (function applyLaunchNav(){
   try {
     const params = new URLSearchParams(location.search || '');
     const v = params.get('nav');
     if (v && ['journal','capture','patterns','reference'].includes(v)) {
       state.view = v;
+    }
+    if (params.get('openfile') === '1') {
+      state.pendingOpenImport = true;
     }
   } catch(_) {}
 })();
@@ -8480,6 +8612,14 @@ document.addEventListener("keydown", e => {
 
 applyTheme();
 render();
+
+// If launched via the manifest's file_handler (?openfile=1), open the
+// Import modal once the first render is done so the user can pick the
+// JSON backup they want to restore.
+if (state.pendingOpenImport) {
+  state.pendingOpenImport = false;
+  setState({ modal: "import" });
+}
 
 // Schedule the boot fade-in after the first paint. Two rAFs because some
 // browsers (Safari) do font swapping in the first frame after layout —
