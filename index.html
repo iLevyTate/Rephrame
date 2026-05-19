@@ -6994,7 +6994,17 @@ function renderModal() {
     inner = renderLogActivityModal();
   }
 
-  root.innerHTML = `<div class="modal-overlay" data-action="close-modal"><div class="modal" onclick="event.stopPropagation()">${inner}</div></div>`;
+  root.innerHTML = `<div class="modal-overlay" data-action="close-modal" role="presentation"><div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">${inner}</div></div>`;
+  // Wire the modal's first heading as the accessible name so screen
+  // readers announce "Dialog: <title>" when focus enters.
+  const modalEl = root.querySelector('.modal');
+  if (modalEl) {
+    const heading = modalEl.querySelector('h1, h2, h3');
+    if (heading) {
+      if (!heading.id) heading.id = 'reframe-modal-title';
+      modalEl.setAttribute('aria-labelledby', heading.id);
+    }
+  }
   bindModal();
 }
 
@@ -8359,16 +8369,10 @@ function bindModal() {
   });
 }
 
-function triggerImport(mode) {
-  const input = document.getElementById("import-file");
-  input.dataset.mode = mode;
-  input.click();
-}
-
-document.getElementById("import-file").addEventListener("change", e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const mode = e.target.dataset.mode;
+// Process a JSON backup file (from the file picker OR a manifest
+// file_handler launch) into state.entries. Both code paths go through
+// here so import behavior stays consistent.
+function processImportFile(file, mode) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
@@ -8397,9 +8401,31 @@ document.getElementById("import-file").addEventListener("change", e => {
       toast("Couldn't read that backup — " + (err && err.message ? err.message : "invalid file"),
             { variant: "error", persist: true });
     }
-    e.target.value = "";
   };
   reader.readAsText(file);
+}
+
+function triggerImport(mode) {
+  // If a file came in via the manifest file_handler (Window Launch Queue
+  // API), use it directly instead of prompting for another picker — the
+  // user already picked the file at the OS level.
+  if (window._reframeLaunchedFile) {
+    const f = window._reframeLaunchedFile;
+    window._reframeLaunchedFile = null;
+    processImportFile(f, mode);
+    return;
+  }
+  const input = document.getElementById("import-file");
+  input.dataset.mode = mode;
+  input.click();
+}
+
+document.getElementById("import-file").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const mode = e.target.dataset.mode;
+  processImportFile(file, mode);
+  e.target.value = "";
 });
 
 document.querySelectorAll(".nav-item").forEach(b => {

@@ -205,6 +205,23 @@
     });
   }
 
+  // File-handler launch (Window Launch Queue API). When the OS opens a
+  // .json with Reframe (per manifest's file_handlers), Chromium-class
+  // browsers deliver the file via launchQueue. Stash it so the import
+  // flow can use it without re-prompting via a file picker. The
+  // ?openfile=1 URL path in index.html handles surfacing the import modal.
+  if ('launchQueue' in window) {
+    try {
+      window.launchQueue.setConsumer(async ({ files }) => {
+        if (!files || !files.length) return;
+        try {
+          const file = await files[0].getFile();
+          window._reframeLaunchedFile = file;
+        } catch (_) { /* permission denied or unreadable */ }
+      });
+    } catch (_) { /* unsupported */ }
+  }
+
   // Capture beforeinstallprompt so the in-app Install button can fire it later.
   window._deferredInstallPrompt = null;
   window.addEventListener('beforeinstallprompt', (e) => {
