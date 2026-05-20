@@ -8087,6 +8087,38 @@ function bindCapture() {
     });
   });
 
+  // Update (or insert / remove) the "You picked X" footnote under the
+  // distortion grid in place, without going through a full render. Used
+  // by the toggle-distortion handler below — calling render() per chip
+  // tap was destroying and rebuilding the whole view's DOM and showing
+  // as a visible flash on every click.
+  function _updateAutoSuggestFootnote() {
+    if (state.view !== "capture" || state.captureStep !== 3) return;
+    const grid = document.querySelector('.distortion-grid');
+    if (!grid) return;
+    const fieldGroup = grid.closest('.field-group');
+    if (!fieldGroup) return;
+    const d = state.draft;
+    const primary = (d.distortions || [])[0];
+    const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
+    let note = fieldGroup.querySelector('.auto-suggest-note');
+    if (!primary || !sugg) {
+      if (note) note.remove();
+      return;
+    }
+    if (!note) {
+      note = document.createElement('div');
+      note.className = 'auto-suggest-note';
+      note.setAttribute('role', 'note');
+      const hint = fieldGroup.querySelector('.step-hint');
+      if (hint && hint.parentNode) hint.parentNode.insertBefore(note, hint.nextSibling);
+      else fieldGroup.appendChild(note);
+    }
+    note.innerHTML =
+      '<strong>You picked ' + esc(primary) + '.</strong> ' +
+      'The next two steps will start with a Socratic question and reframe style that usually fit — adapt or swap if a different angle lands better for you.';
+  }
+
   document.querySelectorAll('[data-action="toggle-distortion"]').forEach(btn => {
     btn.addEventListener("click", () => {
       const name = btn.dataset.name;
@@ -8113,10 +8145,13 @@ function bindCapture() {
         }
       }
       saveDraft(state.draft);
-      // Render rather than classList.toggle so the chip's active state,
-      // any newly-applied auto-fills, and the "Suggested for X" hints
-      // on steps 4/5 stay in sync. Same pattern toggle-accurate uses.
-      render();
+      // No full render — just flip the chip's active class and patch the
+      // auto-suggest footnote in place. Steps 4/5 aren't on-screen yet,
+      // so their dropdowns + "Suggested for X" pills will render fresh
+      // from state.draft when the user advances. Avoids the per-click
+      // flash that a full re-render was producing.
+      btn.classList.toggle("active");
+      _updateAutoSuggestFootnote();
     });
   });
   // "Thoughts feel accurate" — opt out of the distortion frame entirely so
