@@ -7466,9 +7466,17 @@ function bindJournal() {
   document.querySelectorAll('[data-action="toggle-expand"]').forEach(el => {
     el.addEventListener("click", () => {
       const id = el.dataset.id;
-      if (state.expandedIds.has(id)) state.expandedIds.delete(id);
-      else state.expandedIds.add(id);
-      render();
+      const card = document.getElementById("entry-" + id);
+      const wasExpanded = state.expandedIds.has(id);
+      if (wasExpanded) state.expandedIds.delete(id);
+      else            state.expandedIds.add(id);
+      // Toggle in place rather than calling render(). Body content is
+      // already in the DOM; the .expanded class drives the grid-row
+      // reveal via CSS. Avoids a full view re-render flash on what's
+      // the single most-tapped interaction in the app.
+      if (card) card.classList.toggle("expanded", !wasExpanded);
+      const body = card && card.querySelector(".entry-body-wrap");
+      if (body) body.setAttribute("aria-hidden", wasExpanded ? "true" : "false");
     });
   });
   document.querySelectorAll('[data-action="toggle-pivot"]').forEach(el => {
@@ -7981,7 +7989,11 @@ function bindCapture() {
       const id = el.dataset.id;
       (state.draft.thoughts || []).forEach(t => { t.isHot = (t.id === id); });
       saveDraft(state.draft);
-      render();
+      // No render — the browser already moved the radio's checked
+      // state. Steps 4 and 5 (which derive the hot-thought card from
+      // state.draft via hotThought()) aren't on-screen during step 2;
+      // they'll render fresh when the user advances. Avoids a step-2
+      // view flash on every radio change.
     });
   });
   document.querySelectorAll('[data-action="add-thought"]').forEach(el => {
