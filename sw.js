@@ -1,7 +1,11 @@
 // Reframe Service Worker — keep CACHE_NAME bumped on every release so old
 // clients drop their caches and pick up the new index.html. The update
 // banner in js/pwa.js relies on this bump to detect that a new SW exists.
-const CACHE_NAME = 'reframe-v16';
+const CACHE_NAME = 'reframe-v17';
+// Fonts live in a separate cache so version bumps don't wipe them. Populated
+// lazily on first successful fetch — we can't precache cross-origin Google
+// Font responses reliably during install (opaque, CSS-driven woff2 URLs).
+const FONT_CACHE = 'reframe-fonts-v1';
 
 const ASSETS = [
   './',
@@ -45,7 +49,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME && k !== FONT_CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -54,11 +58,26 @@ self.addEventListener('fetch', e => {
   if(e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
 
-  // Reframe is fully self-contained except for Google Fonts. Let the browser's
-  // HTTP cache handle font CDN requests rather than mirroring them here.
+  // Reframe is fully self-contained except for Google Fonts. Cache-first
+  // against FONT_CACHE so the app renders identically offline once the
+  // browser has loaded a font response at least once. Background refresh
+  // keeps cached responses warm without blocking the render.
   if(url.hostname.includes('fonts.googleapis.com') || url.hostname.includes('fonts.gstatic.com')){
     e.respondWith(
-      fetch(e.request).catch(() => caches.match(e.request).then(r => r || new Response('', { status: 504 })))
+      caches.open(FONT_CACHE).then(c =>
+        c.match(e.request).then(cached => {
+          const net = fetch(e.request).then(res => {
+            // Google Font responses are CORS for stylesheets (basic) and
+            // opaque for the woff2 files. Cache both — opaque responses
+            // still render fine even though their bodies are unreadable.
+            if(res && (res.status === 200 || res.type === 'opaque')){
+              c.put(e.request, res.clone()).catch(() => {});
+            }
+            return res;
+          }).catch(() => cached || new Response('', { status: 504 }));
+          return cached || net;
+        })
+      )
     );
     return;
   }

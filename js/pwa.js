@@ -172,13 +172,27 @@
       console.warn('External sw.js failed, falling back to inline SW:', err);
       const swCode = `
         const CACHE = 'reframe-inline-v1';
+        const FONT_CACHE = 'reframe-fonts-v1';
         self.addEventListener('install', e => self.skipWaiting());
         self.addEventListener('activate', e => e.waitUntil(clients.claim()));
         self.addEventListener('fetch', e => {
           if (e.request.method !== 'GET') return;
           const u = new URL(e.request.url);
           if (u.hostname.includes('fonts.googleapis.com') || u.hostname.includes('fonts.gstatic.com')) {
-            e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+            // Cache-first so fonts render identically offline once seen.
+            e.respondWith(
+              caches.open(FONT_CACHE).then(c =>
+                c.match(e.request).then(cached => {
+                  const net = fetch(e.request).then(res => {
+                    if (res && (res.status === 200 || res.type === 'opaque')) {
+                      c.put(e.request, res.clone()).catch(()=>{});
+                    }
+                    return res;
+                  }).catch(() => cached || new Response('', {status: 504}));
+                  return cached || net;
+                })
+              )
+            );
             return;
           }
           e.respondWith(
