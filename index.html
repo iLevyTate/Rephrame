@@ -13,8 +13,8 @@
 <meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#1a1715">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Reframe">
-<title>Reframe — A CBT Journal</title>
+<meta name="apple-mobile-web-app-title" content="Rephrame">
+<title>Rephrame — A CBT Journal</title>
 <meta name="description" content="A private, offline-first CBT journal. Capture thoughts, identify distortions, reframe them. All data stays on your device.">
 
 <!-- PWA manifest + icons. IDs let js/pwa.js swap to inline blob URLs when
@@ -3611,12 +3611,12 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
         <div class="brand">
           <span class="brand-mark">r</span>
           <div>
-            <div class="brand-name">Reframe</div>
+            <div class="brand-name">Rephrame</div>
             <div class="brand-sub">A CBT Journal</div>
           </div>
         </div>
         <div class="topbar-actions">
-          <button id="installBtn" class="install-pill" type="button" aria-label="Install Reframe as an app" hidden>＋ Install</button>
+          <button id="installBtn" class="install-pill" type="button" aria-label="Install Rephrame as an app" hidden>＋ Install</button>
           <button class="icon-pill icon-pill--quick" data-action="open-quick" aria-label="Quick capture for distressing moments" title="Quick capture — name what's there in under a minute">
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M13 2L4 13h6l-1 9 9-12h-6z"/>
@@ -4686,13 +4686,13 @@ function renderLockScreen() {
   // page until the PIN is correct — so expose it as a dialog with an
   // accessible name. The first focused control (the PIN input) carries
   // its own aria-label, but the dialog itself needs a labelledby so
-  // screen readers announce "Reframe Locked, dialog" on entry.
+  // screen readers announce "Rephrame Locked, dialog" on entry.
   el.innerHTML = `
     <div class="lock-card" role="dialog" aria-modal="true" aria-labelledby="lockTitle">
       <div class="lock-brand" id="lockTitle">
         <span class="brand-mark" aria-hidden="true">r</span>
         <div>
-          <div class="brand-name">Reframe</div>
+          <div class="brand-name">Rephrame</div>
           <div class="brand-sub">Locked</div>
         </div>
       </div>
@@ -4717,7 +4717,7 @@ function renderLockScreen() {
       <button type="button" class="link-button lock-forgot" data-action="lock-forgot">${state.lockHelpOpen ? "Hide" : "Forgot PIN?"}</button>
       ${state.lockHelpOpen ? `
         <div class="lock-help-panel" role="region" aria-label="PIN recovery info">
-          <p><strong>No PIN recovery.</strong> Reframe is offline and stores everything locally — there's no server-side reset. If you've forgotten the PIN, the only way back in is to clear this site's data in your browser, which also deletes every entry.</p>
+          <p><strong>No PIN recovery.</strong> Rephrame is offline and stores everything locally — there's no server-side reset. If you've forgotten the PIN, the only way back in is to clear this site's data in your browser, which also deletes every entry.</p>
           <p><strong>Tip:</strong> export to JSON or Markdown regularly from Settings while the app is unlocked. That export is your recovery copy — you can re-import it on a fresh install.</p>
         </div>
       ` : ""}
@@ -6868,7 +6868,7 @@ function renderReference() {
         <div class="ref-item-name">Emergency</div>
         <div class="ref-item-desc">If you or someone near you is in immediate danger, call your local emergency number — <strong>911</strong> (US), <strong>112</strong> (EU), <strong>999</strong> (UK).</div>
       </div>
-      <p class="ref-section-intro" style="margin-top: 16px; font-style: italic;">Reframe is a journaling tool, not a substitute for therapy or crisis care. If you have a clinician, exporting your journal as Markdown for a session is a good use of the data.</p>
+      <p class="ref-section-intro" style="margin-top: 16px; font-style: italic;">Rephrame is a journaling tool, not a substitute for therapy or crisis care. If you have a clinician, exporting your journal as Markdown for a session is a good use of the data.</p>
     </div>
 
     <div class="ref-section">
@@ -7130,10 +7130,10 @@ function renderModal() {
     `;
   } else if (state.modal === "onboarding") {
     inner = `
-      <h3 class="display">Welcome to Reframe</h3>
+      <h3 class="display">Welcome to Rephrame</h3>
       <p class="modal-sub">A private, offline CBT journal. Four ways to capture what's happening — walk a thought through a structured reframe, write free-form, plan an activity worth doing, or park a worry for later. Pick whatever fits the moment. Everything stays in this browser only.</p>
       <div class="onboard-caveat">
-        <strong>When this tool fits.</strong> Reframe is built for ordinary distress — the daily frustrations, disappointments, and worries that benefit from a structured pause. <strong>It's not built for</strong> active trauma processing, severe depression, psychosis, or acute crisis. For those, please use this alongside professional care, and reach for <button class="link-button" data-action="open-safety">crisis support</button> if you need it now.
+        <strong>When this tool fits.</strong> Rephrame is built for ordinary distress — the daily frustrations, disappointments, and worries that benefit from a structured pause. <strong>It's not built for</strong> active trauma processing, severe depression, psychosis, or acute crisis. For those, please use this alongside professional care, and reach for <button class="link-button" data-action="open-safety">crisis support</button> if you need it now.
       </div>
       <div class="modal-options">
         <button class="modal-option" data-action="load-sample">
@@ -7183,7 +7183,7 @@ function renderModal() {
 // Centralized so the same wording is reused across modals, empty state, and
 // Reference. Editing the language in one place updates every surface.
 const SAFETY_LINK_INLINE =
-  'Reframe is a journaling tool, not a substitute for therapy or crisis care. ' +
+  'Rephrame is a journaling tool, not a substitute for therapy or crisis care. ' +
   'In the US, call or text <strong>988</strong> (Suicide &amp; Crisis Lifeline) or text <strong>HOME</strong> to <strong>741741</strong> (Crisis Text Line). ' +
   '<button class="link-button" data-action="open-safety">See more crisis resources →</button>';
 
@@ -7272,7 +7272,7 @@ function renderSettingsModal() {
           </button>
         </div>
       ` : `
-        <p class="settings-section-help">Optional. When set, opening Reframe on a new tab session requires entering the PIN before the journal is visible. Closes the gap between "private" and "anyone with the unlocked phone."</p>
+        <p class="settings-section-help">Optional. When set, opening Rephrame on a new tab session requires entering the PIN before the journal is visible. Closes the gap between "private" and "anyone with the unlocked phone."</p>
         <p class="settings-section-help" style="margin-top: 4px;"><strong>There's no PIN recovery.</strong> Forgetting it means clearing site data (which deletes every entry). Export to JSON regularly while unlocked.</p>
         <div class="settings-data-actions">
           <button class="settings-data-btn" data-action="open-set-pin">
@@ -7315,7 +7315,7 @@ function renderSettingsModal() {
 
     <div class="settings-section">
       <div class="settings-section-title">About your data</div>
-      <p class="settings-section-help">Nothing here is synced or sent anywhere. To wipe everything, clear site data in your browser settings (or delete and re-add the PWA). Reframe stores entries under <code class="settings-code">reframe-journal-v1</code> and preferences under <code class="settings-code">reframe-settings-v1</code>.</p>
+      <p class="settings-section-help">Nothing here is synced or sent anywhere. To wipe everything, clear site data in your browser settings (or delete and re-add the PWA). Rephrame stores entries under <code class="settings-code">reframe-journal-v1</code> and preferences under <code class="settings-code">reframe-settings-v1</code>.</p>
     </div>
 
     <div class="modal-actions">
@@ -7374,7 +7374,7 @@ function renderQuotaErrorModal() {
   // capturing entries. The current entry is in memory but unsaved.
   return `
     <h3 class="display">Storage is full</h3>
-    <p class="modal-sub">Your browser ran out of space for Reframe to save this entry. The text is still on this screen — but it won't survive a refresh until you free up storage.</p>
+    <p class="modal-sub">Your browser ran out of space for Rephrame to save this entry. The text is still on this screen — but it won't survive a refresh until you free up storage.</p>
     <div class="modal-options">
       <button class="modal-option" data-action="open-export">
         <div class="modal-option-title">Export everything now</div>
@@ -7451,7 +7451,7 @@ function renderSafetyModal() {
         <div class="safety-detail">If you or someone near you is in immediate danger, call your local emergency number (<strong>911</strong> US, <strong>112</strong> EU, <strong>999</strong> UK).</div>
       </div>
     </div>
-    <p class="modal-sub" style="margin-top: 16px;">Reframe stores everything on this device — no clinician sees it. If you have one, exporting your journal as Markdown for a session is a good use of the data.</p>
+    <p class="modal-sub" style="margin-top: 16px;">Rephrame stores everything on this device — no clinician sees it. If you have one, exporting your journal as Markdown for a session is a good use of the data.</p>
     <div class="modal-actions">
       <button class="btn-modal btn-modal-primary" data-action="close-modal">Got it</button>
     </div>
@@ -7466,9 +7466,17 @@ function bindJournal() {
   document.querySelectorAll('[data-action="toggle-expand"]').forEach(el => {
     el.addEventListener("click", () => {
       const id = el.dataset.id;
-      if (state.expandedIds.has(id)) state.expandedIds.delete(id);
-      else state.expandedIds.add(id);
-      render();
+      const card = document.getElementById("entry-" + id);
+      const wasExpanded = state.expandedIds.has(id);
+      if (wasExpanded) state.expandedIds.delete(id);
+      else            state.expandedIds.add(id);
+      // Toggle in place rather than calling render(). Body content is
+      // already in the DOM; the .expanded class drives the grid-row
+      // reveal via CSS. Avoids a full view re-render flash on what's
+      // the single most-tapped interaction in the app.
+      if (card) card.classList.toggle("expanded", !wasExpanded);
+      const body = card && card.querySelector(".entry-body-wrap");
+      if (body) body.setAttribute("aria-hidden", wasExpanded ? "true" : "false");
     });
   });
   document.querySelectorAll('[data-action="toggle-pivot"]').forEach(el => {
@@ -7981,7 +7989,11 @@ function bindCapture() {
       const id = el.dataset.id;
       (state.draft.thoughts || []).forEach(t => { t.isHot = (t.id === id); });
       saveDraft(state.draft);
-      render();
+      // No render — the browser already moved the radio's checked
+      // state. Steps 4 and 5 (which derive the hot-thought card from
+      // state.draft via hotThought()) aren't on-screen during step 2;
+      // they'll render fresh when the user advances. Avoids a step-2
+      // view flash on every radio change.
     });
   });
   document.querySelectorAll('[data-action="add-thought"]').forEach(el => {
@@ -8555,9 +8567,9 @@ function bindModal() {
     // (often a clinician, the user reviewing on a hard day, or future-self)
     // knows what they're looking at and how to read it.
     const header = [
-      "# Reframe — thought records",
+      "# Rephrame — thought records",
       "",
-      "*Exported " + new Date().toISOString().slice(0, 10) + " from Reframe (a private CBT journal). ",
+      "*Exported " + new Date().toISOString().slice(0, 10) + " from Rephrame (a private CBT journal). ",
       "Patterns here are most useful when reviewed with a clinician, not interpreted alone. ",
       "Single entries are snapshots of one moment — the work is across many of them.*",
       "",

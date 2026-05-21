@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="icons/icon.svg" alt="Reframe — italic r monogram with copper framing rule" width="132">
+  <img src="icons/icon.svg" alt="Rephrame — italic r monogram with copper framing rule" width="132">
 </p>
 
-<h1 align="center">Reframe</h1>
+<h1 align="center">Rephrame</h1>
 
 <p align="center">
   <strong>A private, offline-first CBT journal.</strong><br>
@@ -118,14 +118,14 @@ relative, so the app works at any subpath.
    visit `http://localhost:8000/`.
 2. The "＋ Install" pill in the top-right will appear once the browser
    confirms the manifest + service worker are healthy. Click it.
-3. Reframe launches as a standalone window. It works offline from then on.
+3. Rephrame launches as a standalone window. It works offline from then on.
 
 ### iPhone / iPad (Safari)
 
 1. Open the site in Safari (the PWA install path on iOS only works through
    WebKit/Safari).
 2. Tap the Share button → **Add to Home Screen** → Add.
-3. Launching from the home screen opens Reframe fullscreen with no browser
+3. Launching from the home screen opens Rephrame fullscreen with no browser
    chrome. Data is sandboxed to that installed app.
 
 ### Android (Chrome)
@@ -136,7 +136,7 @@ relative, so the app works at any subpath.
 
 ## Run it locally (fully private)
 
-Reframe is a static site — `index.html`, `manifest.json`, `sw.js`, and a few
+Rephrame is a static site — `index.html`, `manifest.json`, `sw.js`, and a few
 icons. Any local web server works. Two one-liners:
 
 ```bash
@@ -159,7 +159,7 @@ if you want home-screen install.
 
 ## When this tool fits
 
-Reframe is built for **ordinary distress** — frustration, embarrassment,
+Rephrame is built for **ordinary distress** — frustration, embarrassment,
 catastrophic thinking, social worries, post-event rumination, the daily
 weather of being a person. It's deliberately *not* built for active trauma
 processing, severe depression, psychosis, or acute suicidal ideation, where
@@ -185,7 +185,7 @@ same way — "each one is information, whether followed or not."
 
 ## Safety
 
-Reframe is a journaling tool, not a substitute for therapy or crisis care. If
+Rephrame is a journaling tool, not a substitute for therapy or crisis care. If
 you can't pause and write, please reach out:
 
 - **988 Suicide & Crisis Lifeline** (US / Canada) — call or text 988

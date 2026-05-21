@@ -35,8 +35,8 @@
     const favEl = document.getElementById('pwa-favicon');
     if (favEl) favEl.href = iconUrl;
     const manifest = {
-      name: 'Reframe — A Private CBT Journal',
-      short_name: 'Reframe',
+      name: 'Rephrame — A Private CBT Journal',
+      short_name: 'Rephrame',
       description: 'Private, offline-first CBT journal. All data stays on your device.',
       start_url: location.pathname.split('/').slice(0,-1).join('/') + '/' + (location.pathname.split('/').pop() || ''),
       scope: location.pathname.split('/').slice(0,-1).join('/') + '/',
@@ -259,7 +259,7 @@
     if (!btn) return;
     if (window._deferredInstallPrompt) {
       btn.hidden = false;
-      btn.textContent = '＋ Install Reframe';
+      btn.textContent = '＋ Install Rephrame';
       return;
     }
     if (_isIOS()) {
@@ -331,7 +331,7 @@
         [
           'Tap the Share button (square with up-arrow) at the bottom of Safari.',
           'Scroll and tap "Add to Home Screen".',
-          'Tap Add — Reframe opens fullscreen like a native app, fully offline.',
+          'Tap Add — Rephrame opens fullscreen like a native app, fully offline.',
           'Note: iOS only exposes Add-to-Home-Screen through Safari. Chrome on iOS uses the same WebKit; if the option is missing, switch to Safari.',
         ],
         'Install on iPhone / iPad'
@@ -355,7 +355,7 @@
         'The site must be served over HTTPS or localhost (file:// won\'t work for native install on desktop).',
         'On iOS Safari: Share → Add to Home Screen.',
       ],
-      'Install Reframe'
+      'Install Rephrame'
     );
   };
 
