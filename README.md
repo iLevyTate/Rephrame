@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://ilevytate.github.io/pwacbt/"><img alt="Live demo" src="https://img.shields.io/badge/live-ilevytate.github.io%2Fpwacbt-b8552c?style=flat-square&labelColor=1a1715"></a>
+  <a href="https://ilevytate.github.io/Rephrame/"><img alt="Live demo" src="https://img.shields.io/badge/live-ilevytate.github.io%2FRephrame-b8552c?style=flat-square&labelColor=1a1715"></a>
   <img alt="PWA" src="https://img.shields.io/badge/PWA-installable-1a1715?style=flat-square&labelColor=b8552c">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-1a1715?style=flat-square">
 </p>
@@ -24,7 +24,7 @@ and export your entries as JSON for backup.
 
 **Four ways to capture.** Pick whichever fits the moment:
 
-- **Thought record** — the full Mind Over Mood walk: situation, multi-thought + multi-mood capture, distortion check, evidence for/against, Socratic prompt, balanced reframe, behavioral pivot, then a re-rate after both reframe and pivot. The shift in mood intensity + belief % is the work showing up.
+- **Thought record** — the full Mind Over Mood walk: situation, multi-thought + multi-mood capture, body-sensation tagging, distortion check, evidence for/against, Socratic prompt, balanced reframe, behavioral pivot, then a re-rate after both reframe and pivot. The shift in mood intensity + belief % is the work showing up.
 - **Free write** — open page, no structure. For moments without a clear thought to challenge. Optional title + optional mood tag.
 - **Plan activity** — behavioral activation: pick something concrete (a category + a datetime), predict pleasure + mastery on a 0–10 scale, then come back after to log actual values. The gap between predicted and actual is the lesson.
 - **Park a worry** — worry postponement (Borkovec): write the worry, set urgency, schedule it for your worry-window time. A calm banner surfaces in-window with three resolutions: dissolved on its own, work it through (escalates to a thought record), or postpone again.
@@ -148,7 +148,12 @@ npx --yes http-server -p 8000 .
 ```
 
 Then open `http://localhost:8000/` and install. After the first load the
-service worker caches the app shell, so you can disconnect entirely.
+service worker caches the app shell — HTML, JS, icons, manifest — so you can
+disconnect entirely. Google Fonts (Fraunces, Manrope, JetBrains Mono) are
+cached lazily on first online load into a separate font cache, so once
+they've been seen the typography matches identically offline. On a brand-new
+install with no network, the app falls back to system fonts after a 1.5 s
+cap and stays usable.
 
 ### `file://` mode
 
@@ -199,9 +204,13 @@ crisis**, and reachable from a link in every empty-state and capture modal.
 
 ## Your data
 
-- Stored in `localStorage` under the keys `reframe-journal-v1` (entries) and
-  `reframe-journal-draft-v1` (in-progress capture). Never sent anywhere.
+- Stored in `localStorage` under the keys `reframe-journal-v1` (entries),
+  `reframe-journal-draft-v1` (in-progress capture), `reframe-settings-v1`
+  (theme, nudge interval, worry-window time), and `reframe-pin-hash-v1`
+  (SHA-256 of your PIN, if set). Never sent anywhere.
 - A one-time onboarding flag lives under `reframe-onboarded-v1`.
+- The unlock token (`reframe-unlocked`) lives in `sessionStorage` and clears
+  when the tab closes, so the PIN gate re-arms on each new session.
 - The Import / Export buttons in the top-right round-trip the full journal as
   JSON. Use Export to back up, and Import (Replace or Merge) to restore on a
   new device.
