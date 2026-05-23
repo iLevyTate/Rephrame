@@ -2,6 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Content Security Policy. App is self-hosted plus Google Fonts. No
+     remote scripts. 'unsafe-inline' is required for the inline style
+     block and the inline app script (single-file by design); we accept
+     that trade-off rather than building a hash-pipeline for a static
+     site. data: in img-src allows inline SVG icons; blob: in img-src
+     and manifest-src covers the PWA inline manifest path that
+     js/pwa.js uses on file:// launches. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; manifest-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <!-- Two media-scoped theme-color metas so the browser picks the right
      status-bar / tab-strip color at first paint, before applyTheme()
@@ -3457,6 +3465,18 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  font-family: inherit;
+  line-height: 1.4;
+}
+button.entry-flag {
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+button.entry-flag:hover { transform: translateY(-1px); }
+button.entry-flag:active { transform: translateY(0); }
+button.entry-flag:focus-visible {
+  outline: 2px solid var(--copper);
+  outline-offset: 2px;
 }
 .flag-quick { background: rgba(184, 85, 44, 0.18); color: var(--copper-deep); border: 1px solid var(--copper-line); }
 .flag-sample { background: var(--paper-3); color: var(--on-paper-mute); border: 1px solid var(--rule-paper); }
@@ -3862,30 +3882,120 @@ const UNLOCK_KEY = "reframe-unlocked";   // sessionStorage; cleared when tab clo
 // key from the PIN: if the user forgets it, hard-encrypted data would be
 // unrecoverable, and losing months of CBT work is a worse harm than soft
 // privacy is a benefit. This is documented in the Settings → Privacy help.
-async function hashPin(pin) {
-  const enc = new TextEncoder().encode(String(pin));
-  const buf = await crypto.subtle.digest("SHA-256", enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+//
+// PIN storage format. Two shapes exist:
+//   v1 (legacy): plain hex string — sha256(pin). Vulnerable to instant
+//        brute-force (4-digit PIN = 10k SHA-256 hashes ≈ <1s on a phone).
+//        Migrated to v2 on next successful unlock.
+//   v2: JSON {v: 2, salt, hash, iterations} where hash = PBKDF2-SHA-256.
+//        100k iterations + 16-byte random salt per-device. Brute-force
+//        cost climbs from microseconds to tens of seconds.
+const PBKDF2_ITERATIONS = 100000;
+const PIN_LOCKOUT_KEY = "reframe-pin-lockout";  // sessionStorage
+const _toHex = (buf) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+const _fromHex = (hex) => {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+};
+
+async function _legacyHashPin(pin) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(pin)));
+  return _toHex(buf);
 }
+
+async function _pbkdf2Pin(pin, saltBytes) {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(String(pin)), { name: "PBKDF2" }, false, ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    key, 256
+  );
+  return _toHex(bits);
+}
+
+function _readStoredPin() {
+  const raw = localStorage.getItem(PIN_KEY);
+  if (!raw) return null;
+  // Legacy v1: bare 64-char hex string (sha256 hex digest).
+  if (/^[0-9a-f]{64}$/i.test(raw)) return { v: 1, hash: raw };
+  try {
+    const o = JSON.parse(raw);
+    if (o && o.v === 2 && o.salt && o.hash) return o;
+  } catch (_) {}
+  return null;
+}
+
 function hasPin() { return !!localStorage.getItem(PIN_KEY); }
+
 async function verifyPin(pin) {
-  const stored = localStorage.getItem(PIN_KEY);
+  const stored = _readStoredPin();
   if (!stored) return false;
-  const h = await hashPin(pin);
-  return h === stored;
+  let ok = false;
+  if (stored.v === 1) {
+    ok = (await _legacyHashPin(pin)) === stored.hash;
+    // Opportunistic migration on first successful unlock: upgrade the
+    // record to the salted/iterated v2 format so the next session
+    // doesn't fall back to the weak hash.
+    if (ok) try { await setStoredPin(pin); } catch (_) {}
+  } else {
+    const computed = await _pbkdf2Pin(pin, _fromHex(stored.salt));
+    ok = computed === stored.hash;
+  }
+  return ok;
 }
+
 async function setStoredPin(pin) {
-  const h = await hashPin(pin);
-  localStorage.setItem(PIN_KEY, h);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await _pbkdf2Pin(pin, salt);
+  localStorage.setItem(PIN_KEY, JSON.stringify({
+    v: 2, salt: _toHex(salt), hash, iterations: PBKDF2_ITERATIONS,
+  }));
   sessionStorage.setItem(UNLOCK_KEY, "1");
+  _clearLockout();
 }
+
 function clearStoredPin() {
   localStorage.removeItem(PIN_KEY);
   sessionStorage.removeItem(UNLOCK_KEY);
+  _clearLockout();
 }
 function isUnlocked() { return sessionStorage.getItem(UNLOCK_KEY) === "1"; }
-function markUnlocked() { sessionStorage.setItem(UNLOCK_KEY, "1"); }
+function markUnlocked() { sessionStorage.setItem(UNLOCK_KEY, "1"); _clearLockout(); }
 function markLocked() { sessionStorage.removeItem(UNLOCK_KEY); }
+
+// Lockout: after 5 failed attempts, refuse verifyPin attempts for an
+// exponentially-growing window (2s, 4s, 8s, ... capped at 5 min). State
+// lives in sessionStorage so it resets when the tab closes — a determined
+// attacker could close + reopen, but the cap on the legitimate flow's
+// frustration matters more than a bullet-proof block in this threat model.
+function _readLockout() {
+  try {
+    const raw = sessionStorage.getItem(PIN_LOCKOUT_KEY);
+    if (!raw) return { attempts: 0, until: 0 };
+    const o = JSON.parse(raw);
+    return { attempts: o.attempts || 0, until: o.until || 0 };
+  } catch (_) { return { attempts: 0, until: 0 }; }
+}
+function _writeLockout(o) {
+  try { sessionStorage.setItem(PIN_LOCKOUT_KEY, JSON.stringify(o)); } catch (_) {}
+}
+function _clearLockout() { try { sessionStorage.removeItem(PIN_LOCKOUT_KEY); } catch (_) {} }
+function pinLockoutMsLeft() {
+  const { until } = _readLockout();
+  return Math.max(0, until - Date.now());
+}
+function recordPinFailure() {
+  const { attempts } = _readLockout();
+  const next = attempts + 1;
+  let until = 0;
+  if (next >= 5) {
+    const sec = Math.min(300, Math.pow(2, next - 4));  // 2,4,8,...,300
+    until = Date.now() + sec * 1000;
+  }
+  _writeLockout({ attempts: next, until });
+}
 
 const DEFAULT_SETTINGS = {
   theme: "auto",             // "auto" | "light" | "dark"
@@ -3937,7 +4047,10 @@ const ENTRY_KINDS = ["thought-record", "freeform", "activity", "worry"];
 function normalizeEntry(e) {
   const kind = (ENTRY_KINDS.includes(e && e.kind)) ? e.kind : "thought-record";
   const out = {
-    id: e.id || "",
+    // Mint an id if the source object lacks one. Hand-edited or stripped
+    // backups can omit it; without a fresh id the dedupe-by-id Map in
+    // processImportFile would collapse every such entry into one.
+    id: e.id || newId(),
     kind,
     createdAt: e.createdAt || "",
     updatedAt: e.updatedAt || undefined,
@@ -4029,6 +4142,12 @@ function normalizeEntry(e) {
     if (out.thoughts.length > 0 && !out.thoughts.some(t => t.isHot)) {
       out.thoughts[0].isHot = true;
     }
+    // hotThought() and several renderers assume thought-records have ≥1
+    // thought. Hand-edited or partially-saved backups can violate that;
+    // mint a placeholder so the entry is at least viewable.
+    if (out.thoughts.length === 0) {
+      out.thoughts.push(normalizeThought({ isHot: true }));
+    }
   }
   return out;
 }
@@ -4079,11 +4198,36 @@ function loadDraft() {
   }
   catch { return null; }
 }
-function saveDraft(d) {
+// Underlying synchronous persistence — called from saveDraft on a 300ms
+// trailing edge, and flushed eagerly on step transitions, modal close,
+// and beforeunload. Keystroke-frequency writes were re-serializing the
+// whole draft on every input event on long-form fields.
+function _saveDraftNow(d) {
   if (hasDraftContent(d)) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
   else localStorage.removeItem(DRAFT_KEY);
 }
-function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+let _saveDraftTimer = null;
+let _pendingDraft = null;
+function saveDraft(d) {
+  _pendingDraft = d;
+  if (_saveDraftTimer !== null) return;
+  _saveDraftTimer = setTimeout(() => {
+    _saveDraftTimer = null;
+    if (_pendingDraft) _saveDraftNow(_pendingDraft);
+    _pendingDraft = null;
+  }, 300);
+}
+function flushDraft() {
+  if (_saveDraftTimer !== null) { clearTimeout(_saveDraftTimer); _saveDraftTimer = null; }
+  if (_pendingDraft) { _saveDraftNow(_pendingDraft); _pendingDraft = null; }
+}
+window.addEventListener("beforeunload", flushDraft);
+function clearDraft() {
+  // Drop any pending debounced write so it can't resurrect cleared data.
+  if (_saveDraftTimer !== null) { clearTimeout(_saveDraftTimer); _saveDraftTimer = null; }
+  _pendingDraft = null;
+  localStorage.removeItem(DRAFT_KEY);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -4092,6 +4236,16 @@ function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Clock-skew guard. A device with the wrong date set could otherwise
+// stamp entries minutes/days in the future, breaking sort order and the
+// 30-day heatmap. Anything more than a minute ahead of now gets pulled
+// back to now. One minute of slack absorbs ordinary NTP drift.
+function clampDate(iso) {
+  const t = Date.parse(iso);
+  if (isNaN(t)) return new Date().toISOString();
+  const now = Date.now();
+  return t > now + 60000 ? new Date(now).toISOString() : iso;
+}
 const band = n => INTENSITY_BANDS.find(b => n <= b.max) || INTENSITY_BANDS[4];
 
 function emptyEntry() {
@@ -4348,7 +4502,14 @@ function toast(message, opts) {
   const isError = opts.variant === "error";
   const persistent = !!opts.persist;
   const stack = document.getElementById("toasts");
+  // Errors need an assertive announcement — they interrupt the user's
+  // current task in screen-reader output. Non-error toasts stay polite
+  // (queued behind whatever the SR is currently announcing). Resetting
+  // the attribute on the container before each toast ensures the most
+  // recent toast's urgency is what the AT picks up.
+  if (stack) stack.setAttribute("aria-live", isError ? "assertive" : "polite");
   const el = document.createElement("div");
+  el.setAttribute("role", isError ? "alert" : "status");
   el.className = "toast"
     + (opts.action ? " toast--action" : "")
     + (isError ? " toast--error" : "")
@@ -4387,15 +4548,17 @@ function toast(message, opts) {
   }
   stack.appendChild(el);
   let dismissed = false;
+  let autoTimer = null;
   function dismiss() {
     if (dismissed) return;
     dismissed = true;
+    if (autoTimer !== null) { clearTimeout(autoTimer); autoTimer = null; }
     el.style.opacity = "0";
     el.style.transform = "translateY(8px)";
     el.style.transition = "opacity var(--dur-medium) var(--ease), transform var(--dur-medium) var(--ease)";
     setTimeout(() => el.remove(), 300);
   }
-  if (!persistent) setTimeout(dismiss, lifespan);
+  if (!persistent) autoTimer = setTimeout(dismiss, lifespan);
   return { dismiss };
 }
 
@@ -4563,11 +4726,18 @@ function hasDraftContent(d) {
            freeformFilled || activityFilled || worryFilled);
 }
 
+// Suppress the storage-event listener while we're the writer ourselves.
+// `storage` only fires in OTHER tabs, but defensive: if the browser ever
+// dispatches it locally (some embedded webviews do), the guard prevents
+// a redundant re-load + render mid-write.
+let _persistingLocally = false;
+
 function persist() {
   // Wrap the write so a QuotaExceededError surfaces a styled blocking
   // modal instead of silently failing. The user's most recent entry
   // sits at state.entries[0] and stays in memory regardless — we never
   // lose data on a quota failure, only the persistence to disk.
+  _persistingLocally = true;
   try {
     saveEntries(state.entries);
   } catch (err) {
@@ -4583,8 +4753,36 @@ function persist() {
       toast("Couldn't save — " + (err && err.message ? err.message : "unknown error"),
             { variant: "error", persist: true });
     }
+  } finally {
+    _persistingLocally = false;
   }
 }
+
+// Another tab in the same origin just wrote to localStorage. Pull the
+// fresh data into this tab so the user doesn't keep working against
+// stale state. We can't merge drafts safely (last-writer-wins for the
+// in-progress one), so for a remote draft change we surface a toast
+// instead of overwriting whatever the user is currently typing.
+window.addEventListener("storage", (e) => {
+  if (_persistingLocally) return;
+  if (!e.key) return;  // null key = storage.clear() — ignore
+  if (e.key === STORAGE_KEY) {
+    state.entries = loadEntries();
+    render();
+  } else if (e.key === SETTINGS_KEY) {
+    state.settings = loadSettings();
+    render();
+  } else if (e.key === DRAFT_KEY) {
+    // If the local user has typed into the draft, they'd lose work if
+    // we overwrote. Just warn and let them decide.
+    if (hasDraftContent(state.draft)) {
+      toast("Draft edited in another tab — refresh to see the latest.", { ms: 6000 });
+    } else {
+      state.draft = loadDraft() || emptyEntry();
+      render();
+    }
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // RENDER
@@ -4732,6 +4930,16 @@ function renderLockScreen() {
     e.preventDefault();
     const pin = (input.value || "").trim();
     if (!pin) { state.lockError = "Enter your PIN to continue."; render(); return; }
+    // Brute-force throttle. After 5 wrong tries the form refuses to
+    // submit until the cool-down expires — defends a stolen device from
+    // a script that fires 10,000 PINs in a loop.
+    const waitMs = pinLockoutMsLeft();
+    if (waitMs > 0) {
+      const sec = Math.ceil(waitMs / 1000);
+      state.lockError = "Too many tries. Wait " + sec + "s before another attempt.";
+      render();
+      return;
+    }
     const ok = await verifyPin(pin);
     if (ok) {
       markUnlocked();
@@ -4739,7 +4947,11 @@ function renderLockScreen() {
       state.lockError = "";
       render();
     } else {
-      state.lockError = "That PIN doesn't match. Try again.";
+      recordPinFailure();
+      const wait = pinLockoutMsLeft();
+      state.lockError = wait > 0
+        ? "Too many tries. Wait " + Math.ceil(wait / 1000) + "s before another attempt."
+        : "That PIN doesn't match. Try again.";
       // Brief shake-feedback via a class the CSS animates, then re-render
       // so the error message lands. Keep the input value so the user can
       // see what they typed and correct it.
@@ -4943,11 +5155,11 @@ function renderJournal() {
 
     <div class="journal-toolbar">
       <div class="search-box">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="7" cy="7" r="4.5"/>
           <path d="M10.5 10.5l3 3"/>
         </svg>
-        <input type="text" class="search-input" placeholder="Search thoughts, reframes, evidence…" value="${esc(state.search)}" data-action="search">
+        <input type="search" class="search-input" placeholder="Search thoughts, reframes, evidence…" value="${esc(state.search)}" data-action="search" aria-label="Search entries">
       </div>
     </div>
 
@@ -5009,8 +5221,13 @@ function renderNudgeBanner() {
   `;
 }
 
-// True when there are unresolved parked worries scheduled for this
-// session's worry window (within ±30 min of the window time today).
+// True when there are unresolved parked worries the user should see now.
+// Two cases:
+//   1. We're inside the configured 20-minute worry window today.
+//   2. The window has already passed (today or earlier) and at least one
+//      worry's scheduledFor is in the past — i.e. the app was closed
+//      during the window and the worry would otherwise go unsurfaced
+//      until the next window. Don't let parked worries sit silently.
 function shouldShowWorryWindow() {
   const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
   if (parked.length === 0) return false;
@@ -5018,8 +5235,15 @@ function shouldShowWorryWindow() {
   const [h, m] = (s.worryWindowTime || "18:00").split(":").map(n => parseInt(n, 10));
   const now = new Date();
   const winStart = new Date(); winStart.setHours(h, m, 0, 0);
-  const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000); // 20-min window
-  return now >= winStart && now <= winEnd;
+  const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000);
+  if (now >= winStart && now <= winEnd) return true;
+  // Missed-window catch-up: any worry whose scheduledFor is in the past.
+  const nowMs = now.getTime();
+  return parked.some(w => {
+    if (!w.scheduledFor) return false;
+    const t = Date.parse(w.scheduledFor);
+    return !isNaN(t) && t <= nowMs;
+  });
 }
 
 function renderWorryWindowBanner() {
@@ -5100,9 +5324,11 @@ function renderThoughtRecordCard(entry, index) {
   const moodDelta = hasMoodDelta ? (after - primaryMood.intensity) : null;
 
   const flagPills = [];
-  if (entry.isQuick) flagPills.push('<span class="entry-flag flag-quick">⚡ Finish this</span>');
+  // Click the ⚡ flag directly to resume the entry — saves the user the
+  // expand-then-find-button dance that was the only previous path.
+  if (entry.isQuick) flagPills.push(`<button type="button" class="entry-flag flag-quick" data-action="finish-quick" data-id="${entry.id}" title="Pick up where you left off">⚡ Finish this</button>`);
   if (entry.isSample) flagPills.push('<span class="entry-flag flag-sample">Sample</span>');
-  if (entry.pivotDone && !entry.outcomeRecorded) flagPills.push('<span class="entry-flag flag-outcome">Step 8 open</span>');
+  if (entry.pivotDone && !entry.outcomeRecorded) flagPills.push(`<button type="button" class="entry-flag flag-outcome" data-action="open-outcome" data-id="${entry.id}" title="Record what happened">Step 8 open</button>`);
 
   return `
     <article class="entry-card ${expanded ? "expanded" : ""} ${entry.isQuick ? "is-quick" : ""} ${entry.isFavorite ? "is-favorite" : ""}" id="entry-${entry.id}">
@@ -6989,7 +7215,12 @@ function renderReference() {
 function renderModal() {
   const root = document.getElementById("modal-root");
   root.innerHTML = "";
-  if (!state.modal) return;
+  if (!state.modal) {
+    // Modal closed — even by an after-action setState({modal:null}) that
+    // bypassed closeModal() — so release focus back to whatever opened it.
+    _releaseModalFocus();
+    return;
+  }
 
   let inner = "";
   if (state.modal === "export") {
@@ -7166,7 +7397,15 @@ function renderModal() {
     inner = renderLogActivityModal();
   }
 
-  root.innerHTML = `<div class="modal-overlay" data-action="close-modal" role="presentation"><div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">${inner}</div></div>`;
+  root.innerHTML = `<div class="modal-overlay" data-action="close-modal" role="presentation"><div class="modal" role="dialog" aria-modal="true">${inner}</div></div>`;
+  // Stop modal-internal clicks from bubbling to the overlay (which has
+  // data-action="close-modal"). Previously this was an inline onclick
+  // attribute; moving it to addEventListener keeps a strict CSP
+  // achievable later without 'unsafe-inline' on script-src.
+  {
+    const modalForStop = root.querySelector('.modal');
+    if (modalForStop) modalForStop.addEventListener('click', e => e.stopPropagation());
+  }
   // Wire the modal's first heading as the accessible name so screen
   // readers announce "Dialog: <title>" when focus enters.
   const modalEl = root.querySelector('.modal');
@@ -7176,8 +7415,79 @@ function renderModal() {
       if (!heading.id) heading.id = 'reframe-modal-title';
       modalEl.setAttribute('aria-labelledby', heading.id);
     }
+    // Move focus into the dialog and trap Tab cycling so keyboard users
+    // don't end up tabbing into the now-inert page underneath. We pick
+    // the first natively-focusable input/textarea/select if present
+    // (forms-heavy modals expect that), else the first button.
+    _trapModalFocus(modalEl);
   }
   bindModal();
+}
+
+// Focusable-element selector used by both the focus trap and the
+// initial-focus pick. Excludes [tabindex="-1"] and disabled controls.
+const _FOCUSABLE_SEL = [
+  'a[href]', 'button:not([disabled])', 'input:not([disabled])',
+  'select:not([disabled])', 'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',');
+
+// Remembers the element that opened the modal so we can return focus to
+// it on close. Without this, screen-reader / keyboard users land at the
+// top of the document body after every modal dismissal.
+let _modalOpenerEl = null;
+let _modalKeyHandler = null;
+
+function _focusableIn(root) {
+  return Array.from(root.querySelectorAll(_FOCUSABLE_SEL))
+    .filter(el => el.offsetParent !== null || el === document.activeElement);
+}
+
+function _trapModalFocus(modalEl) {
+  if (_modalKeyHandler) {
+    document.removeEventListener('keydown', _modalKeyHandler, true);
+    _modalKeyHandler = null;
+  }
+  const isFreshOpen = !_modalOpenerEl;
+  if (isFreshOpen) _modalOpenerEl = document.activeElement;
+  // Defer initial focus by one frame so the modal is laid out and any
+  // animation start frame has rendered. Only set initial focus on a
+  // fresh open — re-renders of an already-open modal (state changes
+  // mid-edit) would otherwise yank the user's focus back to the top
+  // of the form on every keystroke.
+  if (isFreshOpen) {
+    requestAnimationFrame(() => {
+      const focusables = _focusableIn(modalEl);
+      const initial = modalEl.querySelector('input, textarea, select') || focusables[0];
+      if (initial) try { initial.focus(); } catch(_) {}
+    });
+  }
+  _modalKeyHandler = (e) => {
+    if (e.key !== 'Tab') return;
+    const focusables = _focusableIn(modalEl);
+    if (focusables.length === 0) { e.preventDefault(); return; }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || !modalEl.contains(active))) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && (active === last || !modalEl.contains(active))) {
+      e.preventDefault(); first.focus();
+    }
+  };
+  document.addEventListener('keydown', _modalKeyHandler, true);
+}
+
+function _releaseModalFocus() {
+  if (_modalKeyHandler) {
+    document.removeEventListener('keydown', _modalKeyHandler, true);
+    _modalKeyHandler = null;
+  }
+  const opener = _modalOpenerEl;
+  _modalOpenerEl = null;
+  if (opener && typeof opener.focus === 'function') {
+    try { opener.focus(); } catch(_) {}
+  }
 }
 
 // Centralized so the same wording is reused across modals, empty state, and
@@ -7241,7 +7551,7 @@ function renderSettingsModal() {
     <div class="settings-section">
       <div class="settings-section-title">Privacy lock</div>
       ${hasPin() ? `
-        <p class="settings-section-help">A PIN gates the app on each new tab session. Stored as a SHA-256 hash on this device only. The journal itself isn't encrypted — anyone with technical access to localStorage could still read the data — but it does stop casual snooping on an unlocked phone.</p>
+        <p class="settings-section-help">A PIN gates the app on each new tab session. Stored as a salted PBKDF2 hash (100k iterations) on this device only, with a brute-force lockout after 5 wrong tries. The journal itself isn't encrypted — anyone with technical access to localStorage could still read the data — but the soft lock stops casual snooping on an unlocked phone.</p>
         <div class="settings-data-actions">
           <button class="settings-data-btn" data-action="open-set-pin">
             <span class="settings-data-icon" aria-hidden="true">
@@ -7330,8 +7640,8 @@ function renderSetPinModal() {
   return `
     <h3 class="display">${isChanging ? "Change PIN" : "Set a PIN"}</h3>
     <p class="modal-sub">${isChanging
-      ? "Enter your current PIN, then choose a new one. The PIN is stored as a SHA-256 hash on this device only."
-      : "4–8 digits. Stored as a SHA-256 hash on this device. There's no recovery path — if you forget the PIN, the only way back in deletes every entry, so export to JSON regularly."
+      ? "Enter your current PIN, then choose a new one. The PIN is stored as a salted PBKDF2 hash on this device only."
+      : "4–8 digits. Stored as a salted PBKDF2 hash on this device. There's no recovery path — if you forget the PIN, the only way back in deletes every entry, so export to JSON regularly."
     }</p>
     <form id="pinSetForm" class="pin-form" autocomplete="off">
       ${isChanging ? `
@@ -7492,7 +7802,14 @@ function bindJournal() {
         // Stamp a timestamp the first time it's marked done so the entry
         // can show "marked done {when}" next to the reflection prompt.
         if (entry.pivotDone && !entry.pivotDoneAt) entry.pivotDoneAt = new Date().toISOString();
-        if (!entry.pivotDone) { entry.pivotDoneAt = ""; entry.pivotReflection = ""; }
+        // Unticking the checkbox clears the done-state but preserves any
+        // reflection text the user already wrote — accidentally untoggling
+        // shouldn't delete a paragraph of "what happened" notes. If they
+        // really want to discard, they can edit the field directly.
+        if (!entry.pivotDone) {
+          entry.pivotDoneAt = "";
+          entry.outcomeRecorded = false;
+        }
         // Keep the entry expanded so the reflection field is immediately visible.
         state.expandedIds.add(entry.id);
         persist();
@@ -7516,16 +7833,28 @@ function bindJournal() {
   });
   // Pivot reflection — save on blur, no explicit save button. Persisting on
   // every keystroke would be noisy; blur is the natural commit boundary.
+  // Any non-empty reflection also marks outcomeRecorded so the "Step 8
+  // open" flag clears — without this, users who write inline still see
+  // the open-step pill until they go through the dedicated outcome page.
   document.querySelectorAll('[data-action="edit-reflection"]').forEach(el => {
     el.addEventListener("click", e => e.stopPropagation());
     el.addEventListener("blur", () => {
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
       const v = el.value;
-      if (entry.pivotReflection !== v) {
-        entry.pivotReflection = v;
-        persist();
-        if (v.trim()) toast("Reflection saved");
+      const changed = entry.pivotReflection !== v;
+      const hasText = !!v.trim();
+      const wasRecorded = entry.outcomeRecorded;
+      if (!changed && wasRecorded === hasText) return;
+      entry.pivotReflection = v;
+      entry.outcomeRecorded = hasText;
+      persist();
+      if (hasText && !wasRecorded) {
+        render();
+        toast("Outcome saved. The loop is closed.");
+      } else if (changed) {
+        if (!hasText && wasRecorded) render();
+        if (hasText) toast("Reflection updated");
       }
     });
   });
@@ -8173,8 +8502,24 @@ function bindCapture() {
   // non-distorted.
   document.querySelectorAll('[data-action="toggle-accurate"]').forEach(btn => {
     btn.addEventListener("click", () => {
-      state.draft.thoughtsAccurate = !state.draft.thoughtsAccurate;
-      if (state.draft.thoughtsAccurate) state.draft.distortions = [];
+      const turningOn = !state.draft.thoughtsAccurate;
+      // Before we drop the distortions list, capture which auto-fill
+      // suggestions came from it. We only clear those Socratic/reframe
+      // fields if they still exactly match the suggestion (meaning the
+      // user never customized them). A user-typed value survives.
+      const formerDistortions = turningOn ? [...(state.draft.distortions || [])] : [];
+      state.draft.thoughtsAccurate = turningOn;
+      if (turningOn) {
+        state.draft.distortions = [];
+        for (const name of formerDistortions) {
+          const def = DISTORTION_DEFAULTS[name];
+          if (!def) continue;
+          if (state.draft.socraticType === def.socratic) state.draft.socraticType = "";
+          if (state.draft.reframeMethod === def.reframe) state.draft.reframeMethod = "";
+          const t = SOCRATIC_TYPES.find(s => s.type === def.socratic);
+          if (t && state.draft.socraticQuestion === t.template) state.draft.socraticQuestion = "";
+        }
+      }
       saveDraft(state.draft);
       render();
     });
@@ -8189,6 +8534,7 @@ function bindCapture() {
         }
       }
       state.captureStep = step;
+      flushDraft();
       render();
       smoothScrollTo({ top: 0, behavior: "smooth" });
     });
@@ -8202,6 +8548,7 @@ function bindCapture() {
     }
     state.captureStep++;
     saveDraft(state.draft);
+    flushDraft();
     render();
     smoothScrollTo({ top: 0, behavior: "smooth" });
   });
@@ -8209,6 +8556,7 @@ function bindCapture() {
   const prev = document.querySelector('[data-action="prev-step"]');
   if (prev) prev.addEventListener("click", () => {
     state.captureStep--;
+    flushDraft();
     render();
     smoothScrollTo({ top: 0, behavior: "smooth" });
   });
@@ -8228,7 +8576,7 @@ function bindCapture() {
       // bidirectional linking before the new entry exists). Otherwise mint
       // a fresh id.
       savedId = state.draft.id || newId();
-      state.entries = [{ ...state.draft, id: savedId, createdAt: now }, ...state.entries];
+      state.entries = [{ ...state.draft, id: savedId, createdAt: clampDate(now) }, ...state.entries];
       toast("Entry saved");
     }
     // Finalize a deferred worry-escalation: now that the thought-record
@@ -8283,6 +8631,7 @@ function closeModal() {
   // explicit Cancel button already clears this; doing it here too
   // keeps the state clean for every close path.
   state.pendingModeSwitch = null;
+  _releaseModalFocus();
   const overlay = document.querySelector(".modal-overlay");
   if (!overlay || _prefersReducedMotion()) {
     setState({ modal: null });
@@ -8399,6 +8748,21 @@ function bindModal() {
       // Fall back to the default if the user somehow clears it.
       state.settings.worryWindowTime = v || "18:00";
       saveSettings(state.settings);
+      // Existing parked worries were scheduled against the old window
+      // time; without rescheduling they'd surface at the old time (or
+      // not at all). Recompute scheduledFor for every unresolved worry
+      // so the new setting takes effect immediately.
+      let rescheduled = 0;
+      state.entries.forEach(e => {
+        if (e.kind === "worry" && !e.resolution) {
+          e.scheduledFor = computeNextWorryWindow();
+          rescheduled++;
+        }
+      });
+      if (rescheduled > 0) {
+        persist();
+        render();
+      }
     });
   });
 
@@ -8483,7 +8847,7 @@ function bindModal() {
     const entry = {
       ...emptyEntry(),
       id: newId(),
-      createdAt: now,
+      createdAt: clampDate(now),
       thoughts: [normalizeThought({ text: thought, isHot: true })],
       moods: [normalizeMood({ intensity: q.intensity, estimated: true })],
       isQuick: !q.ventOnly,
@@ -8562,7 +8926,7 @@ function bindModal() {
   });
 
   const md = document.querySelector('[data-action="export-md"]');
-  if (md) md.addEventListener("click", () => {
+  if (md) md.addEventListener("click", async () => {
     // Prepend a short header so the file isn't anonymous and so a reader
     // (often a clinician, the user reviewing on a hard day, or future-self)
     // knows what they're looking at and how to read it.
@@ -8574,9 +8938,20 @@ function bindModal() {
       "Single entries are snapshots of one moment — the work is across many of them.*",
       "",
     ].join("\n");
-    const body = state.entries.length === 0
-      ? "*No entries yet.*"
-      : state.entries.map((e, i) => entryToMd(e, i)).join("\n");
+    // Yield to the event loop every 50 entries so the UI stays responsive
+    // on large journals — entryToMd is non-trivial and a synchronous map
+    // over 500+ entries would jank the modal close + toast animations.
+    let body;
+    if (state.entries.length === 0) {
+      body = "*No entries yet.*";
+    } else {
+      const parts = [];
+      for (let i = 0; i < state.entries.length; i++) {
+        parts.push(entryToMd(state.entries[i], i));
+        if (i > 0 && i % 50 === 0) await new Promise(r => setTimeout(r, 0));
+      }
+      body = parts.join("\n");
+    }
     download(header + "\n" + body, "reframes-" + new Date().toISOString().slice(0, 10) + ".md", "text/markdown");
     setState({ modal: null });
     toast("Markdown exported");
@@ -8605,6 +8980,16 @@ function bindModal() {
     // entry. The modal handles missing entries gracefully but it's
     // cleaner to clear the state.
     if (state.logActivityDraft?.entryId === id) state.logActivityDraft = null;
+    // Clear any worry that pointed at this entry via escalation, so the
+    // worry detail view doesn't render a dead "open the thought record"
+    // link. Remember which worries we cleared so Undo can restore them.
+    const relinkOnUndo = [];
+    state.entries.forEach(e => {
+      if (e.kind === "worry" && e.linkedEntryId === id) {
+        relinkOnUndo.push(e.id);
+        e.linkedEntryId = "";
+      }
+    });
     persist();
     setState({ modal: null });
     toast("Entry deleted", {
@@ -8624,6 +9009,13 @@ function bindModal() {
           );
           if (insertAt === -1) insertAt = state.entries.length;
           state.entries.splice(insertAt, 0, removed);
+          // Restore any worry back-references we cleared on delete.
+          if (relinkOnUndo.length) {
+            const ids = new Set(relinkOnUndo);
+            state.entries.forEach(e => {
+              if (ids.has(e.id) && e.kind === "worry") e.linkedEntryId = removed.id;
+            });
+          }
           persist();
           render();
           toast("Restored");
