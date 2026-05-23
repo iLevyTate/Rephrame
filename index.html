@@ -2,6 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Content Security Policy. App is self-hosted plus Google Fonts. No
+     remote scripts. 'unsafe-inline' is required for the inline style
+     block and the inline app script (single-file by design); we accept
+     that trade-off rather than building a hash-pipeline for a static
+     site. data: in img-src allows inline SVG icons; blob: in img-src
+     and manifest-src covers the PWA inline manifest path that
+     js/pwa.js uses on file:// launches. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; manifest-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <!-- Two media-scoped theme-color metas so the browser picks the right
      status-bar / tab-strip color at first paint, before applyTheme()
@@ -3874,30 +3882,120 @@ const UNLOCK_KEY = "reframe-unlocked";   // sessionStorage; cleared when tab clo
 // key from the PIN: if the user forgets it, hard-encrypted data would be
 // unrecoverable, and losing months of CBT work is a worse harm than soft
 // privacy is a benefit. This is documented in the Settings → Privacy help.
-async function hashPin(pin) {
-  const enc = new TextEncoder().encode(String(pin));
-  const buf = await crypto.subtle.digest("SHA-256", enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+//
+// PIN storage format. Two shapes exist:
+//   v1 (legacy): plain hex string — sha256(pin). Vulnerable to instant
+//        brute-force (4-digit PIN = 10k SHA-256 hashes ≈ <1s on a phone).
+//        Migrated to v2 on next successful unlock.
+//   v2: JSON {v: 2, salt, hash, iterations} where hash = PBKDF2-SHA-256.
+//        100k iterations + 16-byte random salt per-device. Brute-force
+//        cost climbs from microseconds to tens of seconds.
+const PBKDF2_ITERATIONS = 100000;
+const PIN_LOCKOUT_KEY = "reframe-pin-lockout";  // sessionStorage
+const _toHex = (buf) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+const _fromHex = (hex) => {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+};
+
+async function _legacyHashPin(pin) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(pin)));
+  return _toHex(buf);
 }
+
+async function _pbkdf2Pin(pin, saltBytes) {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(String(pin)), { name: "PBKDF2" }, false, ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    key, 256
+  );
+  return _toHex(bits);
+}
+
+function _readStoredPin() {
+  const raw = localStorage.getItem(PIN_KEY);
+  if (!raw) return null;
+  // Legacy v1: bare 64-char hex string (sha256 hex digest).
+  if (/^[0-9a-f]{64}$/i.test(raw)) return { v: 1, hash: raw };
+  try {
+    const o = JSON.parse(raw);
+    if (o && o.v === 2 && o.salt && o.hash) return o;
+  } catch (_) {}
+  return null;
+}
+
 function hasPin() { return !!localStorage.getItem(PIN_KEY); }
+
 async function verifyPin(pin) {
-  const stored = localStorage.getItem(PIN_KEY);
+  const stored = _readStoredPin();
   if (!stored) return false;
-  const h = await hashPin(pin);
-  return h === stored;
+  let ok = false;
+  if (stored.v === 1) {
+    ok = (await _legacyHashPin(pin)) === stored.hash;
+    // Opportunistic migration on first successful unlock: upgrade the
+    // record to the salted/iterated v2 format so the next session
+    // doesn't fall back to the weak hash.
+    if (ok) try { await setStoredPin(pin); } catch (_) {}
+  } else {
+    const computed = await _pbkdf2Pin(pin, _fromHex(stored.salt));
+    ok = computed === stored.hash;
+  }
+  return ok;
 }
+
 async function setStoredPin(pin) {
-  const h = await hashPin(pin);
-  localStorage.setItem(PIN_KEY, h);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await _pbkdf2Pin(pin, salt);
+  localStorage.setItem(PIN_KEY, JSON.stringify({
+    v: 2, salt: _toHex(salt), hash, iterations: PBKDF2_ITERATIONS,
+  }));
   sessionStorage.setItem(UNLOCK_KEY, "1");
+  _clearLockout();
 }
+
 function clearStoredPin() {
   localStorage.removeItem(PIN_KEY);
   sessionStorage.removeItem(UNLOCK_KEY);
+  _clearLockout();
 }
 function isUnlocked() { return sessionStorage.getItem(UNLOCK_KEY) === "1"; }
-function markUnlocked() { sessionStorage.setItem(UNLOCK_KEY, "1"); }
+function markUnlocked() { sessionStorage.setItem(UNLOCK_KEY, "1"); _clearLockout(); }
 function markLocked() { sessionStorage.removeItem(UNLOCK_KEY); }
+
+// Lockout: after 5 failed attempts, refuse verifyPin attempts for an
+// exponentially-growing window (2s, 4s, 8s, ... capped at 5 min). State
+// lives in sessionStorage so it resets when the tab closes — a determined
+// attacker could close + reopen, but the cap on the legitimate flow's
+// frustration matters more than a bullet-proof block in this threat model.
+function _readLockout() {
+  try {
+    const raw = sessionStorage.getItem(PIN_LOCKOUT_KEY);
+    if (!raw) return { attempts: 0, until: 0 };
+    const o = JSON.parse(raw);
+    return { attempts: o.attempts || 0, until: o.until || 0 };
+  } catch (_) { return { attempts: 0, until: 0 }; }
+}
+function _writeLockout(o) {
+  try { sessionStorage.setItem(PIN_LOCKOUT_KEY, JSON.stringify(o)); } catch (_) {}
+}
+function _clearLockout() { try { sessionStorage.removeItem(PIN_LOCKOUT_KEY); } catch (_) {} }
+function pinLockoutMsLeft() {
+  const { until } = _readLockout();
+  return Math.max(0, until - Date.now());
+}
+function recordPinFailure() {
+  const { attempts } = _readLockout();
+  const next = attempts + 1;
+  let until = 0;
+  if (next >= 5) {
+    const sec = Math.min(300, Math.pow(2, next - 4));  // 2,4,8,...,300
+    until = Date.now() + sec * 1000;
+  }
+  _writeLockout({ attempts: next, until });
+}
 
 const DEFAULT_SETTINGS = {
   theme: "auto",             // "auto" | "light" | "dark"
@@ -4832,6 +4930,16 @@ function renderLockScreen() {
     e.preventDefault();
     const pin = (input.value || "").trim();
     if (!pin) { state.lockError = "Enter your PIN to continue."; render(); return; }
+    // Brute-force throttle. After 5 wrong tries the form refuses to
+    // submit until the cool-down expires — defends a stolen device from
+    // a script that fires 10,000 PINs in a loop.
+    const waitMs = pinLockoutMsLeft();
+    if (waitMs > 0) {
+      const sec = Math.ceil(waitMs / 1000);
+      state.lockError = "Too many tries. Wait " + sec + "s before another attempt.";
+      render();
+      return;
+    }
     const ok = await verifyPin(pin);
     if (ok) {
       markUnlocked();
@@ -4839,7 +4947,11 @@ function renderLockScreen() {
       state.lockError = "";
       render();
     } else {
-      state.lockError = "That PIN doesn't match. Try again.";
+      recordPinFailure();
+      const wait = pinLockoutMsLeft();
+      state.lockError = wait > 0
+        ? "Too many tries. Wait " + Math.ceil(wait / 1000) + "s before another attempt."
+        : "That PIN doesn't match. Try again.";
       // Brief shake-feedback via a class the CSS animates, then re-render
       // so the error message lands. Keep the input value so the user can
       // see what they typed and correct it.
@@ -7285,7 +7397,15 @@ function renderModal() {
     inner = renderLogActivityModal();
   }
 
-  root.innerHTML = `<div class="modal-overlay" data-action="close-modal" role="presentation"><div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">${inner}</div></div>`;
+  root.innerHTML = `<div class="modal-overlay" data-action="close-modal" role="presentation"><div class="modal" role="dialog" aria-modal="true">${inner}</div></div>`;
+  // Stop modal-internal clicks from bubbling to the overlay (which has
+  // data-action="close-modal"). Previously this was an inline onclick
+  // attribute; moving it to addEventListener keeps a strict CSP
+  // achievable later without 'unsafe-inline' on script-src.
+  {
+    const modalForStop = root.querySelector('.modal');
+    if (modalForStop) modalForStop.addEventListener('click', e => e.stopPropagation());
+  }
   // Wire the modal's first heading as the accessible name so screen
   // readers announce "Dialog: <title>" when focus enters.
   const modalEl = root.querySelector('.modal');
@@ -7431,7 +7551,7 @@ function renderSettingsModal() {
     <div class="settings-section">
       <div class="settings-section-title">Privacy lock</div>
       ${hasPin() ? `
-        <p class="settings-section-help">A PIN gates the app on each new tab session. Stored as a SHA-256 hash on this device only. The journal itself isn't encrypted — anyone with technical access to localStorage could still read the data — but it does stop casual snooping on an unlocked phone.</p>
+        <p class="settings-section-help">A PIN gates the app on each new tab session. Stored as a salted PBKDF2 hash (100k iterations) on this device only, with a brute-force lockout after 5 wrong tries. The journal itself isn't encrypted — anyone with technical access to localStorage could still read the data — but the soft lock stops casual snooping on an unlocked phone.</p>
         <div class="settings-data-actions">
           <button class="settings-data-btn" data-action="open-set-pin">
             <span class="settings-data-icon" aria-hidden="true">
@@ -7520,8 +7640,8 @@ function renderSetPinModal() {
   return `
     <h3 class="display">${isChanging ? "Change PIN" : "Set a PIN"}</h3>
     <p class="modal-sub">${isChanging
-      ? "Enter your current PIN, then choose a new one. The PIN is stored as a SHA-256 hash on this device only."
-      : "4–8 digits. Stored as a SHA-256 hash on this device. There's no recovery path — if you forget the PIN, the only way back in deletes every entry, so export to JSON regularly."
+      ? "Enter your current PIN, then choose a new one. The PIN is stored as a salted PBKDF2 hash on this device only."
+      : "4–8 digits. Stored as a salted PBKDF2 hash on this device. There's no recovery path — if you forget the PIN, the only way back in deletes every entry, so export to JSON regularly."
     }</p>
     <form id="pinSetForm" class="pin-form" autocomplete="off">
       ${isChanging ? `
