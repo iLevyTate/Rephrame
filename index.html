@@ -1185,6 +1185,55 @@ body.kb-open .bottom-nav {
   border-radius: var(--r-full);
   outline: none;
 }
+/* Emotion-intensity variant: a calm→hot gradient track plus tick marks
+   drawn at the five band boundaries (20 / 40 / 60 / 80). The taller track
+   makes the slider easier to grab on a phone, and the color cue carries
+   the meaning of the number even before the user reads the band label.
+   Used on the 0–100 emotion / "where are you now" sliders. */
+.intensity-slider--emotion {
+  height: 12px;
+  background:
+    /* tick marks at 20/40/60/80 — drawn as 2px-wide ink rectangles via
+       overlapping gradients so we don't need extra DOM */
+    linear-gradient(to right, transparent calc(20% - 1px), rgba(26, 23, 21, 0.55) calc(20% - 1px), rgba(26, 23, 21, 0.55) calc(20% + 1px), transparent calc(20% + 1px)),
+    linear-gradient(to right, transparent calc(40% - 1px), rgba(26, 23, 21, 0.55) calc(40% - 1px), rgba(26, 23, 21, 0.55) calc(40% + 1px), transparent calc(40% + 1px)),
+    linear-gradient(to right, transparent calc(60% - 1px), rgba(26, 23, 21, 0.55) calc(60% - 1px), rgba(26, 23, 21, 0.55) calc(60% + 1px), transparent calc(60% + 1px)),
+    linear-gradient(to right, transparent calc(80% - 1px), rgba(26, 23, 21, 0.55) calc(80% - 1px), rgba(26, 23, 21, 0.55) calc(80% + 1px), transparent calc(80% + 1px)),
+    linear-gradient(
+      to right,
+      #6a8a5e 0%,           /* mild — calm green */
+      #9eae4a 20%,
+      #c9a23a 40%,          /* significant — amber */
+      #c46838 60%,          /* high — copper */
+      #a23922 80%,
+      #7a2918 100%          /* severe — deep red */
+    );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+.intensity-slider--emotion::-webkit-slider-thumb {
+  width: 26px; height: 26px;
+  border-width: 4px;
+}
+.intensity-slider--emotion::-moz-range-thumb {
+  width: 26px; height: 26px;
+  border-width: 4px;
+}
+/* Firefox draws the track via ::-moz-range-track; without an explicit rule
+   the background-image on the input itself doesn't show through. WebKit
+   uses the input's own background for the track, so no equivalent needed
+   there. */
+.intensity-slider--emotion::-moz-range-track {
+  height: 12px;
+  border-radius: var(--r-full);
+  background:
+    linear-gradient(to right, transparent calc(20% - 1px), rgba(26, 23, 21, 0.55) calc(20% - 1px), rgba(26, 23, 21, 0.55) calc(20% + 1px), transparent calc(20% + 1px)),
+    linear-gradient(to right, transparent calc(40% - 1px), rgba(26, 23, 21, 0.55) calc(40% - 1px), rgba(26, 23, 21, 0.55) calc(40% + 1px), transparent calc(40% + 1px)),
+    linear-gradient(to right, transparent calc(60% - 1px), rgba(26, 23, 21, 0.55) calc(60% - 1px), rgba(26, 23, 21, 0.55) calc(60% + 1px), transparent calc(60% + 1px)),
+    linear-gradient(to right, transparent calc(80% - 1px), rgba(26, 23, 21, 0.55) calc(80% - 1px), rgba(26, 23, 21, 0.55) calc(80% + 1px), transparent calc(80% + 1px)),
+    linear-gradient(to right, #6a8a5e 0%, #9eae4a 20%, #c9a23a 40%, #c46838 60%, #a23922 80%, #7a2918 100%);
+  background-repeat: no-repeat;
+}
 /* Slider thumb states: symmetric across WebKit and Firefox so polish
    doesn't depend on the user's browser. The :active scale gives drag
    a tactile push, and :focus-visible adds a soft copper halo so
@@ -3797,16 +3846,21 @@ const SOCRATIC_TYPES = [
 ];
 
 const REFRAME_METHODS = [
-  { method: "Growth-Oriented",             when: "Self-criticism about ability", does: "Reframes as learning without minimizing difficulty" },
-  { method: "Realism",                     when: "Catastrophizing",              does: "Replaces extreme prediction with most probable outcome" },
-  { method: "vs. Absolutes",               when: "All-or-nothing language",      does: 'Replaces "never/always" with proportional truth' },
-  { method: "Compassionate reattribution", when: "Personalized blame",           does: "Redistributes responsibility fairly" },
-  { method: "Behavioral experiment",       when: "Untested assumptions",         does: "Reframes as hypothesis to test" },
+  { method: "Growth-Oriented",             when: "Self-criticism about ability", does: "Reframes as learning without minimizing difficulty",
+    template: "I haven't figured this out yet, and that's not the same as never being able to. One rough attempt isn't the verdict." },
+  { method: "Realism",                     when: "Catastrophizing",              does: "Replaces extreme prediction with most probable outcome",
+    template: "The worst case isn't the most likely case. The realistic outcome is more like [X], and I'd handle that the way I've handled similar things." },
+  { method: "vs. Absolutes",               when: "All-or-nothing language",      does: 'Replaces "never/always" with proportional truth',
+    template: "It's not 'never' or 'always.' It's sometimes, in certain situations — and naming the specifics is more honest than the absolute." },
+  { method: "Compassionate reattribution", when: "Personalized blame",           does: "Redistributes responsibility fairly",
+    template: "This wasn't all on me. A fair split of responsibility looks more like [X]. I'd never apply this label to a friend in the same spot." },
+  { method: "Behavioral experiment",       when: "Untested assumptions",         does: "Reframes as hypothesis to test",
+    template: "I'm treating this prediction as fact, but I haven't tested it. The honest version: 'I expect [X] — let me see if that's actually what happens.'" },
 ];
 
 const STEP_TITLES = ["Trigger", "Initial Reaction", "Distortion", "Challenge", "Reframe", "Pivot", "Review"];
 const STEP_PROMPTS = [
-  "What happened?",
+  "What's setting this off?",
   "What came up?",
   "Which patterns showed up?",
   "Put the thought on trial.",
@@ -3815,7 +3869,7 @@ const STEP_PROMPTS = [
   "Read it back.",
 ];
 const STEP_HINTS = [
-  "Just the event. Skip interpretation for now.",
+  "An event, a thought, or a feeling — whatever's at the start of this. Skip interpretation for now; just name what's there.",
   "The first thought, the feeling, the body.",
   "Pick all that apply. Multiple is normal.",
   "Both sides on the table, then one well-placed question.",
@@ -5911,7 +5965,7 @@ function renderFreeformCapture(d) {
                         <div class="intensity-band-name display" data-slider-band-name="mood-${esc(m.id)}">${esc(band(m.intensity).label)}</div>
                       </div>
                     </div>
-                    <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider">
+                    <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion">
                   </div>
                 </div>
               `).join("")}
@@ -6100,7 +6154,8 @@ function renderCaptureStep(step, d) {
   switch (step) {
     case 1: return `
       <div class="field-group">
-        <textarea class="textarea input-large" data-field="trigger" rows="3" autofocus placeholder="Broke a chair at the pedicure place…">${esc(d.trigger)}</textarea>
+        <textarea class="textarea input-large" data-field="trigger" rows="3" autofocus placeholder="Broke a chair at the pedicure place… · Woke up dreading today… · Kept thinking I'm going to get fired…">${esc(d.trigger)}</textarea>
+        <div class="field-help-paper" style="margin-top: 8px;">An event, a thought, or a feeling — any of those can be the starting point. You don't need to know yet which one this is.</div>
       </div>
     `;
 
@@ -6172,7 +6227,7 @@ function renderCaptureStep(step, d) {
                     <div class="intensity-band-sig" data-slider-band-sig="mood-${esc(m.id)}">${esc(band(m.intensity).signals)}</div>
                   </div>
                 </div>
-                <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider">
+                <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion">
                 <div class="intensity-bands">
                   <span>Mild</span><span>Mod</span><span>Sig</span><span>High</span><span>Severe</span>
                 </div>
@@ -6322,7 +6377,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">Your Socratic question</label>
-        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="If I saw a stranger break a chair, would I think they're an idiot?">${esc(d.socraticQuestion)}</textarea>
+        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc((SOCRATIC_TYPES.find(s => s.type === d.socraticType) || {}).template || "Pick a type above and a starting question will fill in — then make it your own.")}">${esc(d.socraticQuestion)}</textarea>
         <p class="field-help-paper" style="margin-top: 8px;">Picking a type above pre-fills a starting question — feel free to rewrite it in your own words. The point is to <em>genuinely consider</em> the answer, so the wording has to be one you can take seriously.</p>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All question types</summary>
@@ -6377,7 +6432,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "New Thought"}</label>
-        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : "That was embarrassing, and wanting to leave makes sense. But a chair breaking says more about the chair than about me."}">${esc(d.newThought)}</textarea>
+        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : ((REFRAME_METHODS.find(r => r.method === d.reframeMethod) || {}).template || "Pick a method above and a starter thought will fill in — then make it your own."))}">${esc(d.newThought)}</textarea>
         <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.`}</div>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All reframe methods</summary>
@@ -6421,9 +6476,12 @@ function renderCaptureStep(step, d) {
             <div class="belief-control">
               <div class="belief-head">
                 <span class="belief-num display"><span data-slider-display="mood-after-${esc(m.id)}">${cur}</span><span class="belief-num-suffix">/100</span></span>
-                <span class="belief-hint">Before: <strong>${m.intensity}</strong>${delta !== null ? ` · Δ <strong class="${delta < 0 ? "delta-good" : "delta-flat"}">${delta > 0 ? "+" : ""}${delta}</strong>` : ""}</span>
+                <span class="belief-hint"><span data-slider-band-name="mood-after-${esc(m.id)}">${esc(band(cur).label)}</span> · before: <strong>${m.intensity}</strong>${delta !== null ? ` · Δ <strong class="${delta < 0 ? "delta-good" : "delta-flat"}">${delta > 0 ? "+" : ""}${delta}</strong>` : ""}</span>
               </div>
-              <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-reframe" data-id="${esc(m.id)}" class="intensity-slider">
+              <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-reframe" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion">
+              <div class="intensity-bands">
+                <span>Mild</span><span>Mod</span><span>Sig</span><span>High</span><span>Severe</span>
+              </div>
             </div>
           `;
         }).join("")}
@@ -6618,9 +6676,12 @@ function renderOutcomeView() {
                 <div class="belief-control">
                   <div class="belief-head">
                     <span class="belief-num display"><span data-slider-display="outcome-${esc(m.id)}">${cur}</span><span class="belief-num-suffix">/100</span></span>
-                    <span class="belief-hint">Start: <strong>${m.intensity}</strong>${typeof m.intensityAfterReframe === "number" ? ` · after reframe: <strong>${m.intensityAfterReframe}</strong>` : ""}</span>
+                    <span class="belief-hint"><span data-slider-band-name="outcome-${esc(m.id)}">${esc(band(cur).label)}</span> · start: <strong>${m.intensity}</strong>${typeof m.intensityAfterReframe === "number" ? ` · after reframe: <strong>${m.intensityAfterReframe}</strong>` : ""}</span>
                   </div>
-                  <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-pivot" data-id="${esc(m.id)}" class="intensity-slider">
+                  <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-pivot" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion">
+                  <div class="intensity-bands">
+                    <span>Mild</span><span>Mod</span><span>Sig</span><span>High</span><span>Severe</span>
+                  </div>
                 </div>
               `;
             }).join("")}
@@ -6668,6 +6729,8 @@ function bindOutcome() {
       m.intensityAfterPivot = parseInt(el.value, 10);
       const target = document.querySelector('[data-slider-display="outcome-' + el.dataset.id + '"]');
       if (target) target.textContent = el.value;
+      const bandTarget = document.querySelector('[data-slider-band-name="outcome-' + el.dataset.id + '"]');
+      if (bandTarget) bandTarget.textContent = band(parseInt(el.value, 10)).label;
       // In-memory mutation is immediate; persist on the trailing edge so
       // backing out (or a tab close) still preserves the re-rate.
       _schedulePersist();
@@ -7334,7 +7397,7 @@ function renderModal() {
               <span class="belief-num display"><span id="quickIntensityDisplay">${q.intensity}</span><span class="belief-num-suffix">/100</span></span>
               <span class="belief-hint" id="quickIntensityBand">${esc(band(q.intensity).label)}</span>
             </div>
-            <input type="range" min="0" max="100" value="${q.intensity}" id="quickIntensity" class="intensity-slider">
+            <input type="range" min="0" max="100" value="${q.intensity}" id="quickIntensity" class="intensity-slider intensity-slider--emotion">
           </div>
         </div>
         <label class="checkbox-flag" style="margin-top: 12px;">
@@ -8251,6 +8314,24 @@ function bindCapture() {
         if (node) node.textContent = String(v);
       }
 
+      // When the user picks a Socratic type, fill the question with that
+      // type's template if they haven't typed one yet. Same for the reframe
+      // method: seed newThought with a starter the user can rewrite. Empty-
+      // only — never overwrite anything the user has put in themselves.
+      if (field === "socraticType") {
+        if (!(state.draft.socraticQuestion || "").trim()) {
+          const t = SOCRATIC_TYPES.find(s => s.type === v);
+          if (t) state.draft.socraticQuestion = t.template;
+        }
+        saveDraft(state.draft);
+      }
+      if (field === "reframeMethod") {
+        if (!(state.draft.newThought || "").trim()) {
+          const r = REFRAME_METHODS.find(m => m.method === v);
+          if (r && r.template) state.draft.newThought = r.template;
+        }
+        saveDraft(state.draft);
+      }
       if (["socraticType", "reframeMethod"].includes(field)) render();
 
       // Next-step button reflects validity in the structured flow only.
@@ -8424,6 +8505,8 @@ function bindCapture() {
       m.intensityAfterReframe = parseInt(el.value, 10);
       const target = document.querySelector('[data-slider-display="mood-after-' + el.dataset.id + '"]');
       if (target) target.textContent = el.value;
+      const bandTarget = document.querySelector('[data-slider-band-name="mood-after-' + el.dataset.id + '"]');
+      if (bandTarget) bandTarget.textContent = band(parseInt(el.value, 10)).label;
       saveDraft(state.draft);
     });
   });
@@ -8483,6 +8566,10 @@ function bindCapture() {
             const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
             if (t) state.draft.socraticQuestion = t.template;
           }
+          if (!(state.draft.newThought || "").trim()) {
+            const r = REFRAME_METHODS.find(m => m.method === defaults.reframe);
+            if (r && r.template) state.draft.newThought = r.template;
+          }
         }
       }
       saveDraft(state.draft);
@@ -8518,6 +8605,8 @@ function bindCapture() {
           if (state.draft.reframeMethod === def.reframe) state.draft.reframeMethod = "";
           const t = SOCRATIC_TYPES.find(s => s.type === def.socratic);
           if (t && state.draft.socraticQuestion === t.template) state.draft.socraticQuestion = "";
+          const r = REFRAME_METHODS.find(m => m.method === def.reframe);
+          if (r && r.template && state.draft.newThought === r.template) state.draft.newThought = "";
         }
       }
       saveDraft(state.draft);
@@ -8545,6 +8634,10 @@ function bindCapture() {
     if (state.captureStep === 4 && state.draft.socraticType && !state.draft.socraticQuestion.trim()) {
       const t = SOCRATIC_TYPES.find(s => s.type === state.draft.socraticType);
       if (t) state.draft.socraticQuestion = t.template;
+    }
+    if (state.captureStep === 5 && state.draft.reframeMethod && !(state.draft.newThought || "").trim()) {
+      const r = REFRAME_METHODS.find(m => m.method === state.draft.reframeMethod);
+      if (r && r.template) state.draft.newThought = r.template;
     }
     state.captureStep++;
     saveDraft(state.draft);
