@@ -995,7 +995,7 @@ body.kb-open .bottom-nav {
 
 .capture-screen {
   /* Bottom padding has to clear the sticky .capture-footer, otherwise the
-     last form field (e.g. the distortion-note textarea on Step 3) scrolls
+     last form field (e.g. the distortion-note textarea on Step 4) scrolls
      under the pinned Continue bar and the user thinks the page has hit the
      bottom of scroll. ~88px ≈ footer height + a little breathing room. */
   padding: 28px 24px 88px 24px;
@@ -2189,7 +2189,7 @@ html[data-theme="light"] .lock-help-panel strong { color: var(--on-paper); }
    ────────────────────────────────────────────────────────────────── */
 
 /* "These thoughts feel accurate" affirmation tile — sits above the
-   distortion grid so it's the first thing the user sees on Step 3,
+   distortion grid so it's the first thing the user sees on Step 4,
    making "not distorted" a first-class option rather than a hidden one. */
 .accurate-tile {
   display: block;
@@ -2236,7 +2236,7 @@ html[data-theme="light"] .lock-help-panel strong { color: var(--on-paper); }
   line-height: 1.55;
 }
 
-/* Grounding gate — shown inline at Step 4 (and inside quick capture)
+/* Grounding gate — shown inline at Step 3 (and inside quick capture)
    when emotion intensity is ≥80, so cognitive work doesn't try to run
    in territory where grounding lands better. */
 .grounding-note {
@@ -3267,7 +3267,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
 }
 .row-add:active { transform: scale(0.99); }
 
-/* Hot-thought "on trial" card at top of Step 4 and Step 5. */
+/* Hot-thought "on trial" card at top of Step 3 and Step 5. */
 .hot-thought-card {
   background: linear-gradient(to right, rgba(184, 85, 44, 0.08), rgba(184, 85, 44, 0.02));
   border-left: 3px solid var(--copper);
@@ -6197,7 +6197,7 @@ function renderCaptureStep(step, d) {
         <div class="step2-section-head">
           <span class="step2-eyebrow">A · Thoughts</span>
           <h3 class="step2-title display">What thoughts came up?</h3>
-          <p class="step2-sub">List every automatic thought, not just one. Mark the one that's hottest — the most distressing or believable — and we'll put that one on trial in Step 4.</p>
+          <p class="step2-sub">List every automatic thought, not just one. Mark the one that's hottest — the most distressing or believable — and we'll put that one on trial in Step 3.</p>
         </div>
         <div class="row-list" data-list="thoughts">
           ${thoughts.map((t, idx) => `
@@ -7159,7 +7159,7 @@ function renderReference() {
       </div>
       <div class="ref-item">
         <div class="ref-item-name">CBT alone tends to fall short for</div>
-        <div class="ref-item-desc"><strong>Active trauma processing</strong> (intrusive memories, flashbacks, dissociation) — needs trauma-specialized care, not solo cognitive work. <strong>Severe depression</strong> where motivation is collapsed and the cognitive frame itself is suspect. <strong>Psychosis or thought disorders.</strong> <strong>Acute suicidal ideation</strong> — please reach for the resources below first. <strong>Grief</strong> — grief usually doesn't want fixing, just witness; the "accurate, not distorted" tile on Step 3 is for exactly this.</div>
+        <div class="ref-item-desc"><strong>Active trauma processing</strong> (intrusive memories, flashbacks, dissociation) — needs trauma-specialized care, not solo cognitive work. <strong>Severe depression</strong> where motivation is collapsed and the cognitive frame itself is suspect. <strong>Psychosis or thought disorders.</strong> <strong>Acute suicidal ideation</strong> — please reach for the resources below first. <strong>Grief</strong> — grief usually doesn't want fixing, just witness; the "accurate, not distorted" tile on Step 4 is for exactly this.</div>
       </div>
       <div class="ref-item">
         <div class="ref-item-name">If a thought turns out to be accurate</div>
@@ -7203,11 +7203,11 @@ function renderReference() {
 
     <div class="ref-section">
       <div class="ref-section-head">
-        <span class="ref-section-num">3</span>
+        <span class="ref-section-num">4</span>
         <h2 class="ref-section-title display">Cognitive Distortions</h2>
-        <span class="ref-section-step">Step 3</span>
+        <span class="ref-section-step">Step 4</span>
       </div>
-      <p class="ref-section-intro">Patterns of thinking that warp interpretation. Identify which ones are showing up before you challenge the thought.</p>
+      <p class="ref-section-intro">Patterns of thinking that warp interpretation. Padesky's order puts this after the evidence work — once you've looked at both sides, naming the pattern is more grounded than guessing up front.</p>
       ${DISTORTIONS.map(d => `
         <div class="ref-item">
           <div class="ref-item-name">${esc(d.name)}</div>
@@ -7276,11 +7276,11 @@ function renderReference() {
 
     <div class="ref-section">
       <div class="ref-section-head">
-        <span class="ref-section-num">4</span>
+        <span class="ref-section-num">3</span>
         <h2 class="ref-section-title display">Socratic Questions</h2>
-        <span class="ref-section-step">Step 4</span>
+        <span class="ref-section-step">Step 3</span>
       </div>
-      <p class="ref-section-intro">Match the question to the primary distortion. If multiple, target the one driving the most intensity.</p>
+      <p class="ref-section-intro">Pick the question type that matches what the thought is doing — catastrophizing, mind-reading, self-blame, etc. The template gives you a starting line you can rewrite.</p>
       ${SOCRATIC_TYPES.map(s => `
         <div class="ref-item">
           <div class="ref-item-name">${esc(s.type)}</div>

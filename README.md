@@ -174,11 +174,11 @@ them now.
 
 Three deliberate concessions to make the tool helpful rather than harmful:
 
-- **"These thoughts feel accurate" tile** on Step 3 — opts out of the
+- **"These thoughts feel accurate" tile** on Step 4 — opts out of the
   distortion frame entirely. Grief, valid anger, accurate self-criticism
   are real; the rest of the entry holds them rather than arguing.
 - **Grounding gate at intensity ≥80** — surfaces a 5-4-3-2-1 prompt before
-  Step 4 and inside quick-capture, because cognitive work tends to land
+  Step 3 and inside quick-capture, because cognitive work tends to land
   better after the body has settled.
 - **"Just venting" checkbox** in quick-capture — sometimes naming what's
   there *is* the intervention; no obligation to finish a 7-step entry
