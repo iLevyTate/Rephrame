@@ -3937,7 +3937,10 @@ const ENTRY_KINDS = ["thought-record", "freeform", "activity", "worry"];
 function normalizeEntry(e) {
   const kind = (ENTRY_KINDS.includes(e && e.kind)) ? e.kind : "thought-record";
   const out = {
-    id: e.id || "",
+    // Mint an id if the source object lacks one. Hand-edited or stripped
+    // backups can omit it; without a fresh id the dedupe-by-id Map in
+    // processImportFile would collapse every such entry into one.
+    id: e.id || newId(),
     kind,
     createdAt: e.createdAt || "",
     updatedAt: e.updatedAt || undefined,
@@ -4029,6 +4032,12 @@ function normalizeEntry(e) {
     if (out.thoughts.length > 0 && !out.thoughts.some(t => t.isHot)) {
       out.thoughts[0].isHot = true;
     }
+    // hotThought() and several renderers assume thought-records have ≥1
+    // thought. Hand-edited or partially-saved backups can violate that;
+    // mint a placeholder so the entry is at least viewable.
+    if (out.thoughts.length === 0) {
+      out.thoughts.push(normalizeThought({ isHot: true }));
+    }
   }
   return out;
 }
@@ -4092,6 +4101,16 @@ function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Clock-skew guard. A device with the wrong date set could otherwise
+// stamp entries minutes/days in the future, breaking sort order and the
+// 30-day heatmap. Anything more than a minute ahead of now gets pulled
+// back to now. One minute of slack absorbs ordinary NTP drift.
+function clampDate(iso) {
+  const t = Date.parse(iso);
+  if (isNaN(t)) return new Date().toISOString();
+  const now = Date.now();
+  return t > now + 60000 ? new Date(now).toISOString() : iso;
+}
 const band = n => INTENSITY_BANDS.find(b => n <= b.max) || INTENSITY_BANDS[4];
 
 function emptyEntry() {
@@ -4387,15 +4406,17 @@ function toast(message, opts) {
   }
   stack.appendChild(el);
   let dismissed = false;
+  let autoTimer = null;
   function dismiss() {
     if (dismissed) return;
     dismissed = true;
+    if (autoTimer !== null) { clearTimeout(autoTimer); autoTimer = null; }
     el.style.opacity = "0";
     el.style.transform = "translateY(8px)";
     el.style.transition = "opacity var(--dur-medium) var(--ease), transform var(--dur-medium) var(--ease)";
     setTimeout(() => el.remove(), 300);
   }
-  if (!persistent) setTimeout(dismiss, lifespan);
+  if (!persistent) autoTimer = setTimeout(dismiss, lifespan);
   return { dismiss };
 }
 
@@ -4563,11 +4584,18 @@ function hasDraftContent(d) {
            freeformFilled || activityFilled || worryFilled);
 }
 
+// Suppress the storage-event listener while we're the writer ourselves.
+// `storage` only fires in OTHER tabs, but defensive: if the browser ever
+// dispatches it locally (some embedded webviews do), the guard prevents
+// a redundant re-load + render mid-write.
+let _persistingLocally = false;
+
 function persist() {
   // Wrap the write so a QuotaExceededError surfaces a styled blocking
   // modal instead of silently failing. The user's most recent entry
   // sits at state.entries[0] and stays in memory regardless — we never
   // lose data on a quota failure, only the persistence to disk.
+  _persistingLocally = true;
   try {
     saveEntries(state.entries);
   } catch (err) {
@@ -4583,8 +4611,36 @@ function persist() {
       toast("Couldn't save — " + (err && err.message ? err.message : "unknown error"),
             { variant: "error", persist: true });
     }
+  } finally {
+    _persistingLocally = false;
   }
 }
+
+// Another tab in the same origin just wrote to localStorage. Pull the
+// fresh data into this tab so the user doesn't keep working against
+// stale state. We can't merge drafts safely (last-writer-wins for the
+// in-progress one), so for a remote draft change we surface a toast
+// instead of overwriting whatever the user is currently typing.
+window.addEventListener("storage", (e) => {
+  if (_persistingLocally) return;
+  if (!e.key) return;  // null key = storage.clear() — ignore
+  if (e.key === STORAGE_KEY) {
+    state.entries = loadEntries();
+    render();
+  } else if (e.key === SETTINGS_KEY) {
+    state.settings = loadSettings();
+    render();
+  } else if (e.key === DRAFT_KEY) {
+    // If the local user has typed into the draft, they'd lose work if
+    // we overwrote. Just warn and let them decide.
+    if (hasDraftContent(state.draft)) {
+      toast("Draft edited in another tab — refresh to see the latest.", { ms: 6000 });
+    } else {
+      state.draft = loadDraft() || emptyEntry();
+      render();
+    }
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // RENDER
@@ -5009,8 +5065,13 @@ function renderNudgeBanner() {
   `;
 }
 
-// True when there are unresolved parked worries scheduled for this
-// session's worry window (within ±30 min of the window time today).
+// True when there are unresolved parked worries the user should see now.
+// Two cases:
+//   1. We're inside the configured 20-minute worry window today.
+//   2. The window has already passed (today or earlier) and at least one
+//      worry's scheduledFor is in the past — i.e. the app was closed
+//      during the window and the worry would otherwise go unsurfaced
+//      until the next window. Don't let parked worries sit silently.
 function shouldShowWorryWindow() {
   const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
   if (parked.length === 0) return false;
@@ -5018,8 +5079,15 @@ function shouldShowWorryWindow() {
   const [h, m] = (s.worryWindowTime || "18:00").split(":").map(n => parseInt(n, 10));
   const now = new Date();
   const winStart = new Date(); winStart.setHours(h, m, 0, 0);
-  const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000); // 20-min window
-  return now >= winStart && now <= winEnd;
+  const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000);
+  if (now >= winStart && now <= winEnd) return true;
+  // Missed-window catch-up: any worry whose scheduledFor is in the past.
+  const nowMs = now.getTime();
+  return parked.some(w => {
+    if (!w.scheduledFor) return false;
+    const t = Date.parse(w.scheduledFor);
+    return !isNaN(t) && t <= nowMs;
+  });
 }
 
 function renderWorryWindowBanner() {
@@ -8228,7 +8296,7 @@ function bindCapture() {
       // bidirectional linking before the new entry exists). Otherwise mint
       // a fresh id.
       savedId = state.draft.id || newId();
-      state.entries = [{ ...state.draft, id: savedId, createdAt: now }, ...state.entries];
+      state.entries = [{ ...state.draft, id: savedId, createdAt: clampDate(now) }, ...state.entries];
       toast("Entry saved");
     }
     // Finalize a deferred worry-escalation: now that the thought-record
@@ -8399,6 +8467,21 @@ function bindModal() {
       // Fall back to the default if the user somehow clears it.
       state.settings.worryWindowTime = v || "18:00";
       saveSettings(state.settings);
+      // Existing parked worries were scheduled against the old window
+      // time; without rescheduling they'd surface at the old time (or
+      // not at all). Recompute scheduledFor for every unresolved worry
+      // so the new setting takes effect immediately.
+      let rescheduled = 0;
+      state.entries.forEach(e => {
+        if (e.kind === "worry" && !e.resolution) {
+          e.scheduledFor = computeNextWorryWindow();
+          rescheduled++;
+        }
+      });
+      if (rescheduled > 0) {
+        persist();
+        render();
+      }
     });
   });
 
@@ -8483,7 +8566,7 @@ function bindModal() {
     const entry = {
       ...emptyEntry(),
       id: newId(),
-      createdAt: now,
+      createdAt: clampDate(now),
       thoughts: [normalizeThought({ text: thought, isHot: true })],
       moods: [normalizeMood({ intensity: q.intensity, estimated: true })],
       isQuick: !q.ventOnly,
@@ -8605,6 +8688,16 @@ function bindModal() {
     // entry. The modal handles missing entries gracefully but it's
     // cleaner to clear the state.
     if (state.logActivityDraft?.entryId === id) state.logActivityDraft = null;
+    // Clear any worry that pointed at this entry via escalation, so the
+    // worry detail view doesn't render a dead "open the thought record"
+    // link. Remember which worries we cleared so Undo can restore them.
+    const relinkOnUndo = [];
+    state.entries.forEach(e => {
+      if (e.kind === "worry" && e.linkedEntryId === id) {
+        relinkOnUndo.push(e.id);
+        e.linkedEntryId = "";
+      }
+    });
     persist();
     setState({ modal: null });
     toast("Entry deleted", {
@@ -8624,6 +8717,13 @@ function bindModal() {
           );
           if (insertAt === -1) insertAt = state.entries.length;
           state.entries.splice(insertAt, 0, removed);
+          // Restore any worry back-references we cleared on delete.
+          if (relinkOnUndo.length) {
+            const ids = new Set(relinkOnUndo);
+            state.entries.forEach(e => {
+              if (ids.has(e.id) && e.kind === "worry") e.linkedEntryId = removed.id;
+            });
+          }
           persist();
           render();
           toast("Restored");
