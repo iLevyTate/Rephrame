@@ -4100,11 +4100,36 @@ function loadDraft() {
   }
   catch { return null; }
 }
-function saveDraft(d) {
+// Underlying synchronous persistence — called from saveDraft on a 300ms
+// trailing edge, and flushed eagerly on step transitions, modal close,
+// and beforeunload. Keystroke-frequency writes were re-serializing the
+// whole draft on every input event on long-form fields.
+function _saveDraftNow(d) {
   if (hasDraftContent(d)) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
   else localStorage.removeItem(DRAFT_KEY);
 }
-function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+let _saveDraftTimer = null;
+let _pendingDraft = null;
+function saveDraft(d) {
+  _pendingDraft = d;
+  if (_saveDraftTimer !== null) return;
+  _saveDraftTimer = setTimeout(() => {
+    _saveDraftTimer = null;
+    if (_pendingDraft) _saveDraftNow(_pendingDraft);
+    _pendingDraft = null;
+  }, 300);
+}
+function flushDraft() {
+  if (_saveDraftTimer !== null) { clearTimeout(_saveDraftTimer); _saveDraftTimer = null; }
+  if (_pendingDraft) { _saveDraftNow(_pendingDraft); _pendingDraft = null; }
+}
+window.addEventListener("beforeunload", flushDraft);
+function clearDraft() {
+  // Drop any pending debounced write so it can't resurrect cleared data.
+  if (_saveDraftTimer !== null) { clearTimeout(_saveDraftTimer); _saveDraftTimer = null; }
+  _pendingDraft = null;
+  localStorage.removeItem(DRAFT_KEY);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -4379,7 +4404,14 @@ function toast(message, opts) {
   const isError = opts.variant === "error";
   const persistent = !!opts.persist;
   const stack = document.getElementById("toasts");
+  // Errors need an assertive announcement — they interrupt the user's
+  // current task in screen-reader output. Non-error toasts stay polite
+  // (queued behind whatever the SR is currently announcing). Resetting
+  // the attribute on the container before each toast ensures the most
+  // recent toast's urgency is what the AT picks up.
+  if (stack) stack.setAttribute("aria-live", isError ? "assertive" : "polite");
   const el = document.createElement("div");
+  el.setAttribute("role", isError ? "alert" : "status");
   el.className = "toast"
     + (opts.action ? " toast--action" : "")
     + (isError ? " toast--error" : "")
@@ -5011,11 +5043,11 @@ function renderJournal() {
 
     <div class="journal-toolbar">
       <div class="search-box">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="7" cy="7" r="4.5"/>
           <path d="M10.5 10.5l3 3"/>
         </svg>
-        <input type="text" class="search-input" placeholder="Search thoughts, reframes, evidence…" value="${esc(state.search)}" data-action="search">
+        <input type="search" class="search-input" placeholder="Search thoughts, reframes, evidence…" value="${esc(state.search)}" data-action="search" aria-label="Search entries">
       </div>
     </div>
 
@@ -7071,7 +7103,12 @@ function renderReference() {
 function renderModal() {
   const root = document.getElementById("modal-root");
   root.innerHTML = "";
-  if (!state.modal) return;
+  if (!state.modal) {
+    // Modal closed — even by an after-action setState({modal:null}) that
+    // bypassed closeModal() — so release focus back to whatever opened it.
+    _releaseModalFocus();
+    return;
+  }
 
   let inner = "";
   if (state.modal === "export") {
@@ -7258,8 +7295,79 @@ function renderModal() {
       if (!heading.id) heading.id = 'reframe-modal-title';
       modalEl.setAttribute('aria-labelledby', heading.id);
     }
+    // Move focus into the dialog and trap Tab cycling so keyboard users
+    // don't end up tabbing into the now-inert page underneath. We pick
+    // the first natively-focusable input/textarea/select if present
+    // (forms-heavy modals expect that), else the first button.
+    _trapModalFocus(modalEl);
   }
   bindModal();
+}
+
+// Focusable-element selector used by both the focus trap and the
+// initial-focus pick. Excludes [tabindex="-1"] and disabled controls.
+const _FOCUSABLE_SEL = [
+  'a[href]', 'button:not([disabled])', 'input:not([disabled])',
+  'select:not([disabled])', 'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',');
+
+// Remembers the element that opened the modal so we can return focus to
+// it on close. Without this, screen-reader / keyboard users land at the
+// top of the document body after every modal dismissal.
+let _modalOpenerEl = null;
+let _modalKeyHandler = null;
+
+function _focusableIn(root) {
+  return Array.from(root.querySelectorAll(_FOCUSABLE_SEL))
+    .filter(el => el.offsetParent !== null || el === document.activeElement);
+}
+
+function _trapModalFocus(modalEl) {
+  if (_modalKeyHandler) {
+    document.removeEventListener('keydown', _modalKeyHandler, true);
+    _modalKeyHandler = null;
+  }
+  const isFreshOpen = !_modalOpenerEl;
+  if (isFreshOpen) _modalOpenerEl = document.activeElement;
+  // Defer initial focus by one frame so the modal is laid out and any
+  // animation start frame has rendered. Only set initial focus on a
+  // fresh open — re-renders of an already-open modal (state changes
+  // mid-edit) would otherwise yank the user's focus back to the top
+  // of the form on every keystroke.
+  if (isFreshOpen) {
+    requestAnimationFrame(() => {
+      const focusables = _focusableIn(modalEl);
+      const initial = modalEl.querySelector('input, textarea, select') || focusables[0];
+      if (initial) try { initial.focus(); } catch(_) {}
+    });
+  }
+  _modalKeyHandler = (e) => {
+    if (e.key !== 'Tab') return;
+    const focusables = _focusableIn(modalEl);
+    if (focusables.length === 0) { e.preventDefault(); return; }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || !modalEl.contains(active))) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && (active === last || !modalEl.contains(active))) {
+      e.preventDefault(); first.focus();
+    }
+  };
+  document.addEventListener('keydown', _modalKeyHandler, true);
+}
+
+function _releaseModalFocus() {
+  if (_modalKeyHandler) {
+    document.removeEventListener('keydown', _modalKeyHandler, true);
+    _modalKeyHandler = null;
+  }
+  const opener = _modalOpenerEl;
+  _modalOpenerEl = null;
+  if (opener && typeof opener.focus === 'function') {
+    try { opener.focus(); } catch(_) {}
+  }
 }
 
 // Centralized so the same wording is reused across modals, empty state, and
@@ -8306,6 +8414,7 @@ function bindCapture() {
         }
       }
       state.captureStep = step;
+      flushDraft();
       render();
       smoothScrollTo({ top: 0, behavior: "smooth" });
     });
@@ -8319,6 +8428,7 @@ function bindCapture() {
     }
     state.captureStep++;
     saveDraft(state.draft);
+    flushDraft();
     render();
     smoothScrollTo({ top: 0, behavior: "smooth" });
   });
@@ -8326,6 +8436,7 @@ function bindCapture() {
   const prev = document.querySelector('[data-action="prev-step"]');
   if (prev) prev.addEventListener("click", () => {
     state.captureStep--;
+    flushDraft();
     render();
     smoothScrollTo({ top: 0, behavior: "smooth" });
   });
@@ -8400,6 +8511,7 @@ function closeModal() {
   // explicit Cancel button already clears this; doing it here too
   // keeps the state clean for every close path.
   state.pendingModeSwitch = null;
+  _releaseModalFocus();
   const overlay = document.querySelector(".modal-overlay");
   if (!overlay || _prefersReducedMotion()) {
     setState({ modal: null });
@@ -8694,7 +8806,7 @@ function bindModal() {
   });
 
   const md = document.querySelector('[data-action="export-md"]');
-  if (md) md.addEventListener("click", () => {
+  if (md) md.addEventListener("click", async () => {
     // Prepend a short header so the file isn't anonymous and so a reader
     // (often a clinician, the user reviewing on a hard day, or future-self)
     // knows what they're looking at and how to read it.
@@ -8706,9 +8818,20 @@ function bindModal() {
       "Single entries are snapshots of one moment — the work is across many of them.*",
       "",
     ].join("\n");
-    const body = state.entries.length === 0
-      ? "*No entries yet.*"
-      : state.entries.map((e, i) => entryToMd(e, i)).join("\n");
+    // Yield to the event loop every 50 entries so the UI stays responsive
+    // on large journals — entryToMd is non-trivial and a synchronous map
+    // over 500+ entries would jank the modal close + toast animations.
+    let body;
+    if (state.entries.length === 0) {
+      body = "*No entries yet.*";
+    } else {
+      const parts = [];
+      for (let i = 0; i < state.entries.length; i++) {
+        parts.push(entryToMd(state.entries[i], i));
+        if (i > 0 && i % 50 === 0) await new Promise(r => setTimeout(r, 0));
+      }
+      body = parts.join("\n");
+    }
     download(header + "\n" + body, "reframes-" + new Date().toISOString().slice(0, 10) + ".md", "text/markdown");
     setState({ modal: null });
     toast("Markdown exported");
