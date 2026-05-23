@@ -3457,6 +3457,18 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  font-family: inherit;
+  line-height: 1.4;
+}
+button.entry-flag {
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+button.entry-flag:hover { transform: translateY(-1px); }
+button.entry-flag:active { transform: translateY(0); }
+button.entry-flag:focus-visible {
+  outline: 2px solid var(--copper);
+  outline-offset: 2px;
 }
 .flag-quick { background: rgba(184, 85, 44, 0.18); color: var(--copper-deep); border: 1px solid var(--copper-line); }
 .flag-sample { background: var(--paper-3); color: var(--on-paper-mute); border: 1px solid var(--rule-paper); }
@@ -5168,9 +5180,11 @@ function renderThoughtRecordCard(entry, index) {
   const moodDelta = hasMoodDelta ? (after - primaryMood.intensity) : null;
 
   const flagPills = [];
-  if (entry.isQuick) flagPills.push('<span class="entry-flag flag-quick">⚡ Finish this</span>');
+  // Click the ⚡ flag directly to resume the entry — saves the user the
+  // expand-then-find-button dance that was the only previous path.
+  if (entry.isQuick) flagPills.push(`<button type="button" class="entry-flag flag-quick" data-action="finish-quick" data-id="${entry.id}" title="Pick up where you left off">⚡ Finish this</button>`);
   if (entry.isSample) flagPills.push('<span class="entry-flag flag-sample">Sample</span>');
-  if (entry.pivotDone && !entry.outcomeRecorded) flagPills.push('<span class="entry-flag flag-outcome">Step 8 open</span>');
+  if (entry.pivotDone && !entry.outcomeRecorded) flagPills.push(`<button type="button" class="entry-flag flag-outcome" data-action="open-outcome" data-id="${entry.id}" title="Record what happened">Step 8 open</button>`);
 
   return `
     <article class="entry-card ${expanded ? "expanded" : ""} ${entry.isQuick ? "is-quick" : ""} ${entry.isFavorite ? "is-favorite" : ""}" id="entry-${entry.id}">
@@ -7560,7 +7574,14 @@ function bindJournal() {
         // Stamp a timestamp the first time it's marked done so the entry
         // can show "marked done {when}" next to the reflection prompt.
         if (entry.pivotDone && !entry.pivotDoneAt) entry.pivotDoneAt = new Date().toISOString();
-        if (!entry.pivotDone) { entry.pivotDoneAt = ""; entry.pivotReflection = ""; }
+        // Unticking the checkbox clears the done-state but preserves any
+        // reflection text the user already wrote — accidentally untoggling
+        // shouldn't delete a paragraph of "what happened" notes. If they
+        // really want to discard, they can edit the field directly.
+        if (!entry.pivotDone) {
+          entry.pivotDoneAt = "";
+          entry.outcomeRecorded = false;
+        }
         // Keep the entry expanded so the reflection field is immediately visible.
         state.expandedIds.add(entry.id);
         persist();
@@ -7584,16 +7605,28 @@ function bindJournal() {
   });
   // Pivot reflection — save on blur, no explicit save button. Persisting on
   // every keystroke would be noisy; blur is the natural commit boundary.
+  // Any non-empty reflection also marks outcomeRecorded so the "Step 8
+  // open" flag clears — without this, users who write inline still see
+  // the open-step pill until they go through the dedicated outcome page.
   document.querySelectorAll('[data-action="edit-reflection"]').forEach(el => {
     el.addEventListener("click", e => e.stopPropagation());
     el.addEventListener("blur", () => {
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
       const v = el.value;
-      if (entry.pivotReflection !== v) {
-        entry.pivotReflection = v;
-        persist();
-        if (v.trim()) toast("Reflection saved");
+      const changed = entry.pivotReflection !== v;
+      const hasText = !!v.trim();
+      const wasRecorded = entry.outcomeRecorded;
+      if (!changed && wasRecorded === hasText) return;
+      entry.pivotReflection = v;
+      entry.outcomeRecorded = hasText;
+      persist();
+      if (hasText && !wasRecorded) {
+        render();
+        toast("Outcome saved. The loop is closed.");
+      } else if (changed) {
+        if (!hasText && wasRecorded) render();
+        if (hasText) toast("Reflection updated");
       }
     });
   });
@@ -8241,8 +8274,24 @@ function bindCapture() {
   // non-distorted.
   document.querySelectorAll('[data-action="toggle-accurate"]').forEach(btn => {
     btn.addEventListener("click", () => {
-      state.draft.thoughtsAccurate = !state.draft.thoughtsAccurate;
-      if (state.draft.thoughtsAccurate) state.draft.distortions = [];
+      const turningOn = !state.draft.thoughtsAccurate;
+      // Before we drop the distortions list, capture which auto-fill
+      // suggestions came from it. We only clear those Socratic/reframe
+      // fields if they still exactly match the suggestion (meaning the
+      // user never customized them). A user-typed value survives.
+      const formerDistortions = turningOn ? [...(state.draft.distortions || [])] : [];
+      state.draft.thoughtsAccurate = turningOn;
+      if (turningOn) {
+        state.draft.distortions = [];
+        for (const name of formerDistortions) {
+          const def = DISTORTION_DEFAULTS[name];
+          if (!def) continue;
+          if (state.draft.socraticType === def.socratic) state.draft.socraticType = "";
+          if (state.draft.reframeMethod === def.reframe) state.draft.reframeMethod = "";
+          const t = SOCRATIC_TYPES.find(s => s.type === def.socratic);
+          if (t && state.draft.socraticQuestion === t.template) state.draft.socraticQuestion = "";
+        }
+      }
       saveDraft(state.draft);
       render();
     });
