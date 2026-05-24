@@ -1,0 +1,50 @@
+name: Smoke
+
+# Static sanity + a headless Playwright walk of the 7-step thought-record
+# flow. Runs on every PR and on pushes to main. Bot commits (the cache
+# bumper) skip it — they don't touch app logic.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Static checks (syntax + manifest/sw sanity)
+        run: npm run check
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Serve + smoke walk
+        run: |
+          python3 -m http.server 8765 &
+          for i in $(seq 1 20); do curl -sf http://localhost:8765/ >/dev/null && break; sleep 0.5; done
+          SHOTS_DIR=./smoke-shots npm test
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-shots
+          path: smoke-shots/
+          if-no-files-found: ignore

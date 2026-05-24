@@ -1,0 +1,43 @@
+name: Link check
+
+# Weekly reachability check on the docs + app. Crisis-line links, font URLs,
+# and the live-demo badge must keep resolving. Files an issue on failure
+# rather than going red silently.
+on:
+  schedule:
+    - cron: '23 5 * * 1'  # Mondays 05:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: link-check
+  cancel-in-progress: false
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check links
+        id: lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --verbose --no-progress --max-concurrency 4
+            --max-retries 3 --retry-wait-time 5
+            --accept 200,201,202,203,204,206,301,302,304,307,308,429
+            README.md index.html
+          output: ./lychee/out.md
+          fail: false
+
+      - name: Open issue on broken links
+        if: steps.lychee.outputs.exit_code != 0
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: Link check failed
+          content-filepath: ./lychee/out.md
+          labels: broken-links
