@@ -1,0 +1,37 @@
+name: Deploy Pages
+
+# Explicit GitHub Pages deploy on every push to main. Replaces the implicit
+# "deploy from branch" mode.
+#
+# ONE-TIME SETUP: in repo Settings → Pages, switch the source from
+# "Deploy from a branch" to "GitHub Actions". Until that's done this workflow
+# runs green but the live site keeps serving from the branch.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel an in-flight deploy; let queued ones run in order.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4

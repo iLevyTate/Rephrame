@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Action version bumps — grouped into one PR to keep noise down.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(actions)"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The smoke-test toolchain (Playwright).
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps)"
