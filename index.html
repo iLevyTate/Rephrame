@@ -4353,6 +4353,7 @@ function emptyActivity() {
 function emptyWorry() {
   return normalizeEntry({
     kind: "worry",
+    urgency: 5,
     moods: [],
     thoughts: [],
   });
@@ -5428,8 +5429,8 @@ function renderThoughtRecordCard(entry, index) {
             </svg>
           </button>
         </div>
-        <h3 class="entry-card-trigger display ${entry.trigger ? "" : "empty"}">
-          ${entry.trigger ? esc(entry.trigger) : "(no trigger)"}
+        <h3 class="entry-card-trigger display ${entry.trigger || (hot && hot.text) ? "" : "empty"}">
+          ${entry.trigger ? esc(entry.trigger) : (hot && hot.text ? esc(hot.text) : "(no trigger)")}
         </h3>
         <div class="entry-tags-row">
           ${moodLabel ? `
@@ -6968,10 +6969,10 @@ function renderPatterns() {
 
       <div class="pattern-card">
         <div class="pattern-card-head">
-          <span class="pattern-card-title">Total entries</span>
+          <span class="pattern-card-title">Thought records</span>
         </div>
         <div class="pattern-stat-big display">${total}</div>
-        <div class="pattern-stat-label">${activeDays} active ${activeDays === 1 ? "day" : "days"} in last 30</div>
+        <div class="pattern-stat-label">${entries.length} total · ${activeDays} active ${activeDays === 1 ? "day" : "days"} in last 30</div>
       </div>
 
       <div class="pattern-card">
@@ -6998,7 +6999,7 @@ function renderPatterns() {
       <div class="pattern-card span-2 pattern-card-rerate">
         <div class="pattern-card-head">
           <span class="pattern-card-title">Re-rating shift</span>
-          <span class="pattern-card-meta">${rerated.length || 0} of ${total} re-rated</span>
+          <span class="pattern-card-meta">${rerated.length || 0} ${rerated.length === 1 ? "mood" : "moods"} re-rated across ${total} ${total === 1 ? "record" : "records"}</span>
         </div>
         ${avgIntensityDrop === null ? `
           <div class="pattern-stat-label">
@@ -7008,12 +7009,12 @@ function renderPatterns() {
           <div class="rerate-grid">
             <div class="rerate-stat">
               <div class="rerate-stat-num display ${avgIntensityDrop > 0 ? "good" : avgIntensityDrop < 0 ? "bad" : ""}">${avgIntensityDrop > 0 ? "−" : avgIntensityDrop < 0 ? "+" : ""}${Math.abs(avgIntensityDrop)}</div>
-              <div class="rerate-stat-label">avg intensity drop<br><span class="rerate-stat-sub">across ${rerated.length} ${rerated.length === 1 ? "entry" : "entries"}</span></div>
+              <div class="rerate-stat-label">avg intensity drop<br><span class="rerate-stat-sub">across ${rerated.length} re-rated ${rerated.length === 1 ? "mood" : "moods"}</span></div>
             </div>
             ${avgBeliefDrop !== null ? `
               <div class="rerate-stat">
                 <div class="rerate-stat-num display ${avgBeliefDrop > 0 ? "good" : avgBeliefDrop < 0 ? "bad" : ""}">${avgBeliefDrop > 0 ? "−" : avgBeliefDrop < 0 ? "+" : ""}${Math.abs(avgBeliefDrop)}<span class="rerate-stat-suffix">pts</span></div>
-                <div class="rerate-stat-label">avg belief drop<br><span class="rerate-stat-sub">across ${beliefRerated.length} ${beliefRerated.length === 1 ? "entry" : "entries"}</span></div>
+                <div class="rerate-stat-label">avg belief drop<br><span class="rerate-stat-sub">across ${beliefRerated.length} ${beliefRerated.length === 1 ? "record" : "records"}</span></div>
               </div>
             ` : ""}
           </div>
@@ -8299,6 +8300,15 @@ function applyCaptureModeSwitch(kind) {
   render();
 }
 
+function finalizeWorryEntry(entry, now) {
+  if (entry.kind !== "worry") return entry;
+  const out = { ...entry };
+  if (typeof out.urgency !== "number") out.urgency = 5;
+  if (!out.parkedAt) out.parkedAt = now;
+  if (!out.scheduledFor) out.scheduledFor = computeNextWorryWindow();
+  return out;
+}
+
 function bindCapture() {
   // Entry-kind mode switcher: tap a chip to swap state.draft to the
   // empty-template of that kind. Only enabled when not editing — see
@@ -8705,16 +8715,18 @@ function bindCapture() {
     let savedId;
     if (state.editingId) {
       savedId = state.editingId;
-      state.entries = state.entries.map(e => e.id === state.editingId
-        ? { ...state.draft, id: state.editingId, updatedAt: now }
-        : e);
+      let updated = { ...state.draft, id: state.editingId, updatedAt: now };
+      updated = finalizeWorryEntry(updated, now);
+      state.entries = state.entries.map(e => e.id === state.editingId ? updated : e);
       toast("Entry updated");
     } else {
       // Honor a pre-assigned draft.id (used by worry-escalate to set up
       // bidirectional linking before the new entry exists). Otherwise mint
       // a fresh id.
       savedId = state.draft.id || newId();
-      state.entries = [{ ...state.draft, id: savedId, createdAt: clampDate(now) }, ...state.entries];
+      let entry = { ...state.draft, id: savedId, createdAt: clampDate(now) };
+      entry = finalizeWorryEntry(entry, now);
+      state.entries = [entry, ...state.entries];
       toast("Entry saved");
     }
     // Finalize a deferred worry-escalation: now that the thought-record
@@ -8781,6 +8793,9 @@ function closeModal() {
 }
 
 function bindModal() {
+  const modalRoot = document.getElementById("modal-root");
+  const mq = (sel) => modalRoot ? modalRoot.querySelector(sel) : null;
+
   document.querySelectorAll('[data-action="close-modal"]').forEach(el => {
     el.addEventListener("click", e => {
       if (e.currentTarget === e.target || el.tagName === "BUTTON") {
@@ -9036,8 +9051,10 @@ function bindModal() {
     toast("Logged. Compare the predicted vs actual to learn.");
   });
 
-  // Onboarding modal handlers.
-  const loadSample = document.querySelector('[data-action="load-sample"]');
+  // Onboarding modal handlers — scoped to #modal-root so we don't
+  // accidentally bind the journal empty-state "Load an example" button
+  // sitting underneath the welcome dialog.
+  const loadSample = mq('[data-action="load-sample"]');
   if (loadSample) loadSample.addEventListener("click", () => {
     const exists = state.entries.some(e => e.isSample);
     if (!exists) {
@@ -9048,7 +9065,7 @@ function bindModal() {
     setState({ modal: null });
     toast(exists ? "Sample already loaded" : "Sample entry loaded — tap to expand");
   });
-  const onboardBegin = document.querySelector('[data-action="onboard-begin"]');
+  const onboardBegin = mq('[data-action="onboard-begin"]');
   if (onboardBegin) onboardBegin.addEventListener("click", () => {
     localStorage.setItem(ONBOARDED_KEY, "1");
     state.modal = null;
@@ -9057,7 +9074,7 @@ function bindModal() {
     state.captureStep = 1;
     setView("capture");
   });
-  const onboardSkip = document.querySelector('[data-action="onboard-skip"]');
+  const onboardSkip = mq('[data-action="onboard-skip"]');
   if (onboardSkip) onboardSkip.addEventListener("click", () => {
     localStorage.setItem(ONBOARDED_KEY, "1");
     setState({ modal: null });
