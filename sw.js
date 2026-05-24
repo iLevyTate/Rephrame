@@ -10,6 +10,8 @@ const FONT_CACHE = 'reframe-fonts-v1';
 const ASSETS = [
   './',
   './index.html',
+  './styles.css',
+  './app.js',
   './manifest.json',
   './js/pwa.js',
   './icons/icon.svg',
