@@ -3,8 +3,7 @@
 // asset, a malformed manifest) fails in seconds instead of after a browser
 // boot. Runs in CI and locally via `node tests/check-static.mjs`.
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -12,8 +11,10 @@ const problems = [];
 const ok = (m) => console.log('  ok  ' + m);
 const bad = (m) => { problems.push(m); console.log(' FAIL ' + m); };
 
-// 1. Standalone JS files parse.
-for (const f of ['js/pwa.js', 'sw.js']) {
+// 1. Standalone JS files parse. The app logic lives in external app.js
+//    (extracted from index.html); js/pwa.js bootstraps the SW; sw.js is the
+//    worker itself.
+for (const f of ['js/pwa.js', 'sw.js', 'app.js']) {
   try {
     execFileSync(process.execPath, ['--check', path.join(ROOT, f)], { stdio: 'pipe' });
     ok(`${f} parses`);
@@ -22,24 +23,21 @@ for (const f of ['js/pwa.js', 'sw.js']) {
   }
 }
 
-// 2. The inline <script> in index.html parses. Extract the largest inline
-//    (non-src) script block and run it through `node --check`.
+// 2. index.html is a thin shell: it must reference the external CSS + JS and
+//    carry no leftover inline <style>/<script> blocks (the strict script-src
+//    CSP would silently break any inline script that crept back in).
 const html = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const blocks = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
-const inline = blocks.sort((a, b) => b.length - a.length)[0] || '';
-if (!inline.trim()) {
-  bad('No inline <script> found in index.html');
-} else {
-  const tmp = path.join(os.tmpdir(), `rephrame-inline-${process.pid}.js`);
-  writeFileSync(tmp, inline);
-  try {
-    execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' });
-    ok(`index.html inline script parses (${inline.length} bytes)`);
-  } catch (e) {
-    bad(`index.html inline script syntax error:\n${e.stderr?.toString() || e.message}`);
-  } finally {
-    rmSync(tmp, { force: true });
-  }
+if (!/<link[^>]+href=["']styles\.css["']/.test(html)) bad('index.html does not link styles.css');
+else ok('index.html links styles.css');
+if (!/<script[^>]+src=["']app\.js["']/.test(html)) bad('index.html does not load app.js');
+else ok('index.html loads app.js');
+if (/<style[\s>]/i.test(html)) bad('index.html still has an inline <style> block (should be in styles.css)');
+else ok('no inline <style> in index.html');
+const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].filter((m) => m[1].trim());
+if (inlineScripts.length) bad(`index.html has ${inlineScripts.length} inline <script> block(s); strict CSP forbids them`);
+else ok('no inline <script> in index.html (CSP-safe)');
+for (const f of ['styles.css', 'app.js']) {
+  if (!existsSync(path.join(ROOT, f))) bad(`${f} missing on disk`);
 }
 
 // 3. manifest.json is valid JSON with the fields a PWA needs.
