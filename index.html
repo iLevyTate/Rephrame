@@ -8,8 +8,12 @@
      rendered templates carry inline style="..." attributes; the bulk of the
      CSS lives in the external styles.css. data: in img-src allows inline SVG
      icons; blob: in img-src and manifest-src covers the PWA inline manifest
-     path that js/pwa.js uses on file:// launches. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; manifest-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+     path that js/pwa.js uses on file:// launches. The peerjs.com + stun:
+     entries in connect-src are required only for the optional P2P sync
+     feature (js/sync.js): PeerJS brokers the WebRTC handshake over
+     wss://*.peerjs.com and ICE gathering uses public STUN servers. Entry
+     data still flows device-to-device, never through a server. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://*.peerjs.com wss://*.peerjs.com stun: stuns:; manifest-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <!-- Two media-scoped theme-color metas so the browser picks the right
      status-bar / tab-strip color at first paint, before applyTheme()
@@ -117,5 +121,6 @@
 <div id="modal-root"></div>
 
 <script src="app.js"></script>
+<script src="js/sync.js"></script>
 </body>
 </html>

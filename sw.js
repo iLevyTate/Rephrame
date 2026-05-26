@@ -14,6 +14,8 @@ const ASSETS = [
   './app.js',
   './manifest.json',
   './js/pwa.js',
+  './js/sync.js',
+  './js/vendor/peerjs.min.js',
   './icons/icon.svg',
   './icons/icon-192.svg',
   './icons/icon-512.svg',
