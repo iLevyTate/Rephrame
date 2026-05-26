@@ -561,6 +561,11 @@ function clearDraft() {
 // ═══════════════════════════════════════════════════════════════════
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+// Stamp an entry's updatedAt so P2P sync's last-write-wins merge (js/sync.js)
+// can tell which device holds the freshest copy after an in-place mutation
+// (favorite, pivot-done, worry resolution, activity log, etc.). The full
+// edit-save and new-entry paths already set updatedAt/createdAt themselves.
+const touchEntry = e => { if (e) e.updatedAt = new Date().toISOString(); };
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 // Clock-skew guard. A device with the wrong date set could otherwise
@@ -1073,6 +1078,8 @@ function persist() {
   _persistingLocally = true;
   try {
     saveEntries(state.entries);
+    // Push the new state to a paired device, if P2P sync is connected.
+    if (typeof syncBroadcast === "function") syncBroadcast();
   } catch (err) {
     const isQuota = err && (
       err.name === "QuotaExceededError" ||
@@ -3026,6 +3033,7 @@ function bindOutcome() {
       if (bandTarget) bandTarget.textContent = band(parseInt(el.value, 10)).label;
       // In-memory mutation is immediate; persist on the trailing edge so
       // backing out (or a tab close) still preserves the re-rate.
+      touchEntry(entry);
       _schedulePersist();
     });
   });
@@ -3035,6 +3043,7 @@ function bindOutcome() {
     const ref = document.getElementById("outcomeReflection");
     if (ref) entry.pivotReflection = ref.value;
     entry.outcomeRecorded = true;
+    touchEntry(entry);
     clearTimeout(_outcomePersistTimer);
     persist();
     state.outcomeEntryId = null;
@@ -3051,6 +3060,7 @@ function bindOutcome() {
     const ref = document.getElementById("outcomeReflection");
     if (ref && ref.value !== entry.pivotReflection) {
       entry.pivotReflection = ref.value;
+      touchEntry(entry);
     }
     persist();
     state.outcomeEntryId = null;
@@ -3980,8 +3990,13 @@ function renderSettingsModal() {
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">Sync between devices</div>
+      <div id="syncPanel"></div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">About your data</div>
-      <p class="settings-section-help">Nothing here is synced or sent anywhere. To wipe everything, clear site data in your browser settings (or delete and re-add the PWA). Rephrame stores entries under <code class="settings-code">reframe-journal-v1</code> and preferences under <code class="settings-code">reframe-settings-v1</code>.</p>
+      <p class="settings-section-help">Entries live in this browser's localStorage. Peer-to-peer sync (above) sends them directly to a device you pair — nothing is stored on a server. To wipe everything, clear site data in your browser settings (or delete and re-add the PWA). Rephrame stores entries under <code class="settings-code">reframe-journal-v1</code> and preferences under <code class="settings-code">reframe-settings-v1</code>.</p>
     </div>
 
     <div class="modal-actions">
@@ -4168,6 +4183,7 @@ function bindJournal() {
         }
         // Keep the entry expanded so the reflection field is immediately visible.
         state.expandedIds.add(entry.id);
+        touchEntry(entry);
         persist();
         render();
         toast(entry.pivotDone ? "Pivot marked done — add a note on what happened" : "Pivot unmarked");
@@ -4182,6 +4198,7 @@ function bindJournal() {
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
       entry.isFavorite = !entry.isFavorite;
+      touchEntry(entry);
       persist();
       render();
       toast(entry.isFavorite ? "Pinned as a coping card" : "Unpinned");
@@ -4204,6 +4221,7 @@ function bindJournal() {
       if (!changed && wasRecorded === hasText) return;
       entry.pivotReflection = v;
       entry.outcomeRecorded = hasText;
+      touchEntry(entry);
       persist();
       if (hasText && !wasRecorded) {
         render();
@@ -4471,6 +4489,7 @@ function bindJournal() {
       if (!entry) return;
       entry.resolution = "dissolved";
       entry.resolvedAt = new Date().toISOString();
+      touchEntry(entry);
       persist();
       render();
       toast("Worry let go.");
@@ -4485,6 +4504,7 @@ function bindJournal() {
       // (resolution stays null) so it reappears in the next worry-window
       // banner — that's the whole point of postponement.
       entry.scheduledFor = computeNextWorryWindow();
+      touchEntry(entry);
       persist();
       render();
       toast("Postponed to the next worry window.");
@@ -4991,6 +5011,7 @@ function bindCapture() {
         w.resolution = "escalated";
         w.resolvedAt = now;
         w.linkedEntryId = savedId;
+        touchEntry(w);
       } else if (!w) {
         toast("Original worry was deleted — thought record saved separately.");
       }
@@ -5046,6 +5067,11 @@ function closeModal() {
 function bindModal() {
   const modalRoot = document.getElementById("modal-root");
   const mq = (sel) => modalRoot ? modalRoot.querySelector(sel) : null;
+
+  // Populate the P2P sync panel inside the Settings modal. renderSyncPanel
+  // (js/sync.js) builds its own markup and wires its own listeners against
+  // the live sync state, so it survives Rephrame's full-modal re-renders.
+  if (state.modal === "settings" && typeof renderSyncPanel === "function") renderSyncPanel();
 
   document.querySelectorAll('[data-action="close-modal"]').forEach(el => {
     el.addEventListener("click", e => {
@@ -5295,6 +5321,7 @@ function bindModal() {
     entry.actualM = d.actualM;
     entry.activityNotes = d.notes;
     entry.completedAt = new Date().toISOString();
+    touchEntry(entry);
     persist();
     state.logActivityDraft = null;
     state.expandedIds.add(entry.id);
@@ -5396,6 +5423,9 @@ function bindModal() {
         e.linkedEntryId = "";
       }
     });
+    // Record a deletion tombstone so a paired device can't resurrect this
+    // entry on the next P2P merge.
+    if (typeof syncRecordEntryDeletion === "function") syncRecordEntryDeletion(id);
     persist();
     setState({ modal: null });
     toast("Entry deleted", {
@@ -5415,6 +5445,9 @@ function bindModal() {
           );
           if (insertAt === -1) insertAt = state.entries.length;
           state.entries.splice(insertAt, 0, removed);
+          // Clear the deletion tombstone so the restored entry survives the
+          // next P2P merge instead of being re-deleted by its own tombstone.
+          if (typeof syncClearEntryDeletion === "function") syncClearEntryDeletion(removed.id);
           // Restore any worry back-references we cleared on delete.
           if (relinkOnUndo.length) {
             const ids = new Set(relinkOnUndo);
