@@ -3771,9 +3771,9 @@ const DISTORTIONS = [
   { name: "Control Fallacy (internal)", desc: "Overresponsibility.", cues: '"it\'s all on me to fix everything"' },
 ];
 
-// Default Socratic type + reframe method per distortion. Lets step 3
-// (the distortion picker) seed steps 4 and 5 automatically so a first-
-// time user isn't asked to map jargon-to-jargon mid-flow. The pairings
+// Default Socratic type + reframe method per distortion. Lets step 4 (Distortion)
+// seed Challenge (step 3) and Reframe (step 5) so a first-time user isn't asked
+// to map jargon-to-jargon mid-flow. The pairings
 // come from the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS;
 // this constant just encodes them as a lookup so the picker handler
 // can apply them. Keys must exactly match a DISTORTIONS[].name; values
@@ -4225,6 +4225,11 @@ function normalizeEntry(e) {
       out.thoughts.push(normalizeThought({ isHot: true }));
     }
   }
+  if (kind === "activity" && !out.plannedFor) {
+    const t = new Date(Date.now() + 60 * 60 * 1000);
+    t.setSeconds(0, 0);
+    out.plannedFor = t.toISOString().slice(0, 16);
+  }
   return out;
 }
 
@@ -4257,6 +4262,96 @@ function normalizeThought(t) {
 function hotThought(entry) {
   const list = (entry && entry.thoughts) || [];
   return list.find(t => t.isHot) || list[0] || null;
+}
+
+/** Values for `[thought]` / `[person]` / etc. inside question + reframe templates. */
+function templatePlaceholderContext(d) {
+  const hot = hotThought(d);
+  const thought = ((hot && (hot.text || "").trim()) ||
+    ((d.thoughts || []).map(t => (t.text || "").trim()).filter(Boolean)[0]) ||
+    (d.trigger || "").trim() ||
+    "what I'm telling myself").trim();
+  const trigger = ((d.trigger || "").trim());
+
+  const trig = trigger;
+  let person = "";
+  const mTrig = trig.match(/^([\w'-]+(?:\s+[\w'-]+){0,2})\s+(?:said|says|told|thought|thinks)\b/i);
+  if (mTrig) person = (mTrig[1] || "").trim();
+  if (!person) person = "they/them";
+
+  const snippet = trigger || thought;
+  const worstCase = thought;
+  const fearedOutcome = thought;
+  return {
+    thought,
+    person,
+    worstCase,
+    fearedOutcome,
+    snippet: snippet.length > 120 ? snippet.slice(0, 117) + "…" : snippet,
+  };
+}
+
+/** Replace `[thought]` / `[person]` / `[worst case]` / `[feared outcome]`; leave `[X]` for users. */
+function applyTemplate(template, d) {
+  if (!template || typeof template !== "string") return "";
+  const { thought, person, worstCase, fearedOutcome } = templatePlaceholderContext(d);
+  return template
+    .replace(/\[thought\]/gi, thought)
+    .replace(/\[person\]/gi, person)
+    .replace(/\[worst case\]/gi, worstCase)
+    .replace(/\[feared\s*outcome\]/gi, fearedOutcome);
+
+}
+
+/**
+ * Seeds Socratic/reframe from DISTORTION_DEFAULTS[primary].
+ * Empty-only so user text is never overwritten. Returns true if any field changed.
+ */
+function seedDraftFromPrimaryDistortion(d) {
+  const primary = (d.distortions || [])[0];
+  if (!primary) return false;
+  const defaults = DISTORTION_DEFAULTS[primary];
+  if (!defaults) return false;
+  let changed = false;
+  if (!d.socraticType) {
+    d.socraticType = defaults.socratic;
+    changed = true;
+  }
+  if (!d.reframeMethod) {
+    d.reframeMethod = defaults.reframe;
+    changed = true;
+  }
+  if (!(d.socraticQuestion || "").trim()) {
+    const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
+    if (t) {
+      d.socraticQuestion = applyTemplate(t.template, d);
+      changed = true;
+    }
+  }
+  if (!(d.newThought || "").trim()) {
+    const r = REFRAME_METHODS.find(m => m.method === defaults.reframe);
+    if (r && r.template) {
+      d.newThought = applyTemplate(r.template, d);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** True when the drafted Socratic line still matches the built-in template for the selected type (context-aware). */
+function draftedSocraticMatchesBuiltInTemplate(d) {
+  if (!d || !d.socraticType || !(d.socraticQuestion || "").trim()) return false;
+  const t = SOCRATIC_TYPES.find(s => s.type === d.socraticType);
+  if (!t || !t.template) return false;
+  return applyTemplate(t.template, d).trim() === String(d.socraticQuestion).trim();
+}
+
+/** True when newThought matches the selected method's template (context-aware). */
+function draftedNewThoughtMatchesBuiltInTemplate(d) {
+  if (!d || !d.reframeMethod || !(d.newThought || "").trim()) return false;
+  const r = REFRAME_METHODS.find(m => m.method === d.reframeMethod);
+  if (!r || !r.template) return false;
+  return applyTemplate(r.template, d).trim() === String(d.newThought).trim();
 }
 
 function loadEntries() {
@@ -4343,10 +4438,13 @@ function emptyFreeform() {
 }
 
 function emptyActivity() {
+  const t = new Date(Date.now() + 60 * 60 * 1000);
+  t.setSeconds(0, 0);
   return normalizeEntry({
     kind: "activity",
     moods: [],
     thoughts: [],
+    plannedFor: t.toISOString().slice(0, 16),
   });
 }
 
@@ -5622,9 +5720,14 @@ function renderEntryDetails(entry) {
           </button>
         </div>
       ` : ""}
-      ${thoughts.length ? `
-        <div class="detail-row">
-          <div class="detail-label">1 · Automatic Thoughts</div>
+      <div class="detail-row">
+        <div class="detail-label">1 · Trigger</div>
+        <p class="detail-text">${entry.trigger ? esc(entry.trigger) : "—"}</p>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">2 · Initial reaction</div>
+        ${thoughts.length ? `
+          <div class="detail-label" style="font-size: 13px; margin-bottom: 6px; opacity: 0.85;">Automatic thoughts</div>
           <ol class="thought-list">
             ${thoughts.map(t => `
               <li class="thought-list-item ${t.isHot ? "is-hot" : ""}">
@@ -5638,22 +5741,18 @@ function renderEntryDetails(entry) {
               </li>
             `).join("")}
           </ol>
-        </div>
-      ` : ""}
-      ${moodArc ? `
-        <div class="detail-row">
-          <div class="detail-label">2 · Moods</div>
+        ` : `<p class="detail-text muted">—</p>`}
+        ${moodArc ? `
+          <div class="detail-label" style="font-size: 13px; margin: 14px 0 6px; opacity: 0.85;">Moods</div>
           <div class="mood-arc-list">${moodArc}</div>
-        </div>
-      ` : ""}
-      ${entry.bodyCheck ? `
-        <div class="detail-row">
-          <div class="detail-label">2 · Body Check</div>
+        ` : ""}
+        ${entry.bodyCheck ? `
+          <div class="detail-label" style="font-size: 13px; margin: 14px 0 6px; opacity: 0.85;">Body check</div>
           <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(inferred from speech)</span>` : ""}</p>
-        </div>
-      ` : ""}
+        ` : ""}
+      </div>
       <div class="detail-row">
-        <div class="detail-label">3 · Evidence</div>
+        <div class="detail-label">3 · Challenge (evidence + Socratic)</div>
         <div class="evidence-split">
           <div>
             <div class="detail-label" style="margin-bottom: 4px;">For</div>
@@ -5666,14 +5765,17 @@ function renderEntryDetails(entry) {
         </div>
         ${entry.socraticQuestion ? `
           <div class="socratic-quote">
-            <div class="detail-label" style="color: var(--copper-deep); margin-bottom: 2px;">Socratic${entry.socraticType ? " · " + esc(entry.socraticType) : ""}</div>
+            <div class="detail-label" style="color: var(--copper-deep); margin-bottom: 2px;">
+              Socratic${entry.socraticType ? " · " + esc(entry.socraticType) : ""}
+              ${draftedSocraticMatchesBuiltInTemplate(entry) ? ` <span class="suggested-pill" title="Still matches the app starter — customize anytime">Starter text</span>` : ""}
+            </div>
             <p class="detail-text italic">"${esc(entry.socraticQuestion)}"</p>
           </div>
         ` : ""}
       </div>
       ${entry.thoughtsAccurate ? `
         <div class="detail-row">
-          <div class="detail-label">4 · Distortions</div>
+          <div class="detail-label">4 · Distortion</div>
           <p class="detail-text"><span class="accurate-detail">Marked as accurate, not distorted — these thoughts feel true to you, and the rest of the entry holds them rather than arguing with them.</span></p>
         </div>
       ` : entry.distortions.length || entry.distortionNote ? `
@@ -5684,8 +5786,11 @@ function renderEntryDetails(entry) {
         </div>
       ` : ""}
       <div class="detail-row">
-        <div class="detail-label">5 · Reframe${entry.reframeMethod ? " · " + esc(entry.reframeMethod) : ""}</div>
-        <p class="detail-text italic">"${esc(entry.newThought)}"</p>
+        <div class="detail-label">
+          5 · Reframe${entry.reframeMethod ? " · " + esc(entry.reframeMethod) : ""}
+          ${draftedNewThoughtMatchesBuiltInTemplate(entry) ? ` <span class="suggested-pill" title="Still matches the app starter — customize anytime">Starter text</span>` : ""}
+        </div>
+        <p class="detail-text italic">${entry.newThought ? `"${esc(entry.newThought)}"` : "—"}</p>
         ${typeof entry.newThoughtBelief === "number" ? `<p class="detail-text" style="margin-top: 4px; color: var(--on-paper-mute);">Belief in this thought: <strong>${entry.newThoughtBelief}%</strong></p>` : ""}
       </div>
       <div class="detail-row entry-pivot">
@@ -6017,16 +6122,6 @@ function renderFreeformCapture(d) {
 // Logged completion lives in a separate modal (renderLogActivityModal).
 function renderActivityCapture(d) {
   const cats = ACTIVITY_CATEGORIES;
-  // Default plannedFor to "today, 1 hour from now" if blank. We seed it into
-  // the draft (not just the rendered value) so the canSave check below and
-  // the data-field handler agree — otherwise the input shows a time but Save
-  // stays disabled until the user manually touches the field.
-  if (!d.plannedFor) {
-    const t = new Date(Date.now() + 60 * 60 * 1000);
-    t.setSeconds(0, 0);
-    d.plannedFor = t.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM for datetime-local
-    saveDraft(d);
-  }
   const canSave = (d.body || "").trim().length > 0 && !!d.category && !!d.plannedFor;
   return `
     <div class="capture-shell">
@@ -6392,8 +6487,9 @@ function renderCaptureStep(step, d) {
           Socratic question type
           ${(() => {
             const primary = (d.distortions || [])[0];
+            const hasPick = ((d.distortions || []).length > 0);
             const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
-            return (sugg && d.socraticType === sugg.socratic)
+            return (hasPick && sugg && d.socraticType === sugg.socratic)
               ? `<span class="suggested-pill" title="Auto-selected based on the distortion you picked">Suggested for ${esc(primary)}</span>`
               : "";
           })()}
@@ -6406,7 +6502,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">Your Socratic question</label>
-        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc((SOCRATIC_TYPES.find(s => s.type === d.socraticType) || {}).template || "Pick a type above and a starting question will fill in — then make it your own.")}">${esc(d.socraticQuestion)}</textarea>
+        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc((() => { const st = SOCRATIC_TYPES.find(s => s.type === d.socraticType); return (st && st.template) ? applyTemplate(st.template, d) : "Pick a type above and a starting question will fill in — then make it your own."; })())}">${esc(d.socraticQuestion)}</textarea>
         <p class="field-help-paper" style="margin-top: 8px;">Picking a type above pre-fills a starting question — feel free to rewrite it in your own words. The point is to <em>genuinely consider</em> the answer, so the wording has to be one you can take seriously.</p>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All question types</summary>
@@ -6447,8 +6543,9 @@ function renderCaptureStep(step, d) {
           ${d.thoughtsAccurate ? "Method (optional)" : "Method"}
           ${(() => {
             const primary = (d.distortions || [])[0];
+            const hasPick = ((d.distortions || []).length > 0);
             const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
-            return (sugg && d.reframeMethod === sugg.reframe)
+            return (hasPick && sugg && d.reframeMethod === sugg.reframe)
               ? `<span class="suggested-pill" title="Auto-selected based on the distortion you picked">Suggested for ${esc(primary)}</span>`
               : "";
           })()}
@@ -6461,7 +6558,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "New Thought"}</label>
-        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : ((REFRAME_METHODS.find(r => r.method === d.reframeMethod) || {}).template || "Pick a method above and a starter thought will fill in — then make it your own."))}">${esc(d.newThought)}</textarea>
+        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (() => { const rm = REFRAME_METHODS.find(r => r.method === d.reframeMethod); return (rm && rm.template) ? applyTemplate(rm.template, d) : "Pick a method above and a starter thought will fill in — then make it your own."; })())}">${esc(d.newThought)}</textarea>
         <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.`}</div>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All reframe methods</summary>
@@ -6496,7 +6593,7 @@ function renderCaptureStep(step, d) {
           </div>
         ` : ""}
 
-        ${(d.newThought || "").trim() || typeof d.newThoughtBelief === "number" ? `
+        ${(d.reframeMethod || "").trim() || (d.newThought || "").trim() || typeof d.newThoughtBelief === "number" ? `
           <label class="field-label-paper" style="margin-top: 18px;">Belief in the new thought</label>
           <div class="belief-control">
             <div class="belief-head">
@@ -6583,7 +6680,7 @@ function renderReview(d) {
 
     <div class="review-card">
       <div class="review-card-head">
-        <span class="review-card-num">3 · Challenge</span>
+        <span class="review-card-num">3 · Challenge${draftedSocraticMatchesBuiltInTemplate(d) && d.socraticQuestion ? ` <span class="suggested-pill" title="Still matches the template for this question type — edit if you like">Starter text</span>` : ""}</span>
         <button class="review-edit-btn" data-action="goto-step" data-step="3">Edit</button>
       </div>
       <div class="review-card-content">
@@ -6609,7 +6706,7 @@ function renderReview(d) {
 
     <div class="review-card">
       <div class="review-card-head">
-        <span class="review-card-num">5 · Reframe${d.reframeMethod ? " · " + esc(d.reframeMethod) : ""}</span>
+        <span class="review-card-num">5 · Reframe${d.reframeMethod ? " · " + esc(d.reframeMethod) : ""}${draftedNewThoughtMatchesBuiltInTemplate(d) ? ` <span class="suggested-pill" title="Still matches the template for this method — edit if you like">Starter text</span>` : ""}</span>
         <button class="review-edit-btn" data-action="goto-step" data-step="5">Edit</button>
       </div>
       <div class="review-card-content italic">"${d.newThought ? esc(d.newThought) : '<span class="empty">missing</span>'}"</div>
@@ -6814,7 +6911,8 @@ function renderPatterns() {
   // Free-form/activity/worry have empty/undefined fields for those stats,
   // so including them silently inflates denominators. We keep `entries` for
   // the activity grid since any kind of entry counts as "showed up today."
-  const thoughtRecords = entries.filter(e => e.kind === "thought-record");
+  const quickThoughtSkips = entries.filter(e => e.kind === "thought-record" && e.isQuick).length;
+  const thoughtRecords = entries.filter(e => e.kind === "thought-record" && !e.isQuick);
   if (entries.length === 0) {
     return `
       <div class="page-header">
@@ -6972,7 +7070,7 @@ function renderPatterns() {
           <span class="pattern-card-title">Thought records</span>
         </div>
         <div class="pattern-stat-big display">${total}</div>
-        <div class="pattern-stat-label">${entries.length} total · ${activeDays} active ${activeDays === 1 ? "day" : "days"} in last 30</div>
+        <div class="pattern-stat-label">${entries.length} total · ${activeDays} active ${activeDays === 1 ? "day" : "days"} in last 30${quickThoughtSkips ? ` · ${quickThoughtSkips} quick ${quickThoughtSkips === 1 ? "capture" : "captures"} excluded from these stats` : ""}</div>
       </div>
 
       <div class="pattern-card">
@@ -7144,7 +7242,7 @@ function renderReference() {
     <div class="page-header">
       <div class="page-eyebrow">In-app handbook</div>
       <h1 class="page-title display">Reference</h1>
-      <p class="page-sub">The cognitive distortions, emotion families, and reframing methods that drive the six-step workflow. Browseable anytime, not just while capturing.</p>
+      <p class="page-sub">The cognitive distortions, emotion families, and reframing methods that drive the 7-step capture flow (plus Step 8 outcome). Browseable anytime, not only while capturing.</p>
     </div>
 
     <div class="ref-section ref-section--scope">
@@ -7302,6 +7400,7 @@ function renderReference() {
         <div class="ref-item">
           <div class="ref-item-name">${esc(r.method)}</div>
           <div class="ref-item-desc"><strong>When:</strong> ${esc(r.when)}. ${esc(r.does)}.</div>
+          ${r.template ? `<div class="ref-item-template">"${esc(r.template)}"</div>` : ""}
         </div>
       `).join("")}
       <div class="ref-pairs" style="margin-top: 20px;">
@@ -8171,7 +8270,8 @@ function bindJournal() {
     el.addEventListener("click", () => setState({ modal: "import" }));
   });
   // "Finish this entry" picks up a quick-capture row and drops the user into
-  // the full 7-step flow at Step 1 with the thought pre-filled at Step 2.
+  // the full 7-step flow. Trigger is seeded from the hot thought when bare;
+  // if thoughts already exist, land on Step 2 (Initial Reaction).
   document.querySelectorAll('[data-action="finish-quick"]').forEach(el => {
     el.addEventListener("click", e => {
       e.stopPropagation();
@@ -8180,7 +8280,12 @@ function bindJournal() {
       state.draft = { ...entry };
       state.editingId = entry.id;
       state.draft.isQuick = false;
-      state.captureStep = 1;
+      const h = hotThought(state.draft);
+      if (!(state.draft.trigger || "").trim() && h && (h.text || "").trim()) {
+        state.draft.trigger = String(h.text).slice(0, 500);
+      }
+      const hasThoughtBody = (state.draft.thoughts || []).some(t => (t.text || "").trim().length > 0);
+      state.captureStep = hasThoughtBody ? 2 : 1;
       setView("capture");
     });
   });
@@ -8255,7 +8360,8 @@ function bindJournal() {
       const newEntryId = newId();
       const draft = emptyEntry();
       draft.id = newEntryId;
-      draft.trigger = "From a parked worry";
+      const w = ((entry.worryText || "").trim());
+      draft.trigger = w.length ? ("Worry: " + (w.length > 400 ? w.slice(0, 397) + "…" : w)) : "Worry (from parked worry)";
       draft.thoughts = [normalizeThought({ text: entry.worryText, isHot: true })];
       draft.linkedEntryId = entry.id;
       state.draft = draft;
@@ -8350,7 +8456,44 @@ function bindCapture() {
       else if (el.type === "range") v = parseInt(el.value, 10);
       else if (el.type === "number") v = parseInt(el.value, 10);
       else v = el.value;
-      state.draft[field] = v;
+
+      // Socratic type + reframe method: swapping the dropdown updates the help
+      // text ("when" / "does") on render, and replaces the prefilled textarea
+      // whenever the box is empty OR still exactly matches the *previous*
+      // selection's contextual template — customized wording is never smashed.
+      if (field === "socraticType") {
+        const prevType = state.draft.socraticType;
+        state.draft.socraticType = v;
+        const qTrim = String(state.draft.socraticQuestion || "").trim();
+        const prevMeta = prevType ? SOCRATIC_TYPES.find(s => s.type === prevType) : null;
+        const stillPrevStarter =
+          !!(prevMeta && prevMeta.template && applyTemplate(prevMeta.template, state.draft).trim() === qTrim);
+        if (!v) {
+          if (!qTrim || stillPrevStarter) state.draft.socraticQuestion = "";
+        }
+        else if (!qTrim || stillPrevStarter) {
+          const tNew = SOCRATIC_TYPES.find(s => s.type === v);
+          if (tNew && tNew.template) state.draft.socraticQuestion = applyTemplate(tNew.template, state.draft);
+        }
+      }
+      else if (field === "reframeMethod") {
+        const prevMethod = state.draft.reframeMethod;
+        state.draft.reframeMethod = v;
+        const ntTrim = String(state.draft.newThought || "").trim();
+        const prevMeta = prevMethod ? REFRAME_METHODS.find(r => r.method === prevMethod) : null;
+        const stillPrevStarter =
+          !!(prevMeta && prevMeta.template && applyTemplate(prevMeta.template, state.draft).trim() === ntTrim);
+        if (!v) {
+          if (!ntTrim || stillPrevStarter) state.draft.newThought = "";
+        }
+        else if (!ntTrim || stillPrevStarter) {
+          const rNew = REFRAME_METHODS.find(r => r.method === v);
+          if (rNew && rNew.template) state.draft.newThought = applyTemplate(rNew.template, state.draft);
+        }
+      }
+      else {
+        state.draft[field] = v;
+      }
       saveDraft(state.draft);
 
       // Inline-update live readouts for the new sliders so we don't
@@ -8366,24 +8509,6 @@ function bindCapture() {
         if (node) node.textContent = String(v);
       }
 
-      // When the user picks a Socratic type, fill the question with that
-      // type's template if they haven't typed one yet. Same for the reframe
-      // method: seed newThought with a starter the user can rewrite. Empty-
-      // only — never overwrite anything the user has put in themselves.
-      if (field === "socraticType") {
-        if (!(state.draft.socraticQuestion || "").trim()) {
-          const t = SOCRATIC_TYPES.find(s => s.type === v);
-          if (t) state.draft.socraticQuestion = t.template;
-        }
-        saveDraft(state.draft);
-      }
-      if (field === "reframeMethod") {
-        if (!(state.draft.newThought || "").trim()) {
-          const r = REFRAME_METHODS.find(m => m.method === v);
-          if (r && r.template) state.draft.newThought = r.template;
-        }
-        saveDraft(state.draft);
-      }
       if (["socraticType", "reframeMethod"].includes(field)) render();
 
       // Next-step button reflects validity in the structured flow only.
@@ -8452,7 +8577,7 @@ function bindCapture() {
       (state.draft.thoughts || []).forEach(t => { t.isHot = (t.id === id); });
       saveDraft(state.draft);
       // No render — the browser already moved the radio's checked
-      // state. Steps 4 and 5 (which derive the hot-thought card from
+      // state. Steps 3 and 5 (which derive the hot-thought card from
       // state.draft via hotThought()) aren't on-screen during step 2;
       // they'll render fresh when the user advances. Avoids a step-2
       // view flash on every radio change.
@@ -8599,36 +8724,24 @@ function bindCapture() {
     btn.addEventListener("click", () => {
       const name = btn.dataset.name;
       const prev = state.draft.distortions || [];
+      const prevPrimary = prev[0] || "";
       const has = prev.includes(name);
       const next = has ? prev.filter(d => d !== name) : [...prev, name];
       state.draft.distortions = next;
+      const nextPrimary = (next[0] || "");
+      const primarySwappedOrSet = !!(nextPrimary && nextPrimary !== prevPrimary);
 
-      // First-pick auto-fill: when the user goes from zero distortions
-      // to one, seed step 4 (Socratic type + question) and step 5
-      // (reframe method) from DISTORTION_DEFAULTS so a beginner doesn't
-      // have to map jargon-to-jargon mid-flow. Empty-only — never
-      // overwrite a value the user has already typed or picked.
-      const justAdded = !has && next.length === 1 && prev.length === 0;
-      if (justAdded) {
-        const defaults = DISTORTION_DEFAULTS[name];
-        if (defaults) {
-          if (!state.draft.socraticType)  state.draft.socraticType  = defaults.socratic;
-          if (!state.draft.reframeMethod) state.draft.reframeMethod = defaults.reframe;
-          if (!(state.draft.socraticQuestion || "").trim()) {
-            const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
-            if (t) state.draft.socraticQuestion = t.template;
-          }
-          if (!(state.draft.newThought || "").trim()) {
-            const r = REFRAME_METHODS.find(m => m.method === defaults.reframe);
-            if (r && r.template) state.draft.newThought = r.template;
-          }
+      if (primarySwappedOrSet) {
+        const seeded = seedDraftFromPrimaryDistortion(state.draft);
+        if (seeded && state.captureStep > 3) {
+          toast("Starters filled in for Steps 3 and 5 where they were empty — glance back at Challenge and Reframe.");
         }
       }
       saveDraft(state.draft);
       // No full render — just flip the chip's active class and patch the
-      // auto-suggest footnote in place. Steps 4/5 aren't on-screen yet,
-      // so their dropdowns + "Suggested for X" pills will render fresh
-      // from state.draft when the user advances. Avoids the per-click
+      // auto-suggest footnote in place. Challenge / Reframe aren't visible on
+      // the Distortion step; their dropdowns and "Suggested for X" pills render
+      // fresh from state.draft when the user advances. Avoids the per-click
       // flash that a full re-render was producing.
       btn.classList.toggle("active");
       _updateAutoSuggestFootnote();
@@ -8656,9 +8769,9 @@ function bindCapture() {
           if (state.draft.socraticType === def.socratic) state.draft.socraticType = "";
           if (state.draft.reframeMethod === def.reframe) state.draft.reframeMethod = "";
           const t = SOCRATIC_TYPES.find(s => s.type === def.socratic);
-          if (t && state.draft.socraticQuestion === t.template) state.draft.socraticQuestion = "";
+          if (t && t.template && String(state.draft.socraticQuestion || "").trim() === applyTemplate(t.template, state.draft).trim()) state.draft.socraticQuestion = "";
           const r = REFRAME_METHODS.find(m => m.method === def.reframe);
-          if (r && r.template && state.draft.newThought === r.template) state.draft.newThought = "";
+          if (r && r.template && String(state.draft.newThought || "").trim() === applyTemplate(r.template, state.draft).trim()) state.draft.newThought = "";
         }
       }
       saveDraft(state.draft);
@@ -8688,11 +8801,11 @@ function bindCapture() {
     // the chosen type's template into the saved entry.
     if (state.captureStep === 3 && state.draft.socraticType && !state.draft.socraticQuestion.trim()) {
       const t = SOCRATIC_TYPES.find(s => s.type === state.draft.socraticType);
-      if (t) state.draft.socraticQuestion = t.template;
+      if (t && t.template) state.draft.socraticQuestion = applyTemplate(t.template, state.draft);
     }
     if (state.captureStep === 5 && state.draft.reframeMethod && !(state.draft.newThought || "").trim()) {
       const r = REFRAME_METHODS.find(m => m.method === state.draft.reframeMethod);
-      if (r && r.template) state.draft.newThought = r.template;
+      if (r && r.template) state.draft.newThought = applyTemplate(r.template, state.draft);
     }
     state.captureStep++;
     saveDraft(state.draft);
