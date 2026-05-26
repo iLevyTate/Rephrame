@@ -314,19 +314,33 @@ function syncRejectInbound() {
 
 function _wireConn(conn) {
   _conn = conn;
+  // Guarantee a one-time reply so the state exchange is bidirectional even
+  // when one side's "open" fired before we wired the connection.
+  let _stateReplied = false;
 
-  conn.on("open", () => {
+  const onOpen = () => {
     _setSyncStatus("connected");
     if (_reconnectTimerId) { clearTimeout(_reconnectTimerId); _reconnectTimerId = null; }
     _reconnectAttempt = 0;
     try { conn.send({ type: "state", payload: _packState() }); }
     catch (e) { console.warn("[sync] send state", e); }
     try { localStorage.setItem(SYNC_ROOM_KEY, _idToCode(conn.peer)); } catch { /* noop */ }
-  });
+  };
 
   conn.on("data", (msg) => {
     if (!msg || !msg.type) return;
-    if (msg.type === "state" || msg.type === "patch") {
+    if (msg.type === "state") {
+      _mergeState(msg.payload);
+      // Reply with our own state once. On the device that taps "Accept", the
+      // channel has usually already opened while the consent banner sat there,
+      // so onOpen ran (or didn't) at a different time — replying here makes the
+      // first full exchange reliable in either ordering.
+      if (!_stateReplied) {
+        _stateReplied = true;
+        try { conn.send({ type: "state-reply", payload: _packState() }); }
+        catch (e) { console.warn("[sync] send state-reply", e); }
+      }
+    } else if (msg.type === "state-reply" || msg.type === "patch") {
       _mergeState(msg.payload);
     } else if (msg.type === "ping") {
       try { conn.send({ type: "pong" }); } catch { /* noop */ }
@@ -346,6 +360,12 @@ function _wireConn(conn) {
     _setSyncStatus("error", _friendlySyncError(err));
     if (_lastConnectCode) _scheduleSyncReconnect();
   });
+
+  // The accepting side often wires the connection only after the user taps
+  // "Accept", by which point PeerJS has already fired (and won't re-fire)
+  // "open". Detect that and run onOpen now so our state is still sent.
+  if (conn.open) onOpen();
+  else conn.on("open", onOpen);
 }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
