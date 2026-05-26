@@ -3697,18 +3697,7 @@ function renderModal() {
           <input type="checkbox" id="quickVentOnly" ${q.ventOnly ? "checked" : ""}>
           <span>Just venting — don't follow up. Sometimes naming it is enough.</span>
         </label>
-        ${q.intensity >= 80 ? `
-          <div class="grounding-note grounding-note--modal" role="note">
-            <div class="grounding-note-eyebrow">At this intensity…</div>
-            <div class="grounding-note-body">
-              <p>Above 80 is a lot to sit with. Before — or instead of — writing more, try slowing the breath out (4-second in, 6-second out) for a minute, or name 5 things you can see. ${'<button class="link-button" data-action="open-safety">Crisis support is here</button>'} if you need it.</p>
-            </div>
-          </div>
-        ` : `
-          <p class="modal-sub" style="margin-top: 16px; font-size: 13px;">
-            ${SAFETY_LINK_INLINE}
-          </p>
-        `}
+        <div id="quickGroundingSlot">${quickGroundingHTML(q.intensity)}</div>
       </div>
       <div class="modal-actions">
         <button class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
@@ -3852,6 +3841,25 @@ const SAFETY_LINK_INLINE =
   'Rephrame is a journaling tool, not a substitute for therapy or crisis care. ' +
   'In the US, call or text <strong>988</strong> (Suicide &amp; Crisis Lifeline) or text <strong>HOME</strong> to <strong>741741</strong> (Crisis Text Line). ' +
   '<button class="link-button" data-action="open-safety">See more crisis resources →</button>';
+
+// Grounding prompt shown inside the quick-capture modal once intensity crosses
+// 80. Kept as a standalone helper so the slider handler can swap just this slot
+// in place rather than re-rendering the whole modal (which strobed the screen
+// and dropped the slider's focus on every threshold crossing).
+function quickGroundingHTML(intensity) {
+  return intensity >= 80 ? `
+    <div class="grounding-note grounding-note--modal" role="note">
+      <div class="grounding-note-eyebrow">At this intensity…</div>
+      <div class="grounding-note-body">
+        <p>Above 80 is a lot to sit with. Before — or instead of — writing more, try slowing the breath out (4-second in, 6-second out) for a minute, or name 5 things you can see. ${'<button class="link-button" data-action="open-safety">Crisis support is here</button>'} if you need it.</p>
+      </div>
+    </div>
+  ` : `
+    <p class="modal-sub" style="margin-top: 16px; font-size: 13px;">
+      ${SAFETY_LINK_INLINE}
+    </p>
+  `;
+}
 
 function renderSettingsModal() {
   const s = state.settings;
@@ -5231,9 +5239,19 @@ function bindModal() {
     state.quickDraft.intensity = v;
     if (qid) qid.textContent = v;
     if (qib) qib.textContent = band(v).label;
-    // Show / hide the grounding note as the user crosses the threshold, so
-    // they get the gentle prompt without having to dismiss and re-open.
-    if ((v >= 80) !== wasHigh) renderModal();
+    // Swap just the grounding-note slot as the user crosses the threshold.
+    // Re-rendering the whole modal here strobed the screen and stole the
+    // slider's focus mid-drag, so we update this one element in place and
+    // rebind the safety link it contains.
+    if ((v >= 80) !== wasHigh) {
+      const slot = document.getElementById("quickGroundingSlot");
+      if (slot) {
+        slot.innerHTML = quickGroundingHTML(v);
+        slot.querySelectorAll('[data-action="open-safety"]').forEach(el => {
+          el.addEventListener("click", e => { e.preventDefault(); setState({ modal: "safety" }); });
+        });
+      }
+    }
   });
   if (qv) qv.addEventListener("change", () => {
     state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
