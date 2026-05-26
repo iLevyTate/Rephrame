@@ -1,0 +1,15 @@
+{
+  "name": "rephrame",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A private, offline-first CBT journal (static PWA). This manifest exists only to pin the smoke-test toolchain and let Dependabot track it.",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8765",
+    "check": "node tests/check-static.mjs",
+    "test": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}

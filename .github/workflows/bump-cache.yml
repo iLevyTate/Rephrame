@@ -1,0 +1,55 @@
+name: Bump SW cache
+
+# On every push to main, increment sw.js CACHE_NAME (reframe-vNN → vNN+1) so
+# the service-worker update banner in js/pwa.js fires and clients drop stale
+# caches. The bot's own commit carries [skip ci] and is filtered by actor so
+# it never retriggers this (or the smoke) workflow.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-cache
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Increment CACHE_NAME
+        id: bump
+        run: |
+          current=$(grep -oE "reframe-v[0-9]+" sw.js | head -1)
+          n=$(echo "$current" | grep -oE "[0-9]+")
+          next="reframe-v$((n + 1))"
+          sed -i "s/reframe-v${n}'/${next}'/" sw.js
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "Bumped $current -> $next"
+
+      - name: Commit + push (with rebase retry)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet sw.js; then
+            echo "No change to sw.js; nothing to commit."
+            exit 0
+          fi
+          git add sw.js
+          git commit -m "chore: bump sw cache to ${{ steps.bump.outputs.next }} [skip ci]"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "pushed on attempt $attempt"; exit 0
+            fi
+            echo "push rejected; rebasing and retrying ($attempt)"
+            git pull --rebase origin main || true
+          done
+          echo "push failed after retries"; exit 1

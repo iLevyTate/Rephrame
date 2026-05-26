@@ -136,8 +136,9 @@ relative, so the app works at any subpath.
 
 ## Run it locally (fully private)
 
-Rephrame is a static site — `index.html`, `manifest.json`, `sw.js`, and a few
-icons. Any local web server works. Two one-liners:
+Rephrame is a static site — `index.html`, `styles.css`, `app.js`,
+`manifest.json`, `sw.js`, and a few icons. Any local web server works. Two
+one-liners:
 
 ```bash
 # Python 3
@@ -219,11 +220,14 @@ crisis**, and reachable from a link in every empty-state and capture modal.
 ## Files
 
 ```
-index.html                 the entire app (UI + logic, single file)
+index.html                 markup shell (links styles.css + app.js)
+styles.css                 all app styles
+app.js                     app UI + logic
 manifest.json              PWA manifest (name, icons, shortcuts)
 sw.js                      service worker (offline cache)
 js/pwa.js                  install prompt + SW registration + file:// fallback
 icons/                     SVG app icons
+tests/                     static checks + Playwright smoke walk
 ```
 
 ## License
