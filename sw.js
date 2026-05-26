@@ -1,7 +1,7 @@
 // Reframe Service Worker — keep CACHE_NAME bumped on every release so old
 // clients drop their caches and pick up the new index.html. The update
 // banner in js/pwa.js relies on this bump to detect that a new SW exists.
-const CACHE_NAME = 'reframe-v23';
+const CACHE_NAME = 'reframe-v24';
 // Fonts live in a separate cache so version bumps don't wipe them. Populated
 // lazily on first successful fetch — we can't precache cross-origin Google
 // Font responses reliably during install (opaque, CSS-driven woff2 URLs).
