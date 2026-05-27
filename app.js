@@ -2540,7 +2540,7 @@ function renderWorryCapture(d) {
           <div class="quick-prompts" role="group" aria-label="Worries people often park">
             <span class="quick-prompts-label">Starter lines:</span>
             ${WORRY_STARTER_CHIPS.map(p => `
-              <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-field="worryText" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
+              <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-insert-field="worryText" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
             `).join("")}
           </div>
         </div>
@@ -2618,7 +2618,7 @@ function renderCaptureStep(step, d) {
         <div class="quick-prompts" role="group" aria-label="Starter lines for trigger">
           <span class="quick-prompts-label">Or tap a starter:</span>
           ${TRIGGER_CAPTURE_CHIPS.map(p => `
-            <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-field="trigger" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
+            <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-insert-field="trigger" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
           `).join("")}
         </div>
       </div>
@@ -2975,7 +2975,7 @@ function renderCaptureStep(step, d) {
         <div class="quick-prompts" role="group" aria-label="Starter pivot ideas">
           <span class="quick-prompts-label">Starter ideas:</span>
           ${PIVOT_STARTER_CHIPS.map(p => `
-            <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-field="pivot" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
+            <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-insert-field="pivot" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
           `).join("")}
         </div>
       </div>
@@ -4782,9 +4782,14 @@ function bindCapture() {
   // Tap starters on trigger / pivot / parked worry — same append behavior as quick modal.
   document.querySelectorAll('[data-action="insert-capture-starter"]').forEach(btn => {
     btn.addEventListener("click", () => {
-      const field = btn.dataset.field;
+      const field = btn.dataset.insertField || btn.dataset.field;
       const seed = btn.dataset.seed || "";
-      const el = field ? document.querySelector(`[data-field="${field}"]`) : null;
+      const el = field
+        ? document.querySelector(
+          `textarea[data-field="${field}"],select[data-field="${field}"],` +
+          `input[data-field="${field}"]:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"])`
+        )
+        : null;
       if (!el || el.type === "checkbox") return;
       const cur = el.value;
       const next = cur.trim()
