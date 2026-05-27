@@ -22,9 +22,9 @@ const DISTORTIONS = [
   { name: "Control Fallacy (internal)", desc: "Overresponsibility.", cues: '"it\'s all on me to fix everything"' },
 ];
 
-// Default Socratic type + reframe method per distortion. Lets step 3
-// (the distortion picker) seed steps 4 and 5 automatically so a first-
-// time user isn't asked to map jargon-to-jargon mid-flow. The pairings
+// Default Socratic type + reframe method per distortion. Lets step 4 (Distortion)
+// seed Challenge (step 3) and Reframe (step 5) so a first-time user isn't asked
+// to map jargon-to-jargon mid-flow. The pairings
 // come from the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS;
 // this constant just encodes them as a lookup so the picker handler
 // can apply them. Keys must exactly match a DISTORTIONS[].name; values
@@ -131,6 +131,29 @@ const STEP_HINTS = [
   "Specific enough to do today.",
   "Make changes by tapping a section. Save when it's right.",
 ];
+
+// Tap-to-insert starter chips for structured captures (mirrors quick-capture UX).
+const TRIGGER_CAPTURE_CHIPS = [
+  { label: "What happened", seed: "Here's what just happened: " },
+  { label: "The thought",   seed: "The thought running through my head: " },
+  { label: "The feeling",    seed: "What I'm feeling right now: " },
+  { label: "The body",       seed: "Where this sits in my body: " },
+];
+const PIVOT_STARTER_CHIPS = [
+  { label: "Reach out",    seed: "Text a friend: one honest sentence to check in or apologize." },
+  { label: "Move the body", seed: "Go for a 15-minute walk outside — no phone." },
+  { label: "Tiny task",    seed: "Do one small thing I've been avoiding, for under 10 minutes." },
+];
+const WORRY_STARTER_CHIPS = [
+  { label: "Said wrong thing?", seed: "What if I embarrassed myself or said the wrong thing?" },
+  { label: "Fear of failing", seed: "What if I fail at the thing I'm worrying about?" },
+  { label: "Health spiral",   seed: "What if this feeling means something serious is wrong?" },
+];
+
+/** Journal list / chip counts aligned with Patterns: exclude ⚡ quick thought records where noted. */
+function excludeQuickThoughtRecord(e) {
+  return !(e.kind === "thought-record" && e.isQuick);
+}
 
 // A realistic, well-filled-in example so first-time users can see what a
 // complete thought record looks like before they have to write one. Loaded
@@ -476,6 +499,11 @@ function normalizeEntry(e) {
       out.thoughts.push(normalizeThought({ isHot: true }));
     }
   }
+  if (kind === "activity" && !out.plannedFor) {
+    const t = new Date(Date.now() + 60 * 60 * 1000);
+    t.setSeconds(0, 0);
+    out.plannedFor = t.toISOString().slice(0, 16);
+  }
   return out;
 }
 
@@ -502,12 +530,115 @@ function normalizeThought(t) {
   };
 }
 
+/** Step 2 belief slider defaults to 70 in the UI when unset; persist that on advance/save. */
+function persistDefaultBeliefsForFilledThoughts(d) {
+  if (!d || d.kind !== "thought-record") return false;
+  let changed = false;
+  for (const t of d.thoughts || []) {
+    if ((t.text || "").trim() && typeof t.beliefBefore !== "number") {
+      t.beliefBefore = 70;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 // Convenience accessors used across renderers and exporters. Centralizing
 // the "hot thought" lookup keeps the rest of the code from re-implementing
 // the search and lets us swap selection rules in one place.
 function hotThought(entry) {
   const list = (entry && entry.thoughts) || [];
   return list.find(t => t.isHot) || list[0] || null;
+}
+
+/** Values for `[thought]` / `[person]` / etc. inside question + reframe templates. */
+function templatePlaceholderContext(d) {
+  const hot = hotThought(d);
+  const thought = ((hot && (hot.text || "").trim()) ||
+    ((d.thoughts || []).map(t => (t.text || "").trim()).filter(Boolean)[0]) ||
+    (d.trigger || "").trim() ||
+    "what I'm telling myself").trim();
+  const trigger = ((d.trigger || "").trim());
+
+  const trig = trigger;
+  let person = "";
+  const mTrig = trig.match(/^([\w'-]+(?:\s+[\w'-]+){0,2})\s+(?:said|says|told|thought|thinks)\b/i);
+  if (mTrig) person = (mTrig[1] || "").trim();
+  if (!person) person = "they/them";
+
+  const snippet = trigger || thought;
+  const worstCase = thought;
+  const fearedOutcome = thought;
+  return {
+    thought,
+    person,
+    worstCase,
+    fearedOutcome,
+    snippet: snippet.length > 120 ? snippet.slice(0, 117) + "…" : snippet,
+  };
+}
+
+/** Replace `[thought]` / `[person]` / `[worst case]` / `[feared outcome]`; leave `[X]` for users. */
+function applyTemplate(template, d) {
+  if (!template || typeof template !== "string") return "";
+  const { thought, person, worstCase, fearedOutcome } = templatePlaceholderContext(d);
+  return template
+    .replace(/\[thought\]/gi, thought)
+    .replace(/\[person\]/gi, person)
+    .replace(/\[worst case\]/gi, worstCase)
+    .replace(/\[feared\s*outcome\]/gi, fearedOutcome);
+
+}
+
+/**
+ * Seeds Socratic/reframe from DISTORTION_DEFAULTS[primary].
+ * Empty-only so user text is never overwritten. Returns true if any field changed.
+ */
+function seedDraftFromPrimaryDistortion(d) {
+  const primary = (d.distortions || [])[0];
+  if (!primary) return false;
+  const defaults = DISTORTION_DEFAULTS[primary];
+  if (!defaults) return false;
+  let changed = false;
+  if (!d.socraticType) {
+    d.socraticType = defaults.socratic;
+    changed = true;
+  }
+  if (!d.reframeMethod) {
+    d.reframeMethod = defaults.reframe;
+    changed = true;
+  }
+  if (!(d.socraticQuestion || "").trim()) {
+    const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
+    if (t && t.template) {
+      d.socraticQuestion = applyTemplate(t.template, d);
+      changed = true;
+    }
+  }
+  if (!(d.newThought || "").trim()) {
+    const r = REFRAME_METHODS.find(m => m.method === defaults.reframe);
+    if (r && r.template) {
+      d.newThought = applyTemplate(r.template, d);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** True when the drafted Socratic line still matches the built-in template for the selected type (context-aware). */
+function draftedSocraticMatchesBuiltInTemplate(d) {
+  if (!d || !d.socraticType || !(d.socraticQuestion || "").trim()) return false;
+  const t = SOCRATIC_TYPES.find(s => s.type === d.socraticType);
+  if (!t || !t.template) return false;
+  return applyTemplate(t.template, d).trim() === String(d.socraticQuestion).trim();
+}
+
+/** True when newThought matches the selected method's template (context-aware). */
+function draftedNewThoughtMatchesBuiltInTemplate(d) {
+  if (!d || !d.reframeMethod || !(d.newThought || "").trim()) return false;
+  const r = REFRAME_METHODS.find(m => m.method === d.reframeMethod);
+  if (!r || !r.template) return false;
+  return applyTemplate(r.template, d).trim() === String(d.newThought).trim();
 }
 
 function loadEntries() {
@@ -599,10 +730,13 @@ function emptyFreeform() {
 }
 
 function emptyActivity() {
+  const t = new Date(Date.now() + 60 * 60 * 1000);
+  t.setSeconds(0, 0);
   return normalizeEntry({
     kind: "activity",
     moods: [],
     thoughts: [],
+    plannedFor: t.toISOString().slice(0, 16),
   });
 }
 
@@ -730,6 +864,7 @@ function worryToMd(e, idx) {
 function thoughtRecordToMd(e, idx) {
   const L = [];
   L.push("---", "", "### Entry " + (idx + 1), "");
+  if (e.isQuick) L.push("*⚡ Quick capture — structured steps can be continued from the journal.*", "");
   L.push("**1. Trigger (Antecedent)**", "", e.trigger || "—", "");
 
   L.push("**2. Initial Reaction**", "");
@@ -1055,13 +1190,29 @@ function hasDraftContent(d) {
   if (!d) return false;
   const anyThought = (d.thoughts || []).some(t => (t.text || "").trim());
   const anyMood    = (d.moods    || []).some(m => m.family);
+  const trPartial =
+    d.kind === "thought-record" && (
+      !!d.thoughtsAccurate ||
+      String(d.socraticType || "").trim() ||
+      String(d.socraticQuestion || "").trim() ||
+      String(d.evidenceFor || "").trim() ||
+      String(d.evidenceAgainst || "").trim() ||
+      String(d.bodyCheck || "").trim() ||
+      !!d.bodyInferred ||
+      String(d.reframeMethod || "").trim() ||
+      String(d.newThought || "").trim() ||
+      typeof d.newThoughtBelief === "number" ||
+      String(d.distortionNote || "").trim() ||
+      String(d.pivot || "").trim()
+    );
   // Each non-thought-record kind has its own minimum content signal.
   const freeformFilled = d.kind === "freeform" && ((d.body || "").trim() || anyMood);
   const activityFilled = d.kind === "activity" && ((d.body || "").trim() || d.category);
   const worryFilled    = d.kind === "worry"    && (d.worryText || "").trim();
+  const distPick = ((d.distortions || []).length > 0);
   return !!(d.trigger || anyThought || anyMood || d.evidenceFor || d.evidenceAgainst ||
-           d.newThought || d.pivot || (d.distortions && d.distortions.length) ||
-           freeformFilled || activityFilled || worryFilled);
+           d.newThought || d.pivot || distPick ||
+           freeformFilled || activityFilled || worryFilled || trPartial);
 }
 
 // Suppress the storage-event listener while we're the writer ourselves.
@@ -1312,9 +1463,15 @@ function renderLockScreen() {
 function applyViewFilter(entries, key) {
   if (key === "favorites")  return entries.filter(e => e.isFavorite);
   if (key === "unfinished") return entries.filter(e => e.isQuick);
-  if (key === "week")       return entries.filter(e => daysBetween(new Date(), new Date(e.createdAt)) < 7);
-  if (key === "pivoted")    return entries.filter(e => e.pivotDone);
-  if (key === "pending")    return entries.filter(e => e.pivot && !e.pivotDone);
+  if (key === "week")       return entries.filter(e =>
+    excludeQuickThoughtRecord(e) && daysBetween(new Date(), new Date(e.createdAt)) < 7
+  );
+  if (key === "pivoted")    return entries.filter(e =>
+    excludeQuickThoughtRecord(e) && e.pivotDone
+  );
+  if (key === "pending")    return entries.filter(e =>
+    excludeQuickThoughtRecord(e) && e.pivot && !e.pivotDone
+  );
   if (key === "freeform")   return entries.filter(e => e.kind === "freeform");
   if (key === "activities") return entries.filter(e => e.kind === "activity");
   if (key === "worries")    return entries.filter(e => e.kind === "worry");
@@ -1346,7 +1503,7 @@ function renderCopingCards(favorites) {
               ${e.trigger ? `<p class="coping-card-trigger"><span class="muted">For when:</span> ${esc(e.trigger.slice(0, 120))}${e.trigger.length > 120 ? "…" : ""}</p>` : ""}
               <div class="coping-card-foot">
                 ${hasDelta ? `<span class="delta-tag ${bDelta < 0 ? "good" : "flat"}">belief ${bDelta > 0 ? "+" : ""}${bDelta}</span>` : ""}
-                ${e.distortions.slice(0, 2).map(d => `<span class="coping-card-dist">${esc(d)}</span>`).join("")}
+                ${(e.distortions || []).slice(0, 2).map(d => `<span class="coping-card-dist">${esc(d)}</span>`).join("")}
               </div>
             </article>
           `;
@@ -1426,9 +1583,15 @@ function renderJournal() {
     all: entries.length,
     favorites: entries.filter(e => e.isFavorite).length,
     unfinished: entries.filter(e => e.isQuick).length,
-    week: entries.filter(e => daysBetween(new Date(), new Date(e.createdAt)) < 7).length,
-    pivoted: entries.filter(e => e.pivotDone).length,
-    pending: entries.filter(e => e.pivot && !e.pivotDone).length,
+    week: entries.filter(e =>
+      excludeQuickThoughtRecord(e) && daysBetween(new Date(), new Date(e.createdAt)) < 7
+    ).length,
+    pivoted: entries.filter(e =>
+      excludeQuickThoughtRecord(e) && e.pivotDone
+    ).length,
+    pending: entries.filter(e =>
+      excludeQuickThoughtRecord(e) && e.pivot && !e.pivotDone
+    ).length,
     freeform: entries.filter(e => e.kind === "freeform").length,
     activities: entries.filter(e => e.kind === "activity").length,
     worries: entries.filter(e => e.kind === "worry").length,
@@ -1439,7 +1602,7 @@ function renderJournal() {
   // render) and the list (after search + distortion narrow it further).
   const scoped = applyViewFilter(entries, state.viewFilter);
   let filtered = scoped;
-  if (state.filter) filtered = filtered.filter(e => e.distortions.includes(state.filter));
+  if (state.filter) filtered = filtered.filter(e => (e.distortions || []).includes(state.filter));
   if (q) {
     filtered = filtered.filter(e => {
       const thoughtText = (e.thoughts || []).map(t => t.text).join(" ");
@@ -1449,7 +1612,7 @@ function renderJournal() {
         e.pivotReflection, e.distortionNote, e.evidenceFor, e.evidenceAgainst,
         e.socraticQuestion, e.bodyCheck,
         e.body, e.worryText, e.activityNotes,
-        e.distortions.join(" ")
+        (e.distortions || []).join(" ")
       ].join(" ").toLowerCase();
       return blob.includes(q);
     });
@@ -1476,9 +1639,9 @@ function renderJournal() {
     { key: "freeform",   label: "Free writes",  count: counts.freeform,   hint: "Open-form journal entries" },
     { key: "activities", label: "Activities",   count: counts.activities, hint: "Planned and logged activities" },
     { key: "worries",    label: "Worries",      count: counts.worries,    hint: "Parked worries and resolutions" },
-    { key: "week",       label: "This week",    count: counts.week,       hint: "Last 7 days" },
-    { key: "pivoted",    label: "Pivoted",      count: counts.pivoted,    hint: "Pivot marked done" },
-    { key: "pending",    label: "Pivot due",    count: counts.pending,    hint: "Pivot written, not yet done" },
+    { key: "week",       label: "This week",    count: counts.week,       hint: "Last 7 days — omits ⚡ quick thought records" },
+    { key: "pivoted",    label: "Pivoted",      count: counts.pivoted,    hint: "Pivot marked done — omits ⚡ quick thought records" },
+    { key: "pending",    label: "Pivot due",    count: counts.pending,    hint: "Pivot not done yet — omits ⚡ quick thought records" },
   ].filter(c => c.key === "all" || c.count > 0);
 
   return `
@@ -1706,8 +1869,8 @@ function renderThoughtRecordCard(entry, index) {
               <span class="delta-tag ${beliefDelta < 0 ? "good" : "flat"}">${beliefDelta > 0 ? "+" : ""}${beliefDelta}</span>
             </span>
           ` : ""}
-          ${entry.distortions.slice(0, 2).map(d => `<span class="dist-chip">${esc(d)}</span>`).join("")}
-          ${entry.distortions.length > 2 ? `<span class="dist-more">+${entry.distortions.length - 2}</span>` : ""}
+          ${(entry.distortions || []).slice(0, 2).map(d => `<span class="dist-chip">${esc(d)}</span>`).join("")}
+          ${(entry.distortions || []).length > 2 ? `<span class="dist-more">+${(entry.distortions || []).length - 2}</span>` : ""}
         </div>
       </div>
       <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
@@ -1880,9 +2043,14 @@ function renderEntryDetails(entry) {
           </button>
         </div>
       ` : ""}
-      ${thoughts.length ? `
-        <div class="detail-row">
-          <div class="detail-label">1 · Automatic Thoughts</div>
+      <div class="detail-row">
+        <div class="detail-label">1 · Trigger</div>
+        <p class="detail-text">${entry.trigger ? esc(entry.trigger) : "—"}</p>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">2 · Initial reaction</div>
+        ${thoughts.length ? `
+          <div class="detail-label" style="font-size: 13px; margin-bottom: 6px; opacity: 0.85;">Automatic thoughts</div>
           <ol class="thought-list">
             ${thoughts.map(t => `
               <li class="thought-list-item ${t.isHot ? "is-hot" : ""}">
@@ -1896,22 +2064,18 @@ function renderEntryDetails(entry) {
               </li>
             `).join("")}
           </ol>
-        </div>
-      ` : ""}
-      ${moodArc ? `
-        <div class="detail-row">
-          <div class="detail-label">2 · Moods</div>
+        ` : `<p class="detail-text muted">—</p>`}
+        ${moodArc ? `
+          <div class="detail-label" style="font-size: 13px; margin: 14px 0 6px; opacity: 0.85;">Moods</div>
           <div class="mood-arc-list">${moodArc}</div>
-        </div>
-      ` : ""}
-      ${entry.bodyCheck ? `
-        <div class="detail-row">
-          <div class="detail-label">2 · Body Check</div>
+        ` : ""}
+        ${entry.bodyCheck ? `
+          <div class="detail-label" style="font-size: 13px; margin: 14px 0 6px; opacity: 0.85;">Body check</div>
           <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(inferred from speech)</span>` : ""}</p>
-        </div>
-      ` : ""}
+        ` : ""}
+      </div>
       <div class="detail-row">
-        <div class="detail-label">3 · Evidence</div>
+        <div class="detail-label">3 · Challenge (evidence + Socratic)</div>
         <div class="evidence-split">
           <div>
             <div class="detail-label" style="margin-bottom: 4px;">For</div>
@@ -1924,14 +2088,17 @@ function renderEntryDetails(entry) {
         </div>
         ${entry.socraticQuestion ? `
           <div class="socratic-quote">
-            <div class="detail-label" style="color: var(--copper-deep); margin-bottom: 2px;">Socratic${entry.socraticType ? " · " + esc(entry.socraticType) : ""}</div>
+            <div class="detail-label" style="color: var(--copper-deep); margin-bottom: 2px;">
+              Socratic${entry.socraticType ? " · " + esc(entry.socraticType) : ""}
+              ${draftedSocraticMatchesBuiltInTemplate(entry) ? ` <span class="suggested-pill" title="Still matches the app starter — customize anytime">Starter text</span>` : ""}
+            </div>
             <p class="detail-text italic">"${esc(entry.socraticQuestion)}"</p>
           </div>
         ` : ""}
       </div>
       ${entry.thoughtsAccurate ? `
         <div class="detail-row">
-          <div class="detail-label">4 · Distortions</div>
+          <div class="detail-label">4 · Distortion</div>
           <p class="detail-text"><span class="accurate-detail">Marked as accurate, not distorted — these thoughts feel true to you, and the rest of the entry holds them rather than arguing with them.</span></p>
         </div>
       ` : entry.distortions.length || entry.distortionNote ? `
@@ -1942,8 +2109,11 @@ function renderEntryDetails(entry) {
         </div>
       ` : ""}
       <div class="detail-row">
-        <div class="detail-label">5 · Reframe${entry.reframeMethod ? " · " + esc(entry.reframeMethod) : ""}</div>
-        <p class="detail-text italic">"${esc(entry.newThought)}"</p>
+        <div class="detail-label">
+          5 · Reframe${entry.reframeMethod ? " · " + esc(entry.reframeMethod) : ""}
+          ${draftedNewThoughtMatchesBuiltInTemplate(entry) ? ` <span class="suggested-pill" title="Still matches the app starter — customize anytime">Starter text</span>` : ""}
+        </div>
+        <p class="detail-text italic">${entry.newThought ? `"${esc(entry.newThought)}"` : "—"}</p>
         ${typeof entry.newThoughtBelief === "number" ? `<p class="detail-text" style="margin-top: 4px; color: var(--on-paper-mute);">Belief in this thought: <strong>${entry.newThoughtBelief}%</strong></p>` : ""}
       </div>
       <div class="detail-row entry-pivot">
@@ -2227,6 +2397,12 @@ function renderFreeformCapture(d) {
             <p class="step2-sub">Only if a feeling stands out. Otherwise leave it blank.</p>
           </div>
           ${moods.length === 0 ? `
+            <div class="quick-prompts" role="group" aria-label="Starter mood tags" style="margin-bottom: 10px;">
+              <span class="quick-prompts-label">Or start from a mood family:</span>
+              ${Object.keys(EMOTION_FAMILIES).map(f => `
+                <button type="button" class="quick-prompt-chip" data-action="seed-freeform-mood" data-family="${esc(f)}">${esc(f)}</button>
+              `).join("")}
+            </div>
             <button type="button" class="row-add" data-action="add-mood">＋ Add a mood</button>
           ` : `
             <div class="row-list" data-list="moods">
@@ -2275,16 +2451,6 @@ function renderFreeformCapture(d) {
 // Logged completion lives in a separate modal (renderLogActivityModal).
 function renderActivityCapture(d) {
   const cats = ACTIVITY_CATEGORIES;
-  // Default plannedFor to "today, 1 hour from now" if blank. We seed it into
-  // the draft (not just the rendered value) so the canSave check below and
-  // the data-field handler agree — otherwise the input shows a time but Save
-  // stays disabled until the user manually touches the field.
-  if (!d.plannedFor) {
-    const t = new Date(Date.now() + 60 * 60 * 1000);
-    t.setSeconds(0, 0);
-    d.plannedFor = t.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM for datetime-local
-    saveDraft(d);
-  }
   const canSave = (d.body || "").trim().length > 0 && !!d.category && !!d.plannedFor;
   return `
     <div class="capture-shell">
@@ -2371,6 +2537,12 @@ function renderWorryCapture(d) {
         <div class="field-group">
           <label class="field-label-paper">What's worrying you?</label>
           <textarea class="textarea input-large" data-field="worryText" rows="5" autofocus placeholder="One sentence. You don't have to solve it now — you're parking it.">${esc(d.worryText)}</textarea>
+          <div class="quick-prompts" role="group" aria-label="Worries people often park">
+            <span class="quick-prompts-label">Starter lines:</span>
+            ${WORRY_STARTER_CHIPS.map(p => `
+              <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-insert-field="worryText" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
+            `).join("")}
+          </div>
         </div>
 
         <div class="field-group">
@@ -2405,7 +2577,7 @@ function renderWorryCapture(d) {
 }
 
 function canAdvance(step, d) {
-  if (step === 1) return d.trigger.trim().length > 0;
+  if (step === 1) return ((d.trigger || "").trim()).length > 0;
   // Step 2 now: require at least one thought with text. Moods are nice to
   // have but not required to advance — body-check stays optional.
   if (step === 2) return (d.thoughts || []).some(t => (t.text || "").trim().length > 0);
@@ -2443,12 +2615,18 @@ function renderCaptureStep(step, d) {
       <div class="field-group">
         <textarea class="textarea input-large" data-field="trigger" rows="3" autofocus placeholder="Broke a chair at the pedicure place… · Woke up dreading today… · Kept thinking I'm going to get fired…">${esc(d.trigger)}</textarea>
         <div class="field-help-paper" style="margin-top: 8px;">An event, a thought, or a feeling — any of those can be the starting point. You don't need to know yet which one this is.</div>
+        <div class="quick-prompts" role="group" aria-label="Starter lines for trigger">
+          <span class="quick-prompts-label">Or tap a starter:</span>
+          ${TRIGGER_CAPTURE_CHIPS.map(p => `
+            <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-insert-field="trigger" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
+          `).join("")}
+        </div>
       </div>
     `;
 
     case 2: {
       // Sectioned layout: Thoughts → Moods → Body. Multi-row, each row
-      // editable in place. Hot-thought radio drives Steps 4 and 5.
+      // editable in place. Hot-thought radio drives Challenge (step 3) and Reframe (step 5).
       const thoughts = d.thoughts.length ? d.thoughts : [normalizeThought({ isHot: true })];
       const moods    = d.moods.length    ? d.moods    : [normalizeMood({})];
       return `
@@ -2569,7 +2747,7 @@ function renderCaptureStep(step, d) {
         <div class="field-group">
           <div class="distortion-grid">
             ${DISTORTIONS.map(dist => {
-              const active = d.distortions.includes(dist.name);
+              const active = (d.distortions || []).includes(dist.name);
               return `
                 <button class="distortion-tile ${active ? "active" : ""}" data-action="toggle-distortion" data-name="${esc(dist.name)}">
                   <div class="distortion-tile-name">
@@ -2650,8 +2828,9 @@ function renderCaptureStep(step, d) {
           Socratic question type
           ${(() => {
             const primary = (d.distortions || [])[0];
+            const hasPick = ((d.distortions || []).length > 0);
             const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
-            return (sugg && d.socraticType === sugg.socratic)
+            return (hasPick && sugg && d.socraticType === sugg.socratic)
               ? `<span class="suggested-pill" title="Auto-selected based on the distortion you picked">Suggested for ${esc(primary)}</span>`
               : "";
           })()}
@@ -2664,7 +2843,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">Your Socratic question</label>
-        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc((SOCRATIC_TYPES.find(s => s.type === d.socraticType) || {}).template || "Pick a type above and a starting question will fill in — then make it your own.")}">${esc(d.socraticQuestion)}</textarea>
+        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc((() => { const st = SOCRATIC_TYPES.find(s => s.type === d.socraticType); return (st && st.template) ? applyTemplate(st.template, d) : "Pick a type above and a starting question will fill in — then make it your own."; })())}">${esc(d.socraticQuestion)}</textarea>
         <p class="field-help-paper" style="margin-top: 8px;">Picking a type above pre-fills a starting question — feel free to rewrite it in your own words. The point is to <em>genuinely consider</em> the answer, so the wording has to be one you can take seriously.</p>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All question types</summary>
@@ -2705,8 +2884,9 @@ function renderCaptureStep(step, d) {
           ${d.thoughtsAccurate ? "Method (optional)" : "Method"}
           ${(() => {
             const primary = (d.distortions || [])[0];
+            const hasPick = ((d.distortions || []).length > 0);
             const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
-            return (sugg && d.reframeMethod === sugg.reframe)
+            return (hasPick && sugg && d.reframeMethod === sugg.reframe)
               ? `<span class="suggested-pill" title="Auto-selected based on the distortion you picked">Suggested for ${esc(primary)}</span>`
               : "";
           })()}
@@ -2719,7 +2899,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "New Thought"}</label>
-        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : ((REFRAME_METHODS.find(r => r.method === d.reframeMethod) || {}).template || "Pick a method above and a starter thought will fill in — then make it your own."))}">${esc(d.newThought)}</textarea>
+        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (() => { const rm = REFRAME_METHODS.find(r => r.method === d.reframeMethod); return (rm && rm.template) ? applyTemplate(rm.template, d) : "Pick a method above and a starter thought will fill in — then make it your own."; })())}">${esc(d.newThought)}</textarea>
         <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.`}</div>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All reframe methods</summary>
@@ -2728,6 +2908,7 @@ function renderCaptureStep(step, d) {
               <div class="block">
                 <div class="block-title">${esc(r.method)}</div>
                 <div class="block-when">When: ${esc(r.when)} · ${esc(r.does)}</div>
+                <div class="block-template">Starter: "${esc(applyTemplate(r.template, d))}"</div>
               </div>
             `).join("")}
           </div>
@@ -2754,7 +2935,7 @@ function renderCaptureStep(step, d) {
           </div>
         ` : ""}
 
-        ${(d.newThought || "").trim() || typeof d.newThoughtBelief === "number" ? `
+        ${(d.reframeMethod || "").trim() || (d.newThought || "").trim() || typeof d.newThoughtBelief === "number" ? `
           <label class="field-label-paper" style="margin-top: 18px;">Belief in the new thought</label>
           <div class="belief-control">
             <div class="belief-head">
@@ -2791,6 +2972,12 @@ function renderCaptureStep(step, d) {
       <div class="field-group">
         <textarea class="textarea input-large" data-field="pivot" rows="4" placeholder='Send a text: "Sorry I bailed earlier — I was embarrassed. I should have stayed."'>${esc(d.pivot)}</textarea>
         <div class="field-help-paper">A single concrete action you can do today. The smaller and more specific, the better.</div>
+        <div class="quick-prompts" role="group" aria-label="Starter pivot ideas">
+          <span class="quick-prompts-label">Starter ideas:</span>
+          ${PIVOT_STARTER_CHIPS.map(p => `
+            <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-insert-field="pivot" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
+          `).join("")}
+        </div>
       </div>
     `;
 
@@ -2841,7 +3028,7 @@ function renderReview(d) {
 
     <div class="review-card">
       <div class="review-card-head">
-        <span class="review-card-num">3 · Challenge</span>
+        <span class="review-card-num">3 · Challenge${draftedSocraticMatchesBuiltInTemplate(d) && d.socraticQuestion ? ` <span class="suggested-pill" title="Still matches the template for this question type — edit if you like">Starter text</span>` : ""}</span>
         <button class="review-edit-btn" data-action="goto-step" data-step="3">Edit</button>
       </div>
       <div class="review-card-content">
@@ -2860,14 +3047,14 @@ function renderReview(d) {
       <div class="review-card-content">
         ${d.thoughtsAccurate
           ? '<span class="accurate-detail">Marked as accurate, not distorted.</span>'
-          : (d.distortions.length ? d.distortions.map(x => `<strong>${esc(x)}</strong>`).join(" + ") : '<span class="empty">none selected</span>')}
+          : ((d.distortions || []).length ? (d.distortions || []).map(x => `<strong>${esc(x)}</strong>`).join(" + ") : '<span class="empty">none selected</span>')}
         ${!d.thoughtsAccurate && d.distortionNote ? `<div style="margin-top: 6px; font-size: 13px; color: var(--on-paper-mute);">${esc(d.distortionNote)}</div>` : ""}
       </div>
     </div>
 
     <div class="review-card">
       <div class="review-card-head">
-        <span class="review-card-num">5 · Reframe${d.reframeMethod ? " · " + esc(d.reframeMethod) : ""}</span>
+        <span class="review-card-num">5 · Reframe${d.reframeMethod ? " · " + esc(d.reframeMethod) : ""}${draftedNewThoughtMatchesBuiltInTemplate(d) ? ` <span class="suggested-pill" title="Still matches the template for this method — edit if you like">Starter text</span>` : ""}</span>
         <button class="review-edit-btn" data-action="goto-step" data-step="5">Edit</button>
       </div>
       <div class="review-card-content italic">"${d.newThought ? esc(d.newThought) : '<span class="empty">missing</span>'}"</div>
@@ -3073,9 +3260,12 @@ function renderPatterns() {
   // Thought-record aggregations (distortions, belief deltas, mood drops,
   // pivot follow-through) only make sense for kind:"thought-record" entries.
   // Free-form/activity/worry have empty/undefined fields for those stats,
-  // so including them silently inflates denominators. We keep `entries` for
-  // the activity grid since any kind of entry counts as "showed up today."
-  const thoughtRecords = entries.filter(e => e.kind === "thought-record");
+  // so including them silently inflates denominators.
+  const quickThoughtSkips = entries.filter(e => e.kind === "thought-record" && e.isQuick).length;
+  const thoughtRecords = entries.filter(e => e.kind === "thought-record" && !e.isQuick);
+  // 30-day heatmap + intensity sparkline: omit quick captures so the visual
+  // matches structured thought-record stats; other kinds still count as "showed up."
+  const patternVizEntries = entries.filter(e => !(e.kind === "thought-record" && e.isQuick));
   if (entries.length === 0) {
     return `
       <div class="page-header">
@@ -3171,7 +3361,7 @@ function renderPatterns() {
     : null;
 
   const distCounts = {};
-  thoughtRecords.forEach(e => e.distortions.forEach(d => distCounts[d] = (distCounts[d] || 0) + 1));
+  thoughtRecords.forEach(e => (e.distortions || []).forEach(d => distCounts[d] = (distCounts[d] || 0) + 1));
   const sortedDist = Object.entries(distCounts).sort((a, b) => b[1] - a[1]).slice(0, 7);
   const maxDist = sortedDist[0]?.[1] || 1;
 
@@ -3187,7 +3377,7 @@ function renderPatterns() {
 
   const today = startOfDay(new Date());
   const dayCounts = new Array(30).fill(0);
-  entries.forEach(e => {
+  patternVizEntries.forEach(e => {
     const dayIdx = 29 - daysBetween(today, new Date(e.createdAt));
     if (dayIdx >= 0 && dayIdx < 30) dayCounts[dayIdx]++;
   });
@@ -3201,7 +3391,7 @@ function renderPatterns() {
   function peakIntensity(e) {
     return (e.moods || []).reduce((a, m) => Math.max(a, m.intensity || 0), 0);
   }
-  const recent = entries.filter(e => (e.moods || []).some(m => typeof m.intensity === "number")).slice(0, 20).reverse();
+  const recent = patternVizEntries.filter(e => (e.moods || []).some(m => typeof m.intensity === "number")).slice(0, 20).reverse();
   const sparkW = 280, sparkH = 50, pad = 4;
   const sparkPath = recent.length > 1
     ? recent.map((e, i) => {
@@ -3233,7 +3423,7 @@ function renderPatterns() {
           <span class="pattern-card-title">Thought records</span>
         </div>
         <div class="pattern-stat-big display">${total}</div>
-        <div class="pattern-stat-label">${entries.length} total · ${activeDays} active ${activeDays === 1 ? "day" : "days"} in last 30</div>
+        <div class="pattern-stat-label">${total} full thought records (${entries.length} journal entries total${quickThoughtSkips ? "; " + quickThoughtSkips + " quick" : ""}). Heatmap & spark chart: ${activeDays} active ${activeDays === 1 ? "day" : "days"}, structured captures only.</div>
       </div>
 
       <div class="pattern-card">
@@ -3285,7 +3475,7 @@ function renderPatterns() {
       <div class="pattern-card span-2">
         <div class="pattern-card-head">
           <span class="pattern-card-title">Last 30 days</span>
-          <span class="pattern-card-meta">${last30Total} ${last30Total === 1 ? "entry" : "entries"}</span>
+          <span class="pattern-card-meta">${last30Total} ${last30Total === 1 ? "entry" : "entries"}${quickThoughtSkips ? " · quick captures excluded" : ""}</span>
         </div>
         <div class="activity-grid">
           ${dayCounts.map(c => {
@@ -3371,7 +3561,7 @@ function renderPatterns() {
         <div class="pattern-card span-2">
           <div class="pattern-card-head">
             <span class="pattern-card-title">Intensity, last ${recent.length} entries</span>
-            <span class="pattern-card-meta">oldest → newest</span>
+            <span class="pattern-card-meta">oldest → newest · structured entries only</span>
           </div>
           <div class="spark-wrap">
             <svg viewBox="0 0 ${sparkW} ${sparkH}" width="100%" height="${sparkH}" preserveAspectRatio="none" style="display: block;">
@@ -3405,7 +3595,7 @@ function renderReference() {
     <div class="page-header">
       <div class="page-eyebrow">In-app handbook</div>
       <h1 class="page-title display">Reference</h1>
-      <p class="page-sub">The cognitive distortions, emotion families, and reframing methods that drive the six-step workflow. Browseable anytime, not just while capturing.</p>
+      <p class="page-sub">The cognitive distortions, emotion families, and reframing methods that drive the 7-step capture flow (plus Step 8 outcome). Browseable anytime, not only while capturing.</p>
     </div>
 
     <div class="ref-section ref-section--scope">
@@ -3563,6 +3753,7 @@ function renderReference() {
         <div class="ref-item">
           <div class="ref-item-name">${esc(r.method)}</div>
           <div class="ref-item-desc"><strong>When:</strong> ${esc(r.when)}. ${esc(r.does)}.</div>
+          ${r.template ? `<div class="ref-item-template">"${esc(r.template)}"</div>` : ""}
         </div>
       `).join("")}
       <div class="ref-pairs" style="margin-top: 20px;">
@@ -3707,7 +3898,18 @@ function renderModal() {
           <input type="checkbox" id="quickVentOnly" ${q.ventOnly ? "checked" : ""}>
           <span>Just venting — don't follow up. Sometimes naming it is enough.</span>
         </label>
-        <div id="quickGroundingSlot">${quickGroundingHTML(q.intensity)}</div>
+        ${q.intensity >= 80 ? `
+          <div class="grounding-note grounding-note--modal" role="note">
+            <div class="grounding-note-eyebrow">At this intensity…</div>
+            <div class="grounding-note-body">
+              <p>Above 80 is a lot to sit with. Before — or instead of — writing more, try slowing the breath out (4-second in, 6-second out) for a minute, or name 5 things you can see. ${'<button class="link-button" data-action="open-safety">Crisis support is here</button>'} if you need it.</p>
+            </div>
+          </div>
+        ` : `
+          <p class="modal-sub" style="margin-top: 16px; font-size: 13px;">
+            ${SAFETY_LINK_INLINE}
+          </p>
+        `}
       </div>
       <div class="modal-actions">
         <button class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
@@ -3851,25 +4053,6 @@ const SAFETY_LINK_INLINE =
   'Rephrame is a journaling tool, not a substitute for therapy or crisis care. ' +
   'In the US, call or text <strong>988</strong> (Suicide &amp; Crisis Lifeline) or text <strong>HOME</strong> to <strong>741741</strong> (Crisis Text Line). ' +
   '<button class="link-button" data-action="open-safety">See more crisis resources →</button>';
-
-// Grounding prompt shown inside the quick-capture modal once intensity crosses
-// 80. Kept as a standalone helper so the slider handler can swap just this slot
-// in place rather than re-rendering the whole modal (which strobed the screen
-// and dropped the slider's focus on every threshold crossing).
-function quickGroundingHTML(intensity) {
-  return intensity >= 80 ? `
-    <div class="grounding-note grounding-note--modal" role="note">
-      <div class="grounding-note-eyebrow">At this intensity…</div>
-      <div class="grounding-note-body">
-        <p>Above 80 is a lot to sit with. Before — or instead of — writing more, try slowing the breath out (4-second in, 6-second out) for a minute, or name 5 things you can see. ${'<button class="link-button" data-action="open-safety">Crisis support is here</button>'} if you need it.</p>
-      </div>
-    </div>
-  ` : `
-    <p class="modal-sub" style="margin-top: 16px; font-size: 13px;">
-      ${SAFETY_LINK_INLINE}
-    </p>
-  `;
-}
 
 function renderSettingsModal() {
   const s = state.settings;
@@ -4448,7 +4631,8 @@ function bindJournal() {
     el.addEventListener("click", () => setState({ modal: "import" }));
   });
   // "Finish this entry" picks up a quick-capture row and drops the user into
-  // the full 7-step flow at Step 1 with the thought pre-filled at Step 2.
+  // the full 7-step flow. Trigger is seeded from the hot thought when bare;
+  // if thoughts already exist, land on Step 2 (Initial Reaction).
   document.querySelectorAll('[data-action="finish-quick"]').forEach(el => {
     el.addEventListener("click", e => {
       e.stopPropagation();
@@ -4457,7 +4641,12 @@ function bindJournal() {
       state.draft = { ...entry };
       state.editingId = entry.id;
       state.draft.isQuick = false;
-      state.captureStep = 1;
+      const h = hotThought(state.draft);
+      if (!(state.draft.trigger || "").trim() && h && (h.text || "").trim()) {
+        state.draft.trigger = String(h.text).slice(0, 500);
+      }
+      const hasThoughtBody = (state.draft.thoughts || []).some(t => (t.text || "").trim().length > 0);
+      state.captureStep = hasThoughtBody ? 2 : 1;
       setView("capture");
     });
   });
@@ -4534,7 +4723,8 @@ function bindJournal() {
       const newEntryId = newId();
       const draft = emptyEntry();
       draft.id = newEntryId;
-      draft.trigger = "From a parked worry";
+      const w = ((entry.worryText || "").trim());
+      draft.trigger = w.length ? ("Worry: " + (w.length > 400 ? w.slice(0, 397) + "…" : w)) : "Worry (from parked worry)";
       draft.thoughts = [normalizeThought({ text: entry.worryText, isHot: true })];
       draft.linkedEntryId = entry.id;
       state.draft = draft;
@@ -4589,6 +4779,47 @@ function finalizeWorryEntry(entry, now) {
 }
 
 function bindCapture() {
+  // Tap starters on trigger / pivot / parked worry — same append behavior as quick modal.
+  document.querySelectorAll('[data-action="insert-capture-starter"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      const field = btn.dataset.insertField || btn.dataset.field;
+      const seed = btn.dataset.seed || "";
+      const el = field
+        ? document.querySelector(
+          `textarea[data-field="${field}"],select[data-field="${field}"],` +
+          `input[data-field="${field}"]:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"])`
+        )
+        : null;
+      if (!el || el.type === "checkbox") return;
+      const cur = el.value;
+      const next = cur.trim()
+        ? (cur.replace(/\s+$/, "") + "\n\n" + seed)
+        : seed;
+      el.value = next;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.focus();
+      el.setSelectionRange(next.length, next.length);
+      refreshNextButton();
+    });
+  });
+
+  document.querySelectorAll('[data-action="seed-freeform-mood"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (state.draft.kind !== "freeform") return;
+      const family = btn.dataset.family;
+      const variants = family ? (EMOTION_FAMILIES[family] || []) : [];
+      const variant = variants[0] || "";
+      state.draft.moods = state.draft.moods || [];
+      state.draft.moods.push(normalizeMood({
+        family,
+        variant,
+        intensity: 45,
+      }));
+      saveDraft(state.draft);
+      render();
+    });
+  });
+
   // Entry-kind mode switcher: tap a chip to swap state.draft to the
   // empty-template of that kind. Only enabled when not editing — see
   // renderCapture for the guard.
@@ -4629,7 +4860,44 @@ function bindCapture() {
       else if (el.type === "range") v = parseInt(el.value, 10);
       else if (el.type === "number") v = parseInt(el.value, 10);
       else v = el.value;
-      state.draft[field] = v;
+
+      // Socratic type + reframe method: swapping the dropdown updates the help
+      // text ("when" / "does") on render, and replaces the prefilled textarea
+      // whenever the box is empty OR still exactly matches the *previous*
+      // selection's contextual template — customized wording is never smashed.
+      if (field === "socraticType") {
+        const prevType = state.draft.socraticType;
+        state.draft.socraticType = v;
+        const qTrim = String(state.draft.socraticQuestion || "").trim();
+        const prevMeta = prevType ? SOCRATIC_TYPES.find(s => s.type === prevType) : null;
+        const stillPrevStarter =
+          !!(prevMeta && prevMeta.template && applyTemplate(prevMeta.template, state.draft).trim() === qTrim);
+        if (!v) {
+          if (!qTrim || stillPrevStarter) state.draft.socraticQuestion = "";
+        }
+        else if (!qTrim || stillPrevStarter) {
+          const tNew = SOCRATIC_TYPES.find(s => s.type === v);
+          if (tNew && tNew.template) state.draft.socraticQuestion = applyTemplate(tNew.template, state.draft);
+        }
+      }
+      else if (field === "reframeMethod") {
+        const prevMethod = state.draft.reframeMethod;
+        state.draft.reframeMethod = v;
+        const ntTrim = String(state.draft.newThought || "").trim();
+        const prevMeta = prevMethod ? REFRAME_METHODS.find(r => r.method === prevMethod) : null;
+        const stillPrevStarter =
+          !!(prevMeta && prevMeta.template && applyTemplate(prevMeta.template, state.draft).trim() === ntTrim);
+        if (!v) {
+          if (!ntTrim || stillPrevStarter) state.draft.newThought = "";
+        }
+        else if (!ntTrim || stillPrevStarter) {
+          const rNew = REFRAME_METHODS.find(r => r.method === v);
+          if (rNew && rNew.template) state.draft.newThought = applyTemplate(rNew.template, state.draft);
+        }
+      }
+      else {
+        state.draft[field] = v;
+      }
       saveDraft(state.draft);
 
       // Inline-update live readouts for the new sliders so we don't
@@ -4645,24 +4913,6 @@ function bindCapture() {
         if (node) node.textContent = String(v);
       }
 
-      // When the user picks a Socratic type, fill the question with that
-      // type's template if they haven't typed one yet. Same for the reframe
-      // method: seed newThought with a starter the user can rewrite. Empty-
-      // only — never overwrite anything the user has put in themselves.
-      if (field === "socraticType") {
-        if (!(state.draft.socraticQuestion || "").trim()) {
-          const t = SOCRATIC_TYPES.find(s => s.type === v);
-          if (t) state.draft.socraticQuestion = t.template;
-        }
-        saveDraft(state.draft);
-      }
-      if (field === "reframeMethod") {
-        if (!(state.draft.newThought || "").trim()) {
-          const r = REFRAME_METHODS.find(m => m.method === v);
-          if (r && r.template) state.draft.newThought = r.template;
-        }
-        saveDraft(state.draft);
-      }
       if (["socraticType", "reframeMethod"].includes(field)) render();
 
       // Next-step button reflects validity in the structured flow only.
@@ -4731,7 +4981,7 @@ function bindCapture() {
       (state.draft.thoughts || []).forEach(t => { t.isHot = (t.id === id); });
       saveDraft(state.draft);
       // No render — the browser already moved the radio's checked
-      // state. Steps 4 and 5 (which derive the hot-thought card from
+      // state. Steps 3 and 5 (which derive the hot-thought card from
       // state.draft via hotThought()) aren't on-screen during step 2;
       // they'll render fresh when the user advances. Avoids a step-2
       // view flash on every radio change.
@@ -4878,36 +5128,24 @@ function bindCapture() {
     btn.addEventListener("click", () => {
       const name = btn.dataset.name;
       const prev = state.draft.distortions || [];
+      const prevPrimary = prev[0] || "";
       const has = prev.includes(name);
       const next = has ? prev.filter(d => d !== name) : [...prev, name];
       state.draft.distortions = next;
+      const nextPrimary = (next[0] || "");
+      const primarySwappedOrSet = !!(nextPrimary && nextPrimary !== prevPrimary);
 
-      // First-pick auto-fill: when the user goes from zero distortions
-      // to one, seed step 4 (Socratic type + question) and step 5
-      // (reframe method) from DISTORTION_DEFAULTS so a beginner doesn't
-      // have to map jargon-to-jargon mid-flow. Empty-only — never
-      // overwrite a value the user has already typed or picked.
-      const justAdded = !has && next.length === 1 && prev.length === 0;
-      if (justAdded) {
-        const defaults = DISTORTION_DEFAULTS[name];
-        if (defaults) {
-          if (!state.draft.socraticType)  state.draft.socraticType  = defaults.socratic;
-          if (!state.draft.reframeMethod) state.draft.reframeMethod = defaults.reframe;
-          if (!(state.draft.socraticQuestion || "").trim()) {
-            const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
-            if (t) state.draft.socraticQuestion = t.template;
-          }
-          if (!(state.draft.newThought || "").trim()) {
-            const r = REFRAME_METHODS.find(m => m.method === defaults.reframe);
-            if (r && r.template) state.draft.newThought = r.template;
-          }
+      if (primarySwappedOrSet) {
+        const seeded = seedDraftFromPrimaryDistortion(state.draft);
+        if (seeded && state.captureStep > 3) {
+          toast("Starters filled in for Steps 3 and 5 where they were empty — glance back at Challenge and Reframe.");
         }
       }
       saveDraft(state.draft);
       // No full render — just flip the chip's active class and patch the
-      // auto-suggest footnote in place. Steps 4/5 aren't on-screen yet,
-      // so their dropdowns + "Suggested for X" pills will render fresh
-      // from state.draft when the user advances. Avoids the per-click
+      // auto-suggest footnote in place. Challenge / Reframe aren't visible on
+      // the Distortion step; their dropdowns and "Suggested for X" pills render
+      // fresh from state.draft when the user advances. Avoids the per-click
       // flash that a full re-render was producing.
       btn.classList.toggle("active");
       _updateAutoSuggestFootnote();
@@ -4935,9 +5173,9 @@ function bindCapture() {
           if (state.draft.socraticType === def.socratic) state.draft.socraticType = "";
           if (state.draft.reframeMethod === def.reframe) state.draft.reframeMethod = "";
           const t = SOCRATIC_TYPES.find(s => s.type === def.socratic);
-          if (t && state.draft.socraticQuestion === t.template) state.draft.socraticQuestion = "";
+          if (t && t.template && String(state.draft.socraticQuestion || "").trim() === applyTemplate(t.template, state.draft).trim()) state.draft.socraticQuestion = "";
           const r = REFRAME_METHODS.find(m => m.method === def.reframe);
-          if (r && r.template && state.draft.newThought === r.template) state.draft.newThought = "";
+          if (r && r.template && String(state.draft.newThought || "").trim() === applyTemplate(r.template, state.draft).trim()) state.draft.newThought = "";
         }
       }
       saveDraft(state.draft);
@@ -4948,6 +5186,7 @@ function bindCapture() {
   document.querySelectorAll('[data-action="goto-step"]').forEach(el => {
     el.addEventListener("click", () => {
       const step = parseInt(el.dataset.step, 10);
+      if (step > state.captureStep) persistDefaultBeliefsForFilledThoughts(state.draft);
       if (step > state.captureStep) {
         for (let s = state.captureStep; s < step; s++) {
           if (!canAdvance(s, state.draft)) { toast("Complete step " + s + " first"); return; }
@@ -4965,14 +5204,15 @@ function bindCapture() {
     // Challenge is now step 3 (was 4) — keep the empty-only Socratic
     // pre-fill so leaving the step without typing a question still seeds
     // the chosen type's template into the saved entry.
-    if (state.captureStep === 3 && state.draft.socraticType && !state.draft.socraticQuestion.trim()) {
+    if (state.captureStep === 3 && state.draft.socraticType && !String(state.draft.socraticQuestion || "").trim()) {
       const t = SOCRATIC_TYPES.find(s => s.type === state.draft.socraticType);
-      if (t) state.draft.socraticQuestion = t.template;
+      if (t && t.template) state.draft.socraticQuestion = applyTemplate(t.template, state.draft);
     }
     if (state.captureStep === 5 && state.draft.reframeMethod && !(state.draft.newThought || "").trim()) {
       const r = REFRAME_METHODS.find(m => m.method === state.draft.reframeMethod);
-      if (r && r.template) state.draft.newThought = r.template;
+      if (r && r.template) state.draft.newThought = applyTemplate(r.template, state.draft);
     }
+    if (state.captureStep === 2) persistDefaultBeliefsForFilledThoughts(state.draft);
     state.captureStep++;
     saveDraft(state.draft);
     flushDraft();
@@ -4990,6 +5230,7 @@ function bindCapture() {
 
   const save = document.querySelector('[data-action="save-entry"]');
   if (save) save.addEventListener("click", () => {
+    persistDefaultBeliefsForFilledThoughts(state.draft);
     const now = new Date().toISOString();
     let savedId;
     if (state.editingId) {
@@ -5019,7 +5260,6 @@ function bindCapture() {
         w.resolution = "escalated";
         w.resolvedAt = now;
         w.linkedEntryId = savedId;
-        touchEntry(w);
       } else if (!w) {
         toast("Original worry was deleted — thought record saved separately.");
       }
@@ -5265,19 +5505,9 @@ function bindModal() {
     state.quickDraft.intensity = v;
     if (qid) qid.textContent = v;
     if (qib) qib.textContent = band(v).label;
-    // Swap just the grounding-note slot as the user crosses the threshold.
-    // Re-rendering the whole modal here strobed the screen and stole the
-    // slider's focus mid-drag, so we update this one element in place and
-    // rebind the safety link it contains.
-    if ((v >= 80) !== wasHigh) {
-      const slot = document.getElementById("quickGroundingSlot");
-      if (slot) {
-        slot.innerHTML = quickGroundingHTML(v);
-        slot.querySelectorAll('[data-action="open-safety"]').forEach(el => {
-          el.addEventListener("click", e => { e.preventDefault(); setState({ modal: "safety" }); });
-        });
-      }
-    }
+    // Show / hide the grounding note as the user crosses the threshold, so
+    // they get the gentle prompt without having to dismiss and re-open.
+    if ((v >= 80) !== wasHigh) renderModal();
   });
   if (qv) qv.addEventListener("change", () => {
     state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };

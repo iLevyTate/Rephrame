@@ -52,8 +52,12 @@ try {
   };
 
   // ── Step 1: Trigger ───────────────────────────────────────────────────
-  await page.waitForSelector('[data-field="trigger"]');
-  await page.locator('[data-field="trigger"]').fill('Got a one-line "we should talk" from my manager.');
+  // Step 1: trigger starter chips intentionally do not use `[data-field]`
+  // — scope to textarea so locator strict mode stays unambiguous.
+
+  await page.waitForSelector('textarea[data-field="trigger"]');
+
+  await page.locator('textarea[data-field="trigger"]').fill('Got a one-line "we should talk" from my manager.');
   await snap(page, 'trigger');
   await nextStep();
 
@@ -117,13 +121,16 @@ try {
 
   // ── Step 6: PIVOT ─────────────────────────────────────────────────────
   assert.match(await stepTitle(), /Pivot/i, 'Step 6 should be Pivot');
-  await page.locator('[data-field="pivot"]').fill('Reply asking what works for them today — take the first slot offered.');
+  await page.locator('textarea[data-field="pivot"]').fill('Reply asking what works for them today — take the first slot offered.');
   await snap(page, 'pivot');
   await nextStep();
 
   // ── Step 7: REVIEW — assert card order ────────────────────────────────
   assert.match(await stepTitle(), /Review/i, 'Step 7 should be Review');
-  const nums = (await page.locator('.review-card-num').allInnerTexts()).map((s) => s.trim());
+  const nums = (await page.locator('.review-card-num').allInnerTexts()).map((s) =>
+    // Collapse badges (e.g. "Starter text") for stable assertions — wording can shift.
+    s.replace(/\s+/g, ' ').replace(/\s*Starter\s*text\s*$/i, '').trim(),
+  );
   log('review cards: ' + JSON.stringify(nums));
   assert.deepEqual(
     nums,
