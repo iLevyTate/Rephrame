@@ -155,46 +155,221 @@ function excludeQuickThoughtRecord(e) {
   return !(e.kind === "thought-record" && e.isQuick);
 }
 
-// A realistic, well-filled-in example so first-time users can see what a
-// complete thought record looks like before they have to write one. Loaded
-// on demand from the empty-state "Load example" button and from onboarding.
-// isSample:true marks it as removable in one tap.
-// Sample uses v2 schema directly: two moods (shame + dread), two thoughts
-// with the catastrophizing one marked hot, full three-stage mood arc so
-// users can see what a complete entry looks like end to end.
-const SAMPLE_ENTRY = {
-  id: "sample-seed",
-  createdAt: new Date().toISOString(),
-  trigger: "Stood up too fast at the pedicure place and broke the chair. Two other clients turned to look. I paid and walked out without finishing.",
-  thoughts: [
-    { id: "sample-t1", text: "Everyone saw that. They all think I'm a huge clumsy idiot and I can never go back there.", beliefBefore: 85, beliefAfter: 30, isHot: true },
-    { id: "sample-t2", text: "I should have laughed it off instead of running out — I made it weird.", beliefBefore: 65, beliefAfter: 50, isHot: false }
-  ],
-  moods: [
-    { id: "sample-m1", family: "Shame",   variant: "humiliated", intensity: 80, intensityAfterReframe: 35, intensityAfterPivot: 15, estimated: false },
-    { id: "sample-m2", family: "Anxiety", variant: "dread",      intensity: 60, intensityAfterReframe: 30, intensityAfterPivot: 10, estimated: false }
-  ],
-  bodyCheck: "Face flushing, chest tight, urge to flee. Hands cold.",
-  bodyInferred: false,
-  distortions: ["Mind Reading", "Catastrophizing", "Labeling"],
-  distortionNote: "Read two strangers' minds, then attached a permanent label to myself from one moment.",
-  thoughtsAccurate: false,
-  evidenceFor: "The chair did break. People did look. I felt embarrassed enough to leave.",
-  evidenceAgainst: "Pedicure chairs are old and have weight ratings; one breaking says more about the chair. The looks were a half-second of curiosity, not judgment. I've never thought another person was 'an idiot' for an accident.",
-  socraticType: "Double standard",
-  socraticQuestion: "If a friend told me they broke a chair in public, would I think they were a clumsy idiot — or would I laugh with them about it?",
-  reframeMethod: "Compassionate reattribution",
-  newThought: "A chair gave out under me. That was embarrassing and the urge to leave makes sense. But \"clumsy idiot\" is a label I'd never put on a friend in the same spot. The chair was the problem.",
-  newThoughtBelief: 75,
-  pivot: "Text the salon tomorrow morning to apologize and ask about rebooking. Specifically: \"Hi — I'm the one whose chair broke today. Sorry I left so quickly. I'd love to finish the appointment if you can rebook me this week.\"",
-  pivotDone: true,
-  pivotDoneAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-  pivotReflection: "Sent the text. They replied within an hour, were warm about it, and even joked that the chair had been wobbling for weeks. Rebooked for Saturday. The dread before sending was way worse than anything that actually happened — same pattern as last time.",
-  outcomeRecorded: true,
-  isQuick: false,
-  isSample: true,
-  isFavorite: true,
-};
+// A small, relatable set of example entries so first-time users can see what
+// complete entries look like AND so the Patterns view has enough to chew on
+// (recurring distortions/emotions, belief & mood drops, pivot follow-through,
+// activity impact, worry dissolution, a multi-day heatmap). Loaded on demand
+// from the empty-state "Load example" button and from onboarding.
+// isSample:true marks each as removable in one tap.
+//
+// Built by makeSampleEntries() rather than a frozen const so ids are fresh and
+// timestamps stay relative to "now" each time the set is loaded. The entries
+// span ~6 days and are tuned so Mind Reading recurs as the top distortion and
+// Anxiety as the top emotion, with ~75% pivot follow-through (3 of 4 done).
+const sampleAgo = (days, hours = 0) =>
+  new Date(Date.now() - ((days * 24) + hours) * 60 * 60 * 1000).toISOString();
+
+function makeSampleEntries() {
+  return [
+    // 1 — 6 days ago. Unanswered vulnerable text. Favorited as a coping card.
+    {
+      id: "sample-" + newId(),
+      kind: "thought-record",
+      createdAt: sampleAgo(6),
+      trigger: "Sent a long, honest text to a close friend three days ago — opened up about a hard week. Still no reply. I keep re-reading it.",
+      thoughts: [
+        { id: "sample-1t1", text: "They're pulling away. I overshared and made it weird, and now they don't want to deal with me.", beliefBefore: 80, beliefAfter: 30, isHot: true },
+        { id: "sample-1t2", text: "If I really mattered to them they'd have answered by now.", beliefBefore: 60, beliefAfter: 35, isHot: false }
+      ],
+      moods: [
+        { id: "sample-1m1", family: "Anxiety", variant: "worried",  intensity: 70, intensityAfterReframe: 35, intensityAfterPivot: 20, estimated: false },
+        { id: "sample-1m2", family: "Sadness", variant: "hurt",      intensity: 65, intensityAfterReframe: 40, intensityAfterPivot: 25, estimated: false }
+      ],
+      bodyCheck: "Stomach knot, checking my phone every few minutes.",
+      bodyInferred: false,
+      distortions: ["Mind Reading", "Fortune Telling", "Personalization"],
+      distortionNote: "Read silence as rejection, predicted the friendship is over, and made their quiet entirely about me.",
+      thoughtsAccurate: false,
+      evidenceFor: "They usually reply within a day. It's been three.",
+      evidenceAgainst: "They mentioned a brutal work deadline this week. People go quiet when they're swamped — it rarely means they're done with you. I've left texts on read for days without it meaning anything.",
+      socraticType: "Alternative explanation",
+      socraticQuestion: "What are three reasons a busy friend might not reply yet that have nothing to do with me?",
+      reframeMethod: "Realism",
+      newThought: "Three days of silence from a friend who's slammed at work is far more likely to be about their week than about me. I can check in lightly instead of bracing for rejection.",
+      newThoughtBelief: 75,
+      pivot: "Send one warm, low-pressure check-in text — no guilt-tripping, no essay.",
+      pivotDone: true,
+      pivotDoneAt: sampleAgo(5, 12),
+      pivotReflection: "Texted \"thinking of you, no rush to reply.\" They wrote back within the hour — drowning in a deadline, felt bad for going quiet. The story I'd built up was completely wrong.",
+      outcomeRecorded: true,
+      isQuick: false,
+      isSample: true,
+      isFavorite: true,
+    },
+    // 2 — 5 days ago. Behavioral-activation walk. Beat its low prediction.
+    {
+      id: "sample-" + newId(),
+      kind: "activity",
+      createdAt: sampleAgo(5),
+      body: "15-minute walk around the block instead of doom-scrolling in bed.",
+      category: "movement",
+      plannedFor: sampleAgo(5, 2),
+      predictedP: 3,
+      predictedM: 4,
+      completedAt: sampleAgo(5),
+      actualP: 6,
+      actualM: 7,
+      activityNotes: "Really didn't want to go. Felt noticeably clearer by the end — better than the 3 I'd predicted.",
+      moods: [],
+      thoughts: [],
+      isQuick: false,
+      isSample: true,
+      isFavorite: false,
+    },
+    // 3 — 4 days ago. Work slip-up in a meeting. Pivot done.
+    {
+      id: "sample-" + newId(),
+      kind: "thought-record",
+      createdAt: sampleAgo(4),
+      trigger: "Quoted the wrong figure out loud in the team meeting. My manager went quiet for a second, then moved on.",
+      thoughts: [
+        { id: "sample-3t1", text: "She thinks I'm careless and can't be trusted with anything important. This is the start of me getting managed out.", beliefBefore: 85, beliefAfter: 30, isHot: true },
+        { id: "sample-3t2", text: "Everyone on the call noticed and now I look incompetent.", beliefBefore: 70, beliefAfter: 35, isHot: false }
+      ],
+      moods: [
+        { id: "sample-3m1", family: "Anxiety", variant: "dread",      intensity: 80, intensityAfterReframe: 40, intensityAfterPivot: 20, estimated: false },
+        { id: "sample-3m2", family: "Shame",   variant: "humiliated", intensity: 70, intensityAfterReframe: 35, intensityAfterPivot: 20, estimated: false }
+      ],
+      bodyCheck: "Hot face, heart pounding, replaying the moment on a loop.",
+      bodyInferred: false,
+      distortions: ["Catastrophizing", "Mind Reading", "Labeling"],
+      distortionNote: "Jumped from one wrong number to 'getting fired,' assumed I knew what she was thinking, and labeled myself incompetent.",
+      thoughtsAccurate: false,
+      evidenceFor: "I did say the wrong number. There was a pause.",
+      evidenceAgainst: "She moved on without comment — not how people react to something disqualifying. I've sat through plenty of colleagues' slips and forgotten them by lunch. One number in one meeting is not a performance review.",
+      socraticType: "Decatastrophizing",
+      socraticQuestion: "If the worst case is unlikely, what's the most realistic thing that happens after a single misquoted figure?",
+      reframeMethod: "Continuum thinking",
+      newThought: "A misquoted number is an ordinary, fixable slip — not evidence I'm incompetent or on my way out. The honest fix is a two-line correction, and that's the end of it.",
+      newThoughtBelief: 80,
+      pivot: "Send a short follow-up email with the correct figure — factual, no over-apologizing.",
+      pivotDone: true,
+      pivotDoneAt: sampleAgo(4),
+      pivotReflection: "Sent the correction. She replied 'thanks, no problem at all.' The dread beforehand was enormous; the actual outcome was four words.",
+      outcomeRecorded: true,
+      isQuick: false,
+      isSample: true,
+      isFavorite: false,
+    },
+    // 4 — 3 days ago. Health worry, parked, then dissolved on its own.
+    {
+      id: "sample-" + newId(),
+      kind: "worry",
+      createdAt: sampleAgo(3),
+      worryText: "What if this headache I've had for two days is something serious?",
+      urgency: 7,
+      parkedAt: sampleAgo(3),
+      scheduledFor: sampleAgo(2, 12),
+      resolution: "dissolved",
+      resolvedAt: sampleAgo(2),
+      moods: [],
+      thoughts: [],
+      isQuick: false,
+      isSample: true,
+      isFavorite: false,
+    },
+    // 5 — 2 days ago. FOMO from social media. Pivot NOT done yet (keeps
+    // follow-through under 100% so that stat is demonstrable).
+    {
+      id: "sample-" + newId(),
+      kind: "thought-record",
+      createdAt: sampleAgo(2),
+      trigger: "Saw photos on Instagram of friends at a get-together I wasn't invited to.",
+      thoughts: [
+        { id: "sample-5t1", text: "They left me out on purpose. I'm clearly not someone they actually want around.", beliefBefore: 75, beliefAfter: 35, isHot: true },
+        { id: "sample-5t2", text: "Everyone has a closer group than I do.", beliefBefore: 65, beliefAfter: 45, isHot: false }
+      ],
+      moods: [
+        { id: "sample-5m1", family: "Sadness", variant: "lonely",       intensity: 70, intensityAfterReframe: 40, intensityAfterPivot: null, estimated: false },
+        { id: "sample-5m2", family: "Anxiety", variant: "apprehensive", intensity: 55, intensityAfterReframe: 35, intensityAfterPivot: null, estimated: false }
+      ],
+      bodyCheck: "Heavy chest, that hollow scrolling feeling.",
+      bodyInferred: false,
+      distortions: ["Mind Reading", "Mental Filter", "Disqualifying the Positive"],
+      distortionNote: "Assumed deliberate exclusion, filtered out every time I HAVE been included, and waved away the plans we already have.",
+      thoughtsAccurate: false,
+      evidenceFor: "I wasn't at this one. The photos looked fun.",
+      evidenceAgainst: "It was a small last-minute thing in someone's neighborhood, not the whole friend group. Two of them texted me about coffee this same week. One gathering I missed isn't proof of anything about my worth.",
+      socraticType: "Evidence examination",
+      socraticQuestion: "If I list the times I HAVE been included this month alongside this one, what does the fuller picture look like?",
+      reframeMethod: "Coping/encouraging thought",
+      newThought: "Missing one small last-minute hangout stings, and it isn't evidence I'm unwanted. The friendships are real — I can reach toward them instead of away.",
+      newThoughtBelief: 70,
+      pivot: "Message one of them and suggest grabbing coffee this week.",
+      pivotDone: false,
+      pivotReflection: "",
+      outcomeRecorded: false,
+      isQuick: false,
+      isSample: true,
+      isFavorite: false,
+    },
+    // 6 — 1 day ago. Connection activity that landed well.
+    {
+      id: "sample-" + newId(),
+      kind: "activity",
+      createdAt: sampleAgo(1),
+      body: "Called my sister for 20 minutes instead of texting.",
+      category: "connection",
+      plannedFor: sampleAgo(1, 3),
+      predictedP: 5,
+      predictedM: 4,
+      completedAt: sampleAgo(1),
+      actualP: 9,
+      actualM: 7,
+      activityNotes: "We laughed about something dumb from years ago. Hung up feeling lighter than I have all week.",
+      moods: [],
+      thoughts: [],
+      isQuick: false,
+      isSample: true,
+      isFavorite: false,
+    },
+    // 7 — ~18h ago. Read a partner's mood as being about me. Pivot done;
+    // reflection names the recurring lesson the other entries echo.
+    {
+      id: "sample-" + newId(),
+      kind: "thought-record",
+      createdAt: sampleAgo(0, 18),
+      trigger: "My partner was quiet and a little short at dinner. I immediately assumed I'd done something to upset them.",
+      thoughts: [
+        { id: "sample-7t1", text: "They're annoyed with me. I've done something wrong and they're not saying it.", beliefBefore: 75, beliefAfter: 25, isHot: true }
+      ],
+      moods: [
+        { id: "sample-7m1", family: "Anxiety", variant: "nervous",     intensity: 65, intensityAfterReframe: 30, intensityAfterPivot: 15, estimated: false },
+        { id: "sample-7m2", family: "Guilt",   variant: "blameworthy", intensity: 50, intensityAfterReframe: 25, intensityAfterPivot: 10, estimated: false }
+      ],
+      bodyCheck: "Tight shoulders, scanning their face for clues.",
+      bodyInferred: false,
+      distortions: ["Mind Reading", "Personalization"],
+      distortionNote: "Decided I knew the cause of their mood, and assumed it had to be about me.",
+      thoughtsAccurate: false,
+      evidenceFor: "They were quieter than usual.",
+      evidenceAgainst: "They mentioned a rough day at work earlier. Quiet doesn't equal angry-at-me — most of the time their mood has nothing to do with me. I could just ask instead of guessing.",
+      socraticType: "Alternative explanation",
+      socraticQuestion: "What's a kinder, equally likely reason they might be quiet that has nothing to do with me?",
+      reframeMethod: "Compassionate reattribution",
+      newThought: "They're probably worn out from their own day. Their quiet isn't a verdict on me — and if I'm unsure, asking beats inventing the worst version.",
+      newThoughtBelief: 80,
+      pivot: "Gently ask: \"You seem a bit quiet — everything okay?\" instead of stewing.",
+      pivotDone: true,
+      pivotDoneAt: sampleAgo(0, 16),
+      pivotReflection: "Asked them. They were just exhausted from a hard day — nothing to do with me. Same lesson again: the dread I build up is almost always worse than what's actually going on.",
+      outcomeRecorded: true,
+      isQuick: false,
+      isSample: true,
+      isFavorite: false,
+    },
+  ];
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // STORAGE
@@ -2613,7 +2788,7 @@ function renderCaptureStep(step, d) {
   switch (step) {
     case 1: return `
       <div class="field-group">
-        <textarea class="textarea input-large" data-field="trigger" rows="3" autofocus placeholder="Broke a chair at the pedicure place… · Woke up dreading today… · Kept thinking I'm going to get fired…">${esc(d.trigger)}</textarea>
+        <textarea class="textarea input-large" data-field="trigger" rows="3" autofocus placeholder="Texted a friend and they still haven't replied… · Stumbled over a number in a meeting… · Saw something online I wasn't invited to…">${esc(d.trigger)}</textarea>
         <div class="field-help-paper" style="margin-top: 8px;">An event, a thought, or a feeling — any of those can be the starting point. You don't need to know yet which one this is.</div>
         <div class="quick-prompts" role="group" aria-label="Starter lines for trigger">
           <span class="quick-prompts-label">Or tap a starter:</span>
@@ -2647,7 +2822,7 @@ function renderCaptureStep(step, d) {
                 ${thoughts.length > 1 ? `<button type="button" class="row-remove" data-action="remove-thought" data-id="${esc(t.id)}" aria-label="Remove this thought">×</button>` : ""}
               </div>
               <textarea class="textarea row-textarea" data-action="edit-thought-text" data-id="${esc(t.id)}" rows="3"
-                placeholder="${idx === 0 ? "Everyone saw that. They all think I'm a huge clumsy idiot." : "Another thought that came up…"}">${esc(t.text)}</textarea>
+                placeholder="${idx === 0 ? "They're ignoring me — I must have said something wrong." : "Another thought that came up…"}">${esc(t.text)}</textarea>
               <div class="row-belief">
                 <span class="row-belief-label">Belief, right now</span>
                 <span class="row-belief-num"><span data-slider-display="belief-${esc(t.id)}">${t.beliefBefore ?? 70}</span><span class="belief-num-suffix">%</span></span>
@@ -2775,7 +2950,7 @@ function renderCaptureStep(step, d) {
 
         <div class="field-group">
           <label class="field-label-paper">Distortion note (optional)</label>
-          <textarea class="textarea" data-field="distortionNote" rows="2" placeholder="Assumed others judged me and attached a fixed label…">${esc(d.distortionNote)}</textarea>
+          <textarea class="textarea" data-field="distortionNote" rows="2" placeholder="Read their silence as rejection, then treated one guess as fact…">${esc(d.distortionNote)}</textarea>
         </div>
       `}
     `;
@@ -2970,7 +3145,7 @@ function renderCaptureStep(step, d) {
 
     case 6: return `
       <div class="field-group">
-        <textarea class="textarea input-large" data-field="pivot" rows="4" placeholder='Send a text: "Sorry I bailed earlier — I was embarrassed. I should have stayed."'>${esc(d.pivot)}</textarea>
+        <textarea class="textarea input-large" data-field="pivot" rows="4" placeholder='Send one honest sentence: "Hey, thinking of you — no pressure to reply, just wanted to check in."'>${esc(d.pivot)}</textarea>
         <div class="field-help-paper">A single concrete action you can do today. The smaller and more specific, the better.</div>
         <div class="quick-prompts" role="group" aria-label="Starter pivot ideas">
           <span class="quick-prompts-label">Starter ideas:</span>
@@ -4617,12 +4792,12 @@ function bindJournal() {
     el.addEventListener("click", () => {
       const exists = state.entries.some(x => x.isSample);
       if (!exists) {
-        state.entries = [{ ...SAMPLE_ENTRY, id: "sample-" + newId(), createdAt: new Date().toISOString() }, ...state.entries];
+        state.entries = [...makeSampleEntries(), ...state.entries];
         persist();
       }
       localStorage.setItem(ONBOARDED_KEY, "1");
       render();
-      toast(exists ? "Sample already loaded" : "Sample entry loaded — tap to expand");
+      toast(exists ? "Sample entries already loaded" : "Sample entries loaded — tap any to expand");
     });
   });
   // Empty-state "Import backup" button. Scoped to #view to avoid colliding
@@ -5584,12 +5759,12 @@ function bindModal() {
   if (loadSample) loadSample.addEventListener("click", () => {
     const exists = state.entries.some(e => e.isSample);
     if (!exists) {
-      state.entries = [{ ...SAMPLE_ENTRY, id: "sample-" + newId(), createdAt: new Date().toISOString() }, ...state.entries];
+      state.entries = [...makeSampleEntries(), ...state.entries];
       persist();
     }
     localStorage.setItem(ONBOARDED_KEY, "1");
     setState({ modal: null });
-    toast(exists ? "Sample already loaded" : "Sample entry loaded — tap to expand");
+    toast(exists ? "Sample entries already loaded" : "Sample entries loaded — tap any to expand");
   });
   const onboardBegin = mq('[data-action="onboard-begin"]');
   if (onboardBegin) onboardBegin.addEventListener("click", () => {
