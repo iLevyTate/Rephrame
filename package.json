@@ -6,11 +6,15 @@
   "type": "module",
   "scripts": {
     "serve": "python3 -m http.server 8765",
+    "lint": "eslint .",
     "check": "node tests/check-static.mjs",
     "test": "node tests/smoke.mjs",
-    "flows": "node tests/flows.mjs"
+    "flows": "node tests/flows.mjs",
+    "robustness": "node tests/robustness.mjs",
+    "sync": "node tests/sync.mjs"
   },
   "devDependencies": {
+    "eslint": "^9.39.4",
     "playwright": "1.60.0"
   }
 }
