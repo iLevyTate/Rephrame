@@ -182,6 +182,41 @@ try {
     await ctx.close();
   }
 
+  // ── Worry-window banner can be dismissed and the dismissal persists ──────
+  {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+    await ctx.addInitScript(() => {
+      try {
+        localStorage.setItem('reframe-onboarded-v1', '1');
+        // A parked worry whose window is already past triggers the catch-up banner.
+        localStorage.setItem('reframe-journal-v1', JSON.stringify([{
+          id: 'worry-banner', kind: 'worry',
+          createdAt: new Date(Date.now() - 3600e3).toISOString(),
+          worryText: 'Something I parked', urgency: 5,
+          parkedAt: new Date(Date.now() - 3600e3).toISOString(),
+          scheduledFor: new Date(Date.now() - 600e3).toISOString(),
+        }]));
+      } catch (_) {}
+    });
+    const page = await ctx.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (e) => pageErrors.push(e.message));
+
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+    assert.equal(await page.locator('.worry-banner').count(), 1, 'A missed worry window surfaces the banner');
+    await page.locator('[data-action="snooze-worry-window"]').click();
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator('.worry-banner').count(), 0, '"Not today" dismisses the worry banner');
+    // Persisted: still hidden after a reload.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+    assert.equal(await page.locator('.worry-banner').count(), 0, 'Worry-window snooze persists across reload');
+    assert.equal(pageErrors.length, 0, 'No uncaught errors in the worry-snooze flow: ' + JSON.stringify(pageErrors));
+    log('PASS — worry-window banner dismiss + persistence.');
+    await ctx.close();
+  }
+
   log('PASS — all flow assertions held.');
 } catch (err) {
   failed = true;

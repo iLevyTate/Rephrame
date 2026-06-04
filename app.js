@@ -518,6 +518,7 @@ const DEFAULT_SETTINGS = {
   // Worry-postponement window — when the user has parked worries and the
   // wall-clock crosses this time, the journal surfaces a calm banner.
   worryWindowTime: "18:00",  // HH:MM 24-hour, local
+  worryWindowSnoozedUntil: 0, // epoch ms; suppress the worry-window banner until this time
 };
 function loadSettings() {
   try {
@@ -890,6 +891,16 @@ function clearDraft() {
 // ═══════════════════════════════════════════════════════════════════
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+// Deterministic id derived from an entry's content (djb2). Used as the import
+// fallback when a backup record has no id: minting a fresh random id each time
+// would defeat dedupe, so re-importing the same id-less backup would duplicate
+// every entry. A content hash is stable across repeat imports of the same file.
+function _stableId(obj) {
+  const s = JSON.stringify(obj);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return "imp-" + (h >>> 0).toString(36);
+}
 // Stamp an entry's updatedAt so P2P sync's last-write-wins merge (js/sync.js)
 // can tell which device holds the freshest copy after an in-place mutation
 // (favorite, pivot-done, worry resolution, activity log, etc.). The full
@@ -1932,6 +1943,9 @@ function renderNudgeBanner() {
 function shouldShowWorryWindow() {
   const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
   if (parked.length === 0) return false;
+  // Respect a "Not today" dismissal so a missed window doesn't nag on every
+  // render until the worry is resolved/postponed.
+  if (Date.now() < (state.settings && state.settings.worryWindowSnoozedUntil || 0)) return false;
   const { h, m } = _worryWindowHM();
   const now = new Date();
   const winStart = new Date(); winStart.setHours(h, m, 0, 0);
@@ -1961,6 +1975,7 @@ function renderWorryWindowBanner() {
       </div>
       <div class="nudge-banner-actions">
         <button class="action-btn" data-action="set-view-filter" data-value="worries">Open the list</button>
+        <button class="action-btn ghost" data-action="snooze-worry-window">Not today</button>
       </div>
     </div>
   `;
@@ -3586,7 +3601,11 @@ function renderPatterns() {
   const today = startOfDay(new Date());
   const dayCounts = new Array(30).fill(0);
   patternVizEntries.forEach(e => {
-    const dayIdx = 29 - daysBetween(today, new Date(e.createdAt));
+    let dayIdx = 29 - daysBetween(today, new Date(e.createdAt));
+    // A future-dated createdAt (clock skew or imported data) lands past the
+    // last column; count it in today's bucket instead of silently dropping it
+    // from the 30-day total.
+    if (dayIdx > 29) dayIdx = 29;
     if (dayIdx >= 0 && dayIdx < 30) dayCounts[dayIdx]++;
   });
   const last30Total = dayCounts.reduce((a, b) => a + b, 0);
@@ -4702,6 +4721,14 @@ function bindJournal() {
       saveSettings(state.settings);
       render();
       toast("Snoozed for today");
+    });
+  });
+  document.querySelectorAll('[data-action="snooze-worry-window"]').forEach(el => {
+    el.addEventListener("click", () => {
+      state.settings.worryWindowSnoozedUntil = Date.now() + 18 * 3600 * 1000;
+      saveSettings(state.settings);
+      render();
+      toast("Worry window snoozed for today");
     });
   });
   // Coping card → jump to underlying entry and expand it.
@@ -5972,10 +5999,13 @@ function processImportFile(file, mode) {
       // edited backups don't crash renderers, and dedupe by id so the same
       // backup re-imported in replace mode doesn't double up entries.
       // Exclude arrays (typeof "object" but not entries) so nested-array
-      // junk doesn't get coerced into placeholder thought-records.
+      // junk doesn't get coerced into placeholder thought-records. Give
+      // id-less records a content-derived stable id so re-importing the same
+      // backup dedupes instead of duplicating (normalizeEntry would otherwise
+      // mint a fresh random id on every import).
       const normalized = imported
         .filter(x => x && typeof x === "object" && !Array.isArray(x))
-        .map(normalizeEntry);
+        .map(x => normalizeEntry(x.id ? x : { ...x, id: _stableId(x) }));
       const dedupedById = [...new Map(normalized.map(e => [e.id, e])).values()];
       // Refuse a no-op / destructive empty import. In replace mode an empty
       // array would otherwise silently wipe the whole journal under a
