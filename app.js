@@ -1217,6 +1217,24 @@ function toast(message, opts) {
     close.addEventListener("click", dismiss);
     el.appendChild(close);
   }
+  // Optional shrinking countdown bar so a time-limited action (e.g. the 6s
+  // "Undo" on delete) is visibly running out, not a silent deadline. Inline
+  // styles keep this self-contained — no extra CSS rule to maintain. Skipped
+  // for persistent toasts (no deadline) and when reduced-motion is requested.
+  if (opts.countdown && !persistent && !_prefersReducedMotion()) {
+    const bar = document.createElement("div");
+    bar.setAttribute("aria-hidden", "true");
+    bar.style.cssText =
+      "position:absolute;left:0;bottom:0;height:2px;width:100%;" +
+      "transform-origin:left;background:currentColor;opacity:.35;" +
+      "transform:scaleX(1);";
+    el.style.position = el.style.position || "relative";
+    el.appendChild(bar);
+    requestAnimationFrame(() => {
+      bar.style.transition = `transform ${lifespan}ms linear`;
+      bar.style.transform = "scaleX(0)";
+    });
+  }
   stack.appendChild(el);
   let dismissed = false;
   let autoTimer = null;
@@ -2626,7 +2644,7 @@ function renderFreeformCapture(d) {
                         <div class="intensity-band-name display" data-slider-band-name="mood-${esc(m.id)}">${esc(band(m.intensity).label)}</div>
                       </div>
                     </div>
-                    <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion">
+                    <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion" aria-label="Mood intensity, 0 to 100">
                   </div>
                 </div>
               `).join("")}
@@ -2687,7 +2705,7 @@ function renderActivityCapture(d) {
               <span class="belief-num display"><span data-slider-display="predP">${d.predictedP ?? 5}</span><span class="belief-num-suffix">/10</span></span>
               <span class="belief-hint">How enjoyable do you predict this will be?</span>
             </div>
-            <input type="range" min="0" max="10" step="1" value="${d.predictedP ?? 5}" data-field="predictedP" class="intensity-slider">
+            <input type="range" min="0" max="10" step="1" value="${d.predictedP ?? 5}" data-field="predictedP" class="intensity-slider" aria-label="Predicted pleasure, 0 to 10">
             <div class="intensity-bands">
               <span>nothing</span><span>some</span><span>a lot</span>
             </div>
@@ -2701,7 +2719,7 @@ function renderActivityCapture(d) {
               <span class="belief-num display"><span data-slider-display="predM">${d.predictedM ?? 5}</span><span class="belief-num-suffix">/10</span></span>
               <span class="belief-hint">How competent / accomplished do you predict you'll feel?</span>
             </div>
-            <input type="range" min="0" max="10" step="1" value="${d.predictedM ?? 5}" data-field="predictedM" class="intensity-slider">
+            <input type="range" min="0" max="10" step="1" value="${d.predictedM ?? 5}" data-field="predictedM" class="intensity-slider" aria-label="Predicted mastery, 0 to 10">
             <div class="intensity-bands">
               <span>not at all</span><span>some</span><span>fully</span>
             </div>
@@ -2750,7 +2768,7 @@ function renderWorryCapture(d) {
               <span class="belief-num display"><span data-slider-display="urgency">${d.urgency ?? 5}</span><span class="belief-num-suffix">/10</span></span>
               <span class="belief-hint">How loud is it right now?</span>
             </div>
-            <input type="range" min="0" max="10" step="1" value="${d.urgency ?? 5}" data-field="urgency" class="intensity-slider">
+            <input type="range" min="0" max="10" step="1" value="${d.urgency ?? 5}" data-field="urgency" class="intensity-slider" aria-label="Worry urgency, 0 to 10">
             <div class="intensity-bands">
               <span>quiet</span><span>medium</span><span>loud</span>
             </div>
@@ -2850,7 +2868,7 @@ function renderCaptureStep(step, d) {
                 <span class="row-belief-label">Belief, right now</span>
                 <span class="row-belief-num"><span data-slider-display="belief-${esc(t.id)}">${t.beliefBefore ?? 70}</span><span class="belief-num-suffix">%</span></span>
               </div>
-              <input type="range" min="0" max="100" value="${t.beliefBefore ?? 70}" data-action="edit-thought-belief" data-id="${esc(t.id)}" class="intensity-slider">
+              <input type="range" min="0" max="100" value="${t.beliefBefore ?? 70}" data-action="edit-thought-belief" data-id="${esc(t.id)}" class="intensity-slider" aria-label="Belief in this thought, 0 to 100 percent">
               <div class="intensity-bands">
                 <span>don't buy it</span><span>50%</span><span>fully convinced</span>
               </div>
@@ -2890,7 +2908,7 @@ function renderCaptureStep(step, d) {
                     <div class="intensity-band-sig" data-slider-band-sig="mood-${esc(m.id)}">${esc(band(m.intensity).signals)}</div>
                   </div>
                 </div>
-                <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion">
+                <input type="range" min="0" max="100" value="${m.intensity}" data-action="edit-mood-intensity" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion" aria-label="Mood intensity, 0 to 100">
                 <div class="intensity-bands">
                   <span>Mild</span><span>Mod</span><span>Strong</span><span>High</span><span>Severe</span>
                 </div>
@@ -3129,7 +3147,7 @@ function renderCaptureStep(step, d) {
                 <span class="belief-hint">Before: <strong>${hot.beliefBefore}%</strong>${typeof hot.beliefAfter === "number" ? ` · Δ <strong class="${(hot.beliefAfter - hot.beliefBefore) < 0 ? "delta-good" : "delta-flat"}">${hot.beliefAfter - hot.beliefBefore > 0 ? "+" : ""}${hot.beliefAfter - hot.beliefBefore}</strong>` : ""}</span>
               ` : `<span class="belief-hint">No baseline set in Step 2 — that's fine, just rate now.</span>`}
             </div>
-            <input type="range" min="0" max="100" value="${hot.beliefAfter ?? (hot.beliefBefore ?? 50)}" data-action="edit-hot-belief-after" class="intensity-slider">
+            <input type="range" min="0" max="100" value="${hot.beliefAfter ?? (hot.beliefBefore ?? 50)}" data-action="edit-hot-belief-after" class="intensity-slider" aria-label="Belief in the hot thought now, 0 to 100 percent">
           </div>
         ` : ""}
 
@@ -3140,7 +3158,7 @@ function renderCaptureStep(step, d) {
               <span class="belief-num display"><span data-slider-display="newThoughtBelief">${d.newThoughtBelief ?? 50}</span><span class="belief-num-suffix">%</span></span>
               <span class="belief-hint">Padesky asks for both — how much you believed the hot thought after, and how much you actually buy the new one. A weak "yeah, kind of" is honest data.</span>
             </div>
-            <input type="range" min="0" max="100" value="${d.newThoughtBelief ?? 50}" data-field="newThoughtBelief" class="intensity-slider">
+            <input type="range" min="0" max="100" value="${d.newThoughtBelief ?? 50}" data-field="newThoughtBelief" class="intensity-slider" aria-label="Belief in the new thought, 0 to 100 percent">
           </div>
         ` : ""}
 
@@ -3155,7 +3173,7 @@ function renderCaptureStep(step, d) {
                 <span class="belief-num display"><span data-slider-display="mood-after-${esc(m.id)}">${cur}</span><span class="belief-num-suffix">/100</span></span>
                 <span class="belief-hint"><span data-slider-band-name="mood-after-${esc(m.id)}">${esc(band(cur).label)}</span> · before: <strong>${m.intensity}</strong>${delta !== null ? ` · Δ <strong class="${delta < 0 ? "delta-good" : "delta-flat"}">${delta > 0 ? "+" : ""}${delta}</strong>` : ""}</span>
               </div>
-              <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-reframe" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion">
+              <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-reframe" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion" aria-label="${esc(label)} intensity now, 0 to 100">
               <div class="intensity-bands">
                 <span>Mild</span><span>Mod</span><span>Strong</span><span>High</span><span>Severe</span>
               </div>
@@ -3363,7 +3381,7 @@ function renderOutcomeView() {
                     <span class="belief-num display"><span data-slider-display="outcome-${esc(m.id)}">${cur}</span><span class="belief-num-suffix">/100</span></span>
                     <span class="belief-hint"><span data-slider-band-name="outcome-${esc(m.id)}">${esc(band(cur).label)}</span> · start: <strong>${m.intensity}</strong>${typeof m.intensityAfterReframe === "number" ? ` · after reframe: <strong>${m.intensityAfterReframe}</strong>` : ""}</span>
                   </div>
-                  <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-pivot" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion">
+                  <input type="range" min="0" max="100" value="${cur}" data-action="edit-mood-after-pivot" data-id="${esc(m.id)}" class="intensity-slider intensity-slider--emotion" aria-label="${esc(label)} intensity after the pivot, 0 to 100">
                   <div class="intensity-bands">
                     <span>Mild</span><span>Mod</span><span>Strong</span><span>High</span><span>Severe</span>
                   </div>
@@ -4089,7 +4107,7 @@ function renderModal() {
               <span class="belief-num display"><span id="quickIntensityDisplay">${q.intensity}</span><span class="belief-num-suffix">/100</span></span>
               <span class="belief-hint" id="quickIntensityBand">${esc(band(q.intensity).label)}</span>
             </div>
-            <input type="range" min="0" max="100" value="${q.intensity}" id="quickIntensity" class="intensity-slider intensity-slider--emotion">
+            <input type="range" min="0" max="100" value="${q.intensity}" id="quickIntensity" class="intensity-slider intensity-slider--emotion" aria-label="Intensity right now, 0 to 100">
           </div>
         </div>
         <label class="checkbox-flag" style="margin-top: 12px;">
@@ -4475,7 +4493,7 @@ function renderLogActivityModal() {
           <span class="belief-num display"><span id="actualPDisplay">${d.actualP}</span><span class="belief-num-suffix">/10</span></span>
           <span class="belief-hint">Predicted: <strong>${entry.predictedP ?? "—"}</strong></span>
         </div>
-        <input type="range" min="0" max="10" step="1" value="${d.actualP}" id="actualP" class="intensity-slider">
+        <input type="range" min="0" max="10" step="1" value="${d.actualP}" id="actualP" class="intensity-slider" aria-label="Actual pleasure, 0 to 10">
       </div>
       <label class="field-label-paper" style="margin-top: 14px;">Actual mastery (0–10)</label>
       <div class="belief-control">
@@ -4483,7 +4501,7 @@ function renderLogActivityModal() {
           <span class="belief-num display"><span id="actualMDisplay">${d.actualM}</span><span class="belief-num-suffix">/10</span></span>
           <span class="belief-hint">Predicted: <strong>${entry.predictedM ?? "—"}</strong></span>
         </div>
-        <input type="range" min="0" max="10" step="1" value="${d.actualM}" id="actualM" class="intensity-slider">
+        <input type="range" min="0" max="10" step="1" value="${d.actualM}" id="actualM" class="intensity-slider" aria-label="Actual mastery, 0 to 10">
       </div>
       <label class="field-label-paper" style="margin-top: 14px;">Notes (optional)</label>
       <textarea class="textarea" id="actualNotes" rows="3" placeholder="What surprised you? What was different from your prediction?">${esc(d.notes)}</textarea>
@@ -5876,6 +5894,7 @@ function bindModal() {
     setState({ modal: null });
     toast("Entry deleted", {
       ms: 6000,
+      countdown: true,
       action: {
         label: "Undo",
         onClick: () => {
@@ -5940,7 +5959,18 @@ function bindModal() {
 // Process a JSON backup file (from the file picker OR a manifest
 // file_handler launch) into state.entries. Both code paths go through
 // here so import behavior stays consistent.
+// localStorage tops out around 5 MB, so a backup an order of magnitude past
+// that can never be stored and would only burn memory/time in JSON.parse on a
+// low-end phone. Reject early with the same styled error toast the parse-failure
+// path uses, before reading the file into memory.
+const IMPORT_MAX_BYTES = 25 * 1024 * 1024;
+
 function processImportFile(file, mode) {
+  if (file && typeof file.size === "number" && file.size > IMPORT_MAX_BYTES) {
+    toast("That backup is too large to import (over 25 MB). It may be the wrong file.",
+          { variant: "error", persist: true });
+    return;
+  }
   const reader = new FileReader();
   reader.onload = () => {
     try {
@@ -6129,6 +6159,35 @@ document.addEventListener("keydown", e => {
     vv.addEventListener('resize', onVV);
     vv.addEventListener('scroll', onVV);
   }
+})();
+
+// Last-resort safety net. The app swallows expected failures locally (best-
+// effort storage writes, sync send errors), but a genuinely unexpected throw
+// or rejected promise would otherwise vanish silently — leaving the user
+// staring at a half-rendered screen with no idea anything broke. Surface one
+// quiet error toast and keep logging to the console for diagnosis. A short
+// dedupe window stops a tight error loop from stacking dozens of toasts.
+(function initGlobalErrorNet(){
+  let lastShown = 0;
+  const notify = (label, detail) => {
+    console.warn('[rephrame] ' + label, detail);
+    const now = Date.now();
+    if (now - lastShown < 4000) return;   // don't spam on repeated throws
+    lastShown = now;
+    if (typeof toast === 'function') {
+      toast('Something went wrong — your entries are safe. Reload if the app looks stuck.',
+            { variant: 'error' });
+    }
+  };
+  window.addEventListener('error', e => {
+    // Ignore resource-load errors (e.g. a font 404) — those are handled by the
+    // SW fallback and aren't app-logic failures worth alarming the user over.
+    if (e && e.target && e.target !== window && e.target.tagName) return;
+    notify('uncaught error', (e && (e.error || e.message)) || e);
+  });
+  window.addEventListener('unhandledrejection', e => {
+    notify('unhandled rejection', e && e.reason);
+  });
 })();
 
 applyTheme();

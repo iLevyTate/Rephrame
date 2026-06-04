@@ -715,4 +715,19 @@ if (typeof window !== "undefined") {
   window.syncBroadcast          = syncBroadcast;
   window.syncRecordEntryDeletion = syncRecordEntryDeletion;
   window.syncClearEntryDeletion  = syncClearEntryDeletion;
+
+  // Pure-logic hooks for the headless test walk (tests/sync.mjs). The merge,
+  // payload-validation and timestamp-clamp paths are the highest-risk part of
+  // P2P sync but normally only reachable through a live two-peer WebRTC
+  // session, which can't run in CI. Exposing them lets the test exercise
+  // last-write-wins, tombstone precedence and oversize rejection directly. No
+  // production code reads this object; it's inert unless a test calls in.
+  window.__syncTestHooks = {
+    mergeState:     _mergeState,
+    payloadInvalid: _payloadInvalid,
+    clampTs:        _clampSyncTs,
+    entryTs:        _entryTs,
+    SYNC_VERSION,
+    MAX_ENTRIES:    _SYNC_MAX_ENTRIES,
+  };
 }
