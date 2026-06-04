@@ -5890,6 +5890,13 @@ function bindModal() {
             e => new Date(e.createdAt).getTime() < removedTime
           );
           if (insertAt === -1) insertAt = state.entries.length;
+          // Stamp updatedAt at restore time so the resurrected entry is newer
+          // than its own deletion tombstone. Without this, a paired device that
+          // still holds the tombstone (its clock is at the delete time, which
+          // is newer than the entry's old updatedAt) would re-delete the entry
+          // on the next merge — the undo wouldn't propagate. See
+          // tests/sync-merge.mjs "undo-delete propagates".
+          touchEntry(removed);
           state.entries.splice(insertAt, 0, removed);
           // Clear the deletion tombstone so the restored entry survives the
           // next P2P merge instead of being re-deleted by its own tombstone.

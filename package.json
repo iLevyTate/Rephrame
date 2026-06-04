@@ -7,6 +7,7 @@
   "scripts": {
     "serve": "python3 -m http.server 8765",
     "check": "node tests/check-static.mjs",
+    "sync": "node tests/sync-merge.mjs",
     "test": "node tests/smoke.mjs",
     "flows": "node tests/flows.mjs"
   },

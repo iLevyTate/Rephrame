@@ -32,6 +32,9 @@ jobs:
       - name: Static checks (syntax + manifest/sw sanity)
         run: npm run check
 
+      - name: Sync merge/LWW/tombstone unit tests (no browser)
+        run: npm run sync
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 

@@ -328,6 +328,7 @@ function _wireConn(conn) {
   };
 
   conn.on("data", (msg) => {
+    if (conn !== _conn) return;   // late data from a replaced connection — ignore
     if (!msg || !msg.type) return;
     if (msg.type === "state") {
       _mergeState(msg.payload);
@@ -348,14 +349,20 @@ function _wireConn(conn) {
   });
 
   conn.on("close", () => {
+    // A stale connection that was already replaced by a newer one must not
+    // null out the live _conn or trigger a reconnect storm.
+    if (conn !== _conn) return;
     _conn = null;
+    if (_broadcastTimer) { clearTimeout(_broadcastTimer); _broadcastTimer = null; }
     if (_syncStatus !== "error" && _syncStatus !== "connected") _setSyncStatus("waiting");
     if (_lastConnectCode) _scheduleSyncReconnect();
   });
 
   conn.on("error", (err) => {
     console.warn("[sync] conn error", err);
+    if (conn !== _conn) return;   // ignore errors from a replaced connection
     _conn = null;
+    if (_broadcastTimer) { clearTimeout(_broadcastTimer); _broadcastTimer = null; }
     if (_connectTimeoutId) { clearTimeout(_connectTimeoutId); _connectTimeoutId = null; }
     _setSyncStatus("error", _friendlySyncError(err));
     if (_lastConnectCode) _scheduleSyncReconnect();
@@ -537,6 +544,7 @@ async function syncRegenerateCode() {
 function syncDisconnect() {
   if (_connectTimeoutId) { clearTimeout(_connectTimeoutId); _connectTimeoutId = null; }
   if (_reconnectTimerId) { clearTimeout(_reconnectTimerId); _reconnectTimerId = null; }
+  if (_broadcastTimer)   { clearTimeout(_broadcastTimer);   _broadcastTimer = null; }
   _reconnectAttempt = 0;
   _lastConnectCode = null;
   if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
@@ -565,6 +573,8 @@ function syncBroadcast() {
     _broadcastTimer = setTimeout(() => {
       _lastBroadcastAt = Date.now();
       _broadcastTimer = null;
+      // The connection may have closed during the throttle window.
+      if (!_conn || !_conn.open) return;
       try { _conn.send({ type: "patch", payload: _packState() }); } catch (e) { console.warn("[sync] broadcast", e); }
     }, 500);
     return;
