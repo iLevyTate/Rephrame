@@ -1,5 +1,12 @@
 (function(){
   const isFileProtocol = location.protocol === 'file:';
+  // Whether a SW was already controlling this page when it loaded. On the
+  // first-ever visit this is false: the new worker's clients.claim() fires
+  // controllerchange, but there's no older app version to refresh away from,
+  // so we must NOT reload then (it would be a jarring spurious reload that
+  // can interrupt an in-progress action). Genuine updates always have a
+  // prior controller, so this stays true for them.
+  const _hadControllerAtStartup = ('serviceWorker' in navigator) && !!navigator.serviceWorker.controller;
 
   // Inline fallback icon for file:// where the manifest can't fetch external
   // PNGs/SVGs. Matches icons/icon-512.svg exactly — same italic Fraunces r,
@@ -148,6 +155,10 @@
     // browsers that fire it twice (older Firefox).
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (_reloadingForUpdate) return;
+      // First-install claim() (no prior controller) isn't an update — skip the
+      // reload so the very first visit doesn't refresh itself out from under
+      // the user.
+      if (!_hadControllerAtStartup) return;
       _reloadingForUpdate = true;
       location.reload();
     });
@@ -192,6 +203,20 @@
                   return cached || net;
                 })
               )
+            );
+            return;
+          }
+          // Navigations: network-first so the fallback path doesn't pin the
+          // user to the first cached HTML forever; fall back to cache offline.
+          if (e.request.mode === 'navigate' || e.request.destination === 'document') {
+            e.respondWith(
+              fetch(e.request).then(resp => {
+                if (resp && resp.status === 200 && resp.type === 'basic') {
+                  const clone = resp.clone();
+                  caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{});
+                }
+                return resp;
+              }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
             );
             return;
           }

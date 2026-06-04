@@ -7,7 +7,8 @@
   "scripts": {
     "serve": "python3 -m http.server 8765",
     "check": "node tests/check-static.mjs",
-    "test": "node tests/smoke.mjs"
+    "test": "node tests/smoke.mjs",
+    "flows": "node tests/flows.mjs"
   },
   "devDependencies": {
     "playwright": "1.60.0"
