@@ -1932,8 +1932,7 @@ function renderNudgeBanner() {
 function shouldShowWorryWindow() {
   const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
   if (parked.length === 0) return false;
-  const s = state.settings || {};
-  const [h, m] = (s.worryWindowTime || "18:00").split(":").map(n => parseInt(n, 10));
+  const { h, m } = _worryWindowHM();
   const now = new Date();
   const winStart = new Date(); winStart.setHours(h, m, 0, 0);
   const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000);
@@ -2797,10 +2796,21 @@ const ACTIVITY_CATEGORIES = [
 
 // Computes the next worry-window time given the user's settings.
 // If today's window time hasn't passed yet, return today; else tomorrow.
-function computeNextWorryWindow() {
+// Parse the configured worry-window "HH:MM" into validated hour/minute.
+// A corrupt or hand-edited setting ("6pm", "25:00", "18", "") must not
+// reach setHours(NaN,…) — that yields an Invalid Date whose toISOString()
+// throws RangeError and crashes the worry save/postpone paths. Fall back
+// to 18:00 for any out-of-range or non-integer component.
+function _worryWindowHM() {
   const s = state.settings || {};
-  const timeStr = s.worryWindowTime || "18:00";
-  const [h, m] = timeStr.split(":").map(n => parseInt(n, 10));
+  let [h, m] = String(s.worryWindowTime || "").split(":").map(n => parseInt(n, 10));
+  if (!Number.isInteger(h) || h < 0 || h > 23) h = 18;
+  if (!Number.isInteger(m) || m < 0 || m > 59) m = 0;
+  return { h, m };
+}
+
+function computeNextWorryWindow() {
+  const { h, m } = _worryWindowHM();
   const t = new Date();
   t.setHours(h, m, 0, 0);
   if (t.getTime() < Date.now()) t.setDate(t.getDate() + 1);
@@ -3587,7 +3597,10 @@ function renderPatterns() {
   // Skip entries with no moods — activity/worry/freeform entries that don't
   // carry a mood would otherwise plot at peak=0 and tank the line.
   function peakIntensity(e) {
-    return (e.moods || []).reduce((a, m) => Math.max(a, m.intensity || 0), 0);
+    const peak = (e.moods || []).reduce((a, m) => Math.max(a, m.intensity || 0), 0);
+    // Clamp to the 0–100 axis so an imported/hand-edited intensity outside the
+    // UI's range can't plot a point off the top/bottom of the SVG viewBox.
+    return Math.min(100, Math.max(0, peak));
   }
   const recent = patternVizEntries.filter(e => (e.moods || []).some(m => typeof m.intensity === "number")).slice(0, 20).reverse();
   const sparkW = 280, sparkH = 50, pad = 4;
@@ -3697,7 +3710,9 @@ function renderPatterns() {
           <div class="bar-list">
             ${activityCatRanked.map(({ cat, mean, n }) => {
               const meta = ACTIVITY_CATEGORIES.find(c => c.value === cat) || { label: cap(cat), emoji: "•" };
-              const pct = (mean / 10) * 100;
+              // Clamp so imported P/M ratings outside 0–10 can't overflow or
+              // invert the bar track.
+              const pct = Math.max(0, Math.min(100, (mean / 10) * 100));
               return `
                 <div class="bar-row">
                   <div class="bar-row-label"><span aria-hidden="true">${meta.emoji}</span> ${esc(meta.label)} <span class="bar-row-sub">· ${n}</span></div>
@@ -5956,20 +5971,37 @@ function processImportFile(file, mode) {
       // Normalize every record through the schema migrator so old / hand-
       // edited backups don't crash renderers, and dedupe by id so the same
       // backup re-imported in replace mode doesn't double up entries.
+      // Exclude arrays (typeof "object" but not entries) so nested-array
+      // junk doesn't get coerced into placeholder thought-records.
       const normalized = imported
-        .filter(x => x && typeof x === "object")
+        .filter(x => x && typeof x === "object" && !Array.isArray(x))
         .map(normalizeEntry);
       const dedupedById = [...new Map(normalized.map(e => [e.id, e])).values()];
+      // Refuse a no-op / destructive empty import. In replace mode an empty
+      // array would otherwise silently wipe the whole journal under a
+      // "success" toast.
+      if (dedupedById.length === 0) {
+        toast("No entries found in that file — nothing was imported.",
+              { variant: "error", persist: true });
+        return;
+      }
+      const n = dedupedById.length;
+      const plural = n === 1 ? "entry" : "entries";
       if (mode === "replace") {
         state.entries = dedupedById;
+        persist();
+        setState({ modal: null });
+        toast("Replaced journal with " + n + " imported " + plural);
       } else {
         const existing = new Set(state.entries.map(x => x.id));
         const adds = dedupedById.filter(x => !existing.has(x.id));
         state.entries = [...adds, ...state.entries];
+        persist();
+        setState({ modal: null });
+        const skipped = n - adds.length;
+        toast("Imported " + adds.length + " new " + (adds.length === 1 ? "entry" : "entries")
+              + (skipped ? " (" + skipped + " already present)" : ""));
       }
-      persist();
-      setState({ modal: null });
-      toast("Imported " + dedupedById.length + " entries");
     } catch (err) {
       // Replace native alert() — out of design and unstylable — with a
       // persistent error toast carrying the same information.

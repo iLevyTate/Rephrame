@@ -147,6 +147,41 @@ try {
     await ctx.close();
   }
 
+  // ── Regression: a corrupt worryWindowTime must not crash the worry flow ──
+  //    computeNextWorryWindow() ran setHours(NaN,…).toISOString() and threw a
+  //    RangeError on render of the worry-capture screen (and on save).
+  {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+    await ctx.addInitScript(() => {
+      try {
+        localStorage.setItem('reframe-onboarded-v1', '1');
+        // A malformed time that the old parser turned into NaN.
+        localStorage.setItem('reframe-settings-v1', JSON.stringify({ worryWindowTime: 'not-a-time' }));
+      } catch (_) {}
+    });
+    const page = await ctx.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (e) => pageErrors.push(e.message));
+
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+    await page.locator('[data-nav="capture"]').click();
+    await page.waitForSelector('.capture-modes', { timeout: 5000 });
+    await page.locator('[data-action="set-capture-mode"][data-kind="worry"]').click();
+    // The worry screen renders computeNextWorryWindow() — must not throw.
+    await page.waitForSelector('textarea[data-field="worryText"]', { timeout: 5000 });
+    await page.locator('textarea[data-field="worryText"]').fill('Corrupt-settings worry');
+    await page.waitForTimeout(100);
+    await page.locator('[data-action="save-entry"]').click();
+    await page.waitForTimeout(300);
+    await page.locator('[data-nav="journal"]').click();
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator('.entry-card').count(), 1, 'Worry saves even with a corrupt worryWindowTime');
+    assert.equal(pageErrors.length, 0, 'No uncaught errors with a corrupt worryWindowTime: ' + JSON.stringify(pageErrors));
+    log('PASS — corrupt worryWindowTime no longer crashes the worry flow.');
+    await ctx.close();
+  }
+
   log('PASS — all flow assertions held.');
 } catch (err) {
   failed = true;
