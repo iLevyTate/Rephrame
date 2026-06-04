@@ -398,7 +398,7 @@ const UNLOCK_KEY = "reframe-unlocked";   // sessionStorage; cleared when tab clo
 //        100k iterations + 16-byte random salt per-device. Brute-force
 //        cost climbs from microseconds to tens of seconds.
 const PBKDF2_ITERATIONS = 100000;
-const PIN_LOCKOUT_KEY = "reframe-pin-lockout";  // sessionStorage
+const PIN_LOCKOUT_KEY = "reframe-pin-lockout";  // localStorage (survives reload)
 const _toHex = (buf) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 const _fromHex = (hex) => {
   const out = new Uint8Array(hex.length / 2);
@@ -437,6 +437,11 @@ function _readStoredPin() {
 function hasPin() { return !!localStorage.getItem(PIN_KEY); }
 
 async function verifyPin(pin) {
+  // Enforce the brute-force lockout here — not only in the lock-screen form —
+  // so a script calling verifyPin() in a loop is throttled too. While locked
+  // out we refuse without consuming an attempt, so hammering can't keep
+  // extending the cool-down.
+  if (pinLockoutMsLeft() > 0) return false;
   const stored = _readStoredPin();
   if (!stored) return false;
   let ok = false;
@@ -450,6 +455,8 @@ async function verifyPin(pin) {
     const computed = await _pbkdf2Pin(pin, _fromHex(stored.salt));
     ok = computed === stored.hash;
   }
+  if (ok) _clearLockout();
+  else recordPinFailure();
   return ok;
 }
 
@@ -474,21 +481,21 @@ function markLocked() { sessionStorage.removeItem(UNLOCK_KEY); }
 
 // Lockout: after 5 failed attempts, refuse verifyPin attempts for an
 // exponentially-growing window (2s, 4s, 8s, ... capped at 5 min). State
-// lives in sessionStorage so it resets when the tab closes — a determined
-// attacker could close + reopen, but the cap on the legitimate flow's
-// frustration matters more than a bullet-proof block in this threat model.
+// lives in localStorage so closing/reopening the tab or reloading the page
+// can't reset the cool-down — a stolen device can't be brute-forced by
+// scripting a reload between guesses.
 function _readLockout() {
   try {
-    const raw = sessionStorage.getItem(PIN_LOCKOUT_KEY);
+    const raw = localStorage.getItem(PIN_LOCKOUT_KEY);
     if (!raw) return { attempts: 0, until: 0 };
     const o = JSON.parse(raw);
     return { attempts: o.attempts || 0, until: o.until || 0 };
   } catch (_) { return { attempts: 0, until: 0 }; }
 }
 function _writeLockout(o) {
-  try { sessionStorage.setItem(PIN_LOCKOUT_KEY, JSON.stringify(o)); } catch (_) {}
+  try { localStorage.setItem(PIN_LOCKOUT_KEY, JSON.stringify(o)); } catch (_) {}
 }
-function _clearLockout() { try { sessionStorage.removeItem(PIN_LOCKOUT_KEY); } catch (_) {} }
+function _clearLockout() { try { localStorage.removeItem(PIN_LOCKOUT_KEY); } catch (_) {} }
 function pinLockoutMsLeft() {
   const { until } = _readLockout();
   return Math.max(0, until - Date.now());
@@ -518,7 +525,18 @@ function loadSettings() {
     return { ...DEFAULT_SETTINGS, ...(raw || {}) };
   } catch { return { ...DEFAULT_SETTINGS }; }
 }
-function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+function saveSettings(s) {
+  // Guard against QuotaExceededError so a full disk can't throw uncaught out
+  // of a settings click handler. Settings are tiny, so a failure here almost
+  // always means storage is full from entries — surface it rather than crash.
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch (err) {
+    if (typeof toast === "function") {
+      toast("Couldn't save settings — storage may be full.", { variant: "error" });
+    }
+  }
+}
 
 // Reminder interval → milliseconds. `off` returns 0 to short-circuit checks.
 const REMINDER_MS = {
@@ -836,8 +854,13 @@ function loadDraft() {
 // and beforeunload. Keystroke-frequency writes were re-serializing the
 // whole draft on every input event on long-form fields.
 function _saveDraftNow(d) {
-  if (hasDraftContent(d)) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
-  else localStorage.removeItem(DRAFT_KEY);
+  // Runs from a debounce timer and from beforeunload, so a QuotaExceededError
+  // here must never throw into a timer/unload context. The draft stays in
+  // memory (state.draft) regardless; we only lose the on-disk autosave.
+  try {
+    if (hasDraftContent(d)) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    else localStorage.removeItem(DRAFT_KEY);
+  } catch (_) { /* draft autosave is best-effort */ }
 }
 let _saveDraftTimer = null;
 let _pendingDraft = null;
@@ -1613,7 +1636,7 @@ function renderLockScreen() {
       state.lockError = "";
       render();
     } else {
-      recordPinFailure();
+      // verifyPin() already recorded the failure + advanced the lockout.
       const wait = pinLockoutMsLeft();
       state.lockError = wait > 0
         ? "Too many tries. Wait " + Math.ceil(wait / 1000) + "s before another attempt."
@@ -3725,7 +3748,7 @@ function renderPatterns() {
         <div class="emo-grid">
           ${Object.entries(emoCounts).map(([fam, count]) => `
             <div class="emo-tile" style="--intensity: ${count > 0 ? 0.06 + (count / maxEmo) * 0.18 : 0}">
-              <div class="emo-tile-name">${fam}</div>
+              <div class="emo-tile-name">${esc(fam)}</div>
               <div class="emo-tile-count display">${count}</div>
             </div>
           `).join("")}
