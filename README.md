@@ -94,6 +94,27 @@ service worker installs it in the background and you'll see a "new
 version is ready — reload?" banner at the top. Your entries are
 untouched by the reload.
 
+**Sync between devices (optional).** Settings → Sync turns on a
+peer-to-peer link so two devices on the same account hold the same
+journal. Pairing: enable Sync on both devices, then on the second device
+paste the 6-character code shown on the first (formatted `RFRM-XXXXXX`).
+Once the connection opens, both ends exchange a full snapshot and after
+that every save broadcasts. Conflicts are resolved last-write-wins per
+entry by `updatedAt`; deletions carry tombstones so a stale peer can't
+resurrect a removed entry. If the link drops, the app auto-reconnects
+with exponential backoff (five attempts) and the sync panel shows a
+live status — connecting, connected, reconnecting, or "Reconnect
+failed". Tap **Reconnect** to retry manually, **Regenerate code** to
+rotate (this unpairs every device that knew the old code), or
+**Disconnect** to take the device offline without rotating.
+
+The link uses WebRTC data channels via PeerJS, with public STUN servers
+for NAT traversal — once negotiated, journal data flows device-to-device
+and never touches the matchmaking server. The pairing code is
+sensitive: anyone who learns it can join sync and pull your full
+journal until you regenerate. Treat it like a password and don't share
+it over insecure channels.
+
 ## Live demo
 
 This repo is GitHub Pages-ready. To publish your own copy:
@@ -208,7 +229,9 @@ crisis**, and reachable from a link in every empty-state and capture modal.
 - Stored in `localStorage` under the keys `reframe-journal-v1` (entries),
   `reframe-journal-draft-v1` (in-progress capture), `reframe-settings-v1`
   (theme, nudge interval, worry-window time), and `reframe-pin-hash-v1`
-  (SHA-256 of your PIN, if set). Never sent anywhere.
+  (PBKDF2-SHA256 hash + salt of your PIN, if set). Never sent anywhere
+  except, if you've enabled Sync, to the device you paired with — and
+  only directly, over WebRTC.
 - A one-time onboarding flag lives under `reframe-onboarded-v1`.
 - The unlock token (`reframe-unlocked`) lives in `sessionStorage` and clears
   when the tab closes, so the PIN gate re-arms on each new session.
@@ -226,8 +249,11 @@ app.js                     app UI + logic
 manifest.json              PWA manifest (name, icons, shortcuts)
 sw.js                      service worker (offline cache)
 js/pwa.js                  install prompt + SW registration + file:// fallback
+js/sync.js                 optional P2P sync (WebRTC via PeerJS)
+js/vendor/peerjs.min.js    vendored PeerJS — no npm supply chain
 icons/                     SVG app icons
-tests/                     static checks + Playwright smoke walk
+tests/                     static checks + Playwright smoke/flow/robustness/sync walks
+eslint.config.js           lint config (run via `npm run lint`)
 ```
 
 ## License
