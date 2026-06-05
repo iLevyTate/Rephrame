@@ -2046,7 +2046,7 @@ function renderThoughtRecordCard(entry, index) {
   // Click the ⚡ flag directly to resume the entry — saves the user the
   // expand-then-find-button dance that was the only previous path.
   if (entry.isQuick) flagPills.push(`<button type="button" class="entry-flag flag-quick" data-action="finish-quick" data-id="${entry.id}" title="Pick up where you left off">⚡ Finish this</button>`);
-  if (entry.isSample) flagPills.push('<span class="entry-flag flag-sample">Sample</span>');
+  if (entry.isSample) flagPills.push(`<button type="button" class="entry-flag flag-sample" data-action="remove-samples" title="Remove all sample entries">Sample</button>`);
   if (entry.pivotDone && !entry.outcomeRecorded) flagPills.push(`<button type="button" class="entry-flag flag-outcome" data-action="open-outcome" data-id="${entry.id}" title="Record what happened">Step 8 open</button>`);
 
   return `
@@ -4864,6 +4864,52 @@ function bindJournal() {
       const hasThoughtBody = (state.draft.thoughts || []).some(t => (t.text || "").trim().length > 0);
       state.captureStep = hasThoughtBody ? 2 : 1;
       setView("capture");
+    });
+  });
+
+  // Tap any "Sample" badge to clear the whole sample set — matches the
+  // onboarding promise ("Tap the Sample badge to remove it"). Removed as
+  // a bundle (load-sample adds them as a bundle), with undo and tombstones
+  // so a paired device doesn't resurrect them.
+  document.querySelectorAll('[data-action="remove-samples"]').forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const removed = state.entries
+        .map((entry, idx) => ({ entry, idx }))
+        .filter(x => x.entry.isSample);
+      if (!removed.length) return;
+      const removedIds = new Set(removed.map(x => x.entry.id));
+      state.entries = state.entries.filter(x => !removedIds.has(x.id));
+      if (typeof syncRecordEntryDeletion === "function") {
+        removed.forEach(x => syncRecordEntryDeletion(x.entry.id));
+      }
+      persist();
+      render();
+      toast("Sample entries removed", {
+        ms: 6000,
+        countdown: true,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            // Restore each sample at its chronologically-correct slot
+            // (newest-first by createdAt), same approach as single-entry undo.
+            removed.forEach(({ entry }) => {
+              const t = new Date(entry.createdAt).getTime();
+              let insertAt = state.entries.findIndex(
+                e => new Date(e.createdAt).getTime() < t
+              );
+              if (insertAt === -1) insertAt = state.entries.length;
+              state.entries.splice(insertAt, 0, entry);
+              if (typeof syncClearEntryDeletion === "function") {
+                syncClearEntryDeletion(entry.id);
+              }
+            });
+            persist();
+            render();
+            toast("Restored");
+          },
+        },
+      });
     });
   });
 
