@@ -261,6 +261,13 @@ main {
 .ico--cat    { width: 18px; height: 18px; }
 .ico--bar    { width: 15px; height: 15px; vertical-align: -0.2em; }
 .ico--chip   { width: 13px; height: 13px; }
+.ico--btn    { width: 1.15em; height: 1.15em; }
+.ico--xs     { width: 0.9em; height: 0.9em; vertical-align: -0.1em; }
+/* Glyph controls that used to render a text character now hold an SVG. */
+.row-remove .ico,
+.toast-close .ico { width: 16px; height: 16px; }
+.distortion-tile-check .ico { width: 10px; height: 10px; stroke-width: 2.6; }
+.btn-back { display: inline-flex; align-items: center; gap: 6px; }
 
 .install-pill {
   height: 40px;

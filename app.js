@@ -917,6 +917,12 @@ const ICONS = {
   bolt:       '<path d="M13 2.5 4.5 13.5H10l-1 8 8.5-11.5H12z" fill="currentColor" stroke="none"/>',
   clock:      '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.2 1.9"/>',
   star:       '<path d="M12 3.3l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.3 6.9 19l1-5.7-4.1-4 5.7-.8z" fill="currentColor" stroke="none"/>',
+  // Directional + control marks (replace ← → ＋ × ✓ used as UI affordances)
+  arrowRight: '<path d="M4 12h14"/><path d="M12.5 6.5 18 12l-5.5 5.5"/>',
+  arrowLeft:  '<path d="M20 12H6"/><path d="M11.5 6.5 6 12l5.5 5.5"/>',
+  plus:       '<path d="M12 5v14M5 12h14"/>',
+  close:      '<path d="M6 6l12 12M18 6 6 18"/>',
+  check:      '<path d="M4.5 12.5 10 18l9.5-11"/>',
 };
 // Returns an inline SVG string for the named icon. `cls` adds modifier
 // classes; all icons share the `.ico` base for sizing/alignment in CSS.
@@ -1241,7 +1247,7 @@ function toast(message, opts) {
     close.type = "button";
     close.className = "toast-close";
     close.setAttribute("aria-label", "Dismiss");
-    close.textContent = "×";
+    close.innerHTML = svgIcon("close");
     close.addEventListener("click", dismiss);
     el.appendChild(close);
   }
@@ -2102,14 +2108,14 @@ function renderThoughtRecordCard(entry, index) {
             <span class="felt-pill">
               Felt <span class="felt-emo">${esc(moodLabel)}</span>
               ${hasMoodDelta
-                ? `<span class="intensity-delta"><span class="intensity-mini">${primaryMood.intensity}</span> → <span class="intensity-mini">${after}</span> <span class="delta-tag ${moodDelta < 0 ? "good" : "flat"}">${moodDelta > 0 ? "+" : ""}${moodDelta}</span></span>`
+                ? `<span class="intensity-delta"><span class="intensity-mini">${primaryMood.intensity}</span> ${svgIcon("arrowRight", "ico--xs")} <span class="intensity-mini">${after}</span> <span class="delta-tag ${moodDelta < 0 ? "good" : "flat"}">${moodDelta > 0 ? "+" : ""}${moodDelta}</span></span>`
                 : `<span class="intensity-mini">${primaryMood.intensity}</span>`}
             </span>
           ` : ""}
           ${namedMoods.length > 1 ? `<span class="dist-more" title="${esc(namedMoods.slice(1).map(m => m.variant ? cap(m.variant) : m.family).join(", "))}">+${namedMoods.length - 1} more</span>` : ""}
           ${hasBeliefDelta ? `
             <span class="belief-pill">
-              Belief <span class="belief-mini">${hot.beliefBefore}%</span> → <span class="belief-mini">${hot.beliefAfter}%</span>
+              Belief <span class="belief-mini">${hot.beliefBefore}%</span> ${svgIcon("arrowRight", "ico--xs")} <span class="belief-mini">${hot.beliefAfter}%</span>
               <span class="delta-tag ${beliefDelta < 0 ? "good" : "flat"}">${beliefDelta > 0 ? "+" : ""}${beliefDelta}</span>
             </span>
           ` : ""}
@@ -2191,10 +2197,10 @@ function renderActivityCard(entry, index) {
         <h3 class="entry-card-trigger display">${esc(entry.body) || "(activity)"}</h3>
         <div class="entry-tags-row">
           ${typeof entry.predictedP === "number" ? `
-            <span class="felt-pill">Pleasure <span class="intensity-mini">${entry.predictedP}</span>${isCompleted && entry.actualP !== null ? ` → <span class="intensity-mini">${entry.actualP}</span> <span class="delta-tag ${pDelta > 0 ? "good" : pDelta < 0 ? "flat" : "flat"}">${pDelta > 0 ? "+" : ""}${pDelta}</span>` : " predicted"}</span>
+            <span class="felt-pill">Pleasure <span class="intensity-mini">${entry.predictedP}</span>${isCompleted && entry.actualP !== null ? ` ${svgIcon("arrowRight", "ico--xs")} <span class="intensity-mini">${entry.actualP}</span> <span class="delta-tag ${pDelta > 0 ? "good" : pDelta < 0 ? "flat" : "flat"}">${pDelta > 0 ? "+" : ""}${pDelta}</span>` : " predicted"}</span>
           ` : ""}
           ${typeof entry.predictedM === "number" ? `
-            <span class="felt-pill">Mastery <span class="intensity-mini">${entry.predictedM}</span>${isCompleted && entry.actualM !== null ? ` → <span class="intensity-mini">${entry.actualM}</span> <span class="delta-tag ${mDelta > 0 ? "good" : mDelta < 0 ? "flat" : "flat"}">${mDelta > 0 ? "+" : ""}${mDelta}</span>` : " predicted"}</span>
+            <span class="felt-pill">Mastery <span class="intensity-mini">${entry.predictedM}</span>${isCompleted && entry.actualM !== null ? ` ${svgIcon("arrowRight", "ico--xs")} <span class="intensity-mini">${entry.actualM}</span> <span class="delta-tag ${mDelta > 0 ? "good" : mDelta < 0 ? "flat" : "flat"}">${mDelta > 0 ? "+" : ""}${mDelta}</span>` : " predicted"}</span>
           ` : ""}
         </div>
       </div>
@@ -2263,7 +2269,7 @@ function renderEntryDetails(entry) {
         <div class="mood-arc-stages">
           ${stages.map((s, i) => `
             <span class="mood-arc-stage">${s.value}</span>
-            ${i < stages.length - 1 ? '<span class="mood-arc-sep" aria-hidden="true">→</span>' : ""}
+            ${i < stages.length - 1 ? `<span class="mood-arc-sep" aria-hidden="true">${svgIcon("arrowRight", "ico--xs")}</span>` : ""}
           `).join("")}
           <span class="mood-arc-stage-key">${esc(stages.map(s => s.label).join(" → "))}</span>
         </div>
@@ -2302,7 +2308,7 @@ function renderEntryDetails(entry) {
                 ${typeof t.beliefBefore === "number" || typeof t.beliefAfter === "number" ? `
                   <div class="thought-belief-line">
                     ${typeof t.beliefBefore === "number" ? `<span>Belief start: <strong>${t.beliefBefore}%</strong></span>` : ""}
-                    ${typeof t.beliefAfter  === "number" ? `<span>→ after reframe: <strong>${t.beliefAfter}%</strong></span>` : ""}
+                    ${typeof t.beliefAfter  === "number" ? `<span>${svgIcon("arrowRight", "ico--xs")} after reframe: <strong>${t.beliefAfter}%</strong></span>` : ""}
                   </div>
                 ` : ""}
               </li>
@@ -2381,7 +2387,7 @@ function renderEntryDetails(entry) {
             <button class="btn btn-primary outcome-cta" data-action="open-outcome" data-id="${entry.id}">
               Step 8 · Re-rate moods after acting
             </button>
-          ` : `<p class="outcome-done-line">✓ Step 8 complete — moods re-rated after the pivot.</p>`}
+          ` : `<p class="outcome-done-line">${svgIcon("check", "ico--inline")} Step 8 complete — moods re-rated after the pivot.</p>`}
         </div>
       ` : ""}
     </div>
@@ -2497,7 +2503,7 @@ function renderWorryDetails(entry) {
       ${linkedRecord ? `
         <div class="detail-row entry-link-row">
           <button class="entry-link-btn" data-action="open-linked" data-id="${esc(linkedRecord.id)}" aria-label="Open the thought record that worked through this worry">
-            <span class="entry-link-eyebrow">Worked through here →</span>
+            <span class="entry-link-eyebrow">Worked through here ${svgIcon("arrowRight", "ico--xs")}</span>
             <span class="entry-link-text">"${esc((linkedRecord.trigger || "").slice(0, 80))}${linkedRecord.trigger && linkedRecord.trigger.length > 80 ? "…" : ""}"</span>
           </button>
         </div>
@@ -2599,11 +2605,11 @@ function renderThoughtRecordCapture(d) {
 
       <div class="capture-footer">
         <div class="capture-footer-left">
-          ${step > 1 ? `<button class="btn-back" data-action="prev-step">← Back</button>` : ""}
+          ${step > 1 ? `<button class="btn-back" data-action="prev-step">${svgIcon("arrowLeft", "ico--btn")} Back</button>` : ""}
           <button class="btn-discard" data-action="discard-capture">Discard</button>
         </div>
         ${step < totalSteps
-          ? `<button class="btn btn-primary" data-action="next-step" ${canAdvance(step, d) ? "" : "disabled"}>Continue →</button>`
+          ? `<button class="btn btn-primary" data-action="next-step" ${canAdvance(step, d) ? "" : "disabled"}>Continue ${svgIcon("arrowRight", "ico--btn")}</button>`
           : `<button class="btn btn-primary" data-action="save-entry">${state.editingId ? "Save changes" : "Save entry"}</button>`
         }
       </div>
@@ -2647,7 +2653,7 @@ function renderFreeformCapture(d) {
                 <button type="button" class="quick-prompt-chip" data-action="seed-freeform-mood" data-family="${esc(f)}">${esc(f)}</button>
               `).join("")}
             </div>
-            <button type="button" class="row-add" data-action="add-mood">＋ Add a mood</button>
+            <button type="button" class="row-add" data-action="add-mood">${svgIcon("plus", "ico--btn")} Add a mood</button>
           ` : `
             <div class="row-list" data-list="moods">
               ${moods.map(m => `
@@ -2663,7 +2669,7 @@ function renderFreeformCapture(d) {
                         ${(m.family ? (EMOTION_FAMILIES[m.family] || []) : []).map(v => `<option value="${v}" ${m.variant === v ? "selected" : ""}>${v}</option>`).join("")}
                       </select>
                     </div>
-                    <button type="button" class="row-remove" data-action="remove-mood" data-id="${esc(m.id)}" aria-label="Remove this mood">×</button>
+                    <button type="button" class="row-remove" data-action="remove-mood" data-id="${esc(m.id)}" aria-label="Remove this mood">${svgIcon("close")}</button>
                   </div>
                   <div class="intensity-control intensity-control--row">
                     <div class="intensity-head">
@@ -2894,7 +2900,7 @@ function renderCaptureStep(step, d) {
                   <input type="radio" name="hotThought" data-action="set-hot" data-id="${esc(t.id)}" ${t.isHot ? "checked" : ""}>
                   <span class="row-hot-label">${t.isHot ? `${svgIcon("flame", "ico--inline")} Hot thought` : "Mark hot"}</span>
                 </label>
-                ${thoughts.length > 1 ? `<button type="button" class="row-remove" data-action="remove-thought" data-id="${esc(t.id)}" aria-label="Remove this thought">×</button>` : ""}
+                ${thoughts.length > 1 ? `<button type="button" class="row-remove" data-action="remove-thought" data-id="${esc(t.id)}" aria-label="Remove this thought">${svgIcon("close")}</button>` : ""}
               </div>
               <textarea class="textarea row-textarea" data-action="edit-thought-text" data-id="${esc(t.id)}" rows="3"
                 placeholder="${idx === 0 ? "They're ignoring me — I must have said something wrong." : "Another thought that came up…"}">${esc(t.text)}</textarea>
@@ -2909,7 +2915,7 @@ function renderCaptureStep(step, d) {
             </div>
           `).join("")}
         </div>
-        <button type="button" class="row-add" data-action="add-thought">＋ Add another thought</button>
+        <button type="button" class="row-add" data-action="add-thought">${svgIcon("plus", "ico--btn")} Add another thought</button>
       </div>
 
       <div class="step2-section">
@@ -2932,7 +2938,7 @@ function renderCaptureStep(step, d) {
                     ${(m.family ? (EMOTION_FAMILIES[m.family] || []) : []).map(v => `<option value="${v}" ${m.variant === v ? "selected" : ""}>${v}</option>`).join("")}
                   </select>
                 </div>
-                ${moods.length > 1 ? `<button type="button" class="row-remove" data-action="remove-mood" data-id="${esc(m.id)}" aria-label="Remove this mood">×</button>` : ""}
+                ${moods.length > 1 ? `<button type="button" class="row-remove" data-action="remove-mood" data-id="${esc(m.id)}" aria-label="Remove this mood">${svgIcon("close")}</button>` : ""}
               </div>
               <div class="intensity-control intensity-control--row">
                 <div class="intensity-head">
@@ -2954,7 +2960,7 @@ function renderCaptureStep(step, d) {
             </div>
           `).join("")}
         </div>
-        <button type="button" class="row-add" data-action="add-mood">＋ Add another mood</button>
+        <button type="button" class="row-add" data-action="add-mood">${svgIcon("plus", "ico--btn")} Add another mood</button>
       </div>
 
       <div class="step2-section">
@@ -2987,7 +2993,7 @@ function renderCaptureStep(step, d) {
         <button class="accurate-tile ${d.thoughtsAccurate ? "active" : ""}" data-action="toggle-accurate">
           <div class="accurate-tile-name">
             <span>These thoughts feel accurate, not distorted</span>
-            <span class="distortion-tile-check">✓</span>
+            <span class="distortion-tile-check">${svgIcon("check")}</span>
           </div>
           <div class="accurate-tile-desc">Not every painful thought is a distortion. Grief, valid anger, and accurate self-criticism are real — they don't need to be "fixed." Pick this and skip ahead; the rest of the entry still helps you sit with what's true.</div>
         </button>
@@ -3002,7 +3008,7 @@ function renderCaptureStep(step, d) {
                 <button class="distortion-tile ${active ? "active" : ""}" data-action="toggle-distortion" data-name="${esc(dist.name)}">
                   <div class="distortion-tile-name">
                     <span>${esc(dist.name)}</span>
-                    <span class="distortion-tile-check">✓</span>
+                    <span class="distortion-tile-check">${svgIcon("check")}</span>
                   </div>
                   <div class="distortion-tile-desc">${esc(dist.desc)}</div>
                 </button>
@@ -3317,12 +3323,12 @@ function renderReview(d) {
         if (!hasHotB && !hasNewB && ratedMoods.length === 0) return "";
         return `
           <div class="review-rerate">
-            ${hasHotB ? `<div class="review-meta-item"><strong>Belief in hot thought:</strong> ${hot.beliefBefore}% → ${hot.beliefAfter}% <span class="delta-tag ${bD < 0 ? "good" : "flat"}">${bD > 0 ? "+" : ""}${bD}</span></div>` : ""}
+            ${hasHotB ? `<div class="review-meta-item"><strong>Belief in hot thought:</strong> ${hot.beliefBefore}% ${svgIcon("arrowRight", "ico--xs")} ${hot.beliefAfter}% <span class="delta-tag ${bD < 0 ? "good" : "flat"}">${bD > 0 ? "+" : ""}${bD}</span></div>` : ""}
             ${hasNewB ? `<div class="review-meta-item" style="margin-top: 4px;"><strong>Belief in new thought:</strong> ${d.newThoughtBelief}%</div>` : ""}
             ${ratedMoods.map(m => {
               const label = m.variant ? cap(m.variant) : (m.family || "Mood");
               const delta = m.intensityAfterReframe - m.intensity;
-              return `<div class="review-meta-item" style="margin-top: 4px;"><strong>${esc(label)}:</strong> ${m.intensity} → ${m.intensityAfterReframe} <span class="delta-tag ${delta < 0 ? "good" : "flat"}">${delta > 0 ? "+" : ""}${delta}</span></div>`;
+              return `<div class="review-meta-item" style="margin-top: 4px;"><strong>${esc(label)}:</strong> ${m.intensity} ${svgIcon("arrowRight", "ico--xs")} ${m.intensityAfterReframe} <span class="delta-tag ${delta < 0 ? "good" : "flat"}">${delta > 0 ? "+" : ""}${delta}</span></div>`;
             }).join("")}
           </div>
         `;
@@ -3434,7 +3440,7 @@ function renderOutcomeView() {
 
       <div class="capture-footer">
         <div class="capture-footer-left">
-          <button class="btn-back" data-action="back-to-journal">← Back</button>
+          <button class="btn-back" data-action="back-to-journal">${svgIcon("arrowLeft", "ico--btn")} Back</button>
         </div>
         <button class="btn btn-primary" data-action="save-outcome">Save outcome</button>
       </div>
@@ -3811,7 +3817,7 @@ function renderPatterns() {
         <div class="pattern-card span-2">
           <div class="pattern-card-head">
             <span class="pattern-card-title">Intensity, last ${recent.length} entries</span>
-            <span class="pattern-card-meta">oldest → newest · structured entries only</span>
+            <span class="pattern-card-meta">oldest ${svgIcon("arrowRight", "ico--xs")} newest · structured entries only</span>
           </div>
           <div class="spark-wrap">
             <svg viewBox="0 0 ${sparkW} ${sparkH}" width="100%" height="${sparkH}" preserveAspectRatio="none" style="display: block;">
@@ -4302,7 +4308,7 @@ function _releaseModalFocus() {
 const SAFETY_LINK_INLINE =
   'Rephrame is a journaling tool, not a substitute for therapy or crisis care. ' +
   'In the US, call or text <strong>988</strong> (Suicide &amp; Crisis Lifeline) or text <strong>HOME</strong> to <strong>741741</strong> (Crisis Text Line). ' +
-  '<button class="link-button" data-action="open-safety">See more crisis resources →</button>';
+  `<button class="link-button" data-action="open-safety">See more crisis resources ${svgIcon("arrowRight", "ico--xs")}</button>`;
 
 function renderSettingsModal() {
   const s = state.settings;
