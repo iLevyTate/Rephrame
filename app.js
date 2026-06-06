@@ -897,6 +897,34 @@ const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2
 const touchEntry = e => { if (e) e.updatedAt = new Date().toISOString(); };
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// Minimal line-icon set. Inline SVG so they inherit currentColor and stay
+// crisp at any size — no emoji, no font dependency, no extra requests. Each
+// entry is just the inner path(s); svgIcon() wraps them in a sized <svg>.
+// Stroke-based by default to match the topbar / nav icon language; a few
+// glyphs (bolt, star) opt into a solid fill where a filled mark reads better.
+const ICONS = {
+  // Activity categories
+  connection: '<circle cx="9" cy="8.5" r="2.6"/><circle cx="16" cy="9.5" r="2.2"/><path d="M3.5 19v-.8A3.7 3.7 0 0 1 7.2 14.5h3.6a3.7 3.7 0 0 1 3.7 3.7v.8"/><path d="M16 14.6a3.2 3.2 0 0 1 4.5 2.9V19"/>',
+  movement:   '<path d="M21.5 12H18l-2.3 6.5a.4.4 0 0 1-.76-.02L10.7 5.6a.4.4 0 0 0-.77-.01L7.8 12H2.5"/>',
+  creation:   '<path d="M11 20.5h9"/><path d="M16.4 4a1.9 1.9 0 0 1 2.7 2.7L8.4 17.4 4 18.5l1.1-4.4z"/>',
+  selfcare:   '<path d="M12 20.3 4.8 13a4.4 4.4 0 0 1 6.2-6.2l1 1 1-1A4.4 4.4 0 0 1 20.2 13z"/>',
+  chore:      '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M8 12l2.8 2.8L16.4 9"/>',
+  rest:       '<path d="M20.4 13.4A8 8 0 1 1 10.6 3.6a6.3 6.3 0 0 0 9.8 9.8z"/>',
+  other:      '<circle cx="5.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
+  // Entry / state marks
+  flame:      '<path d="M12 2.5c3 3.5 5 6.2 5 9.3a5 5 0 0 1-10 0c0-1.7.6-3 1.6-4.2.2 1.2 1 2 2.1 2.2C9.6 7.4 10.4 5 12 2.5z"/>',
+  bolt:       '<path d="M13 2.5 4.5 13.5H10l-1 8 8.5-11.5H12z" fill="currentColor" stroke="none"/>',
+  clock:      '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.2 1.9"/>',
+  star:       '<path d="M12 3.3l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.3 6.9 19l1-5.7-4.1-4 5.7-.8z" fill="currentColor" stroke="none"/>',
+};
+// Returns an inline SVG string for the named icon. `cls` adds modifier
+// classes; all icons share the `.ico` base for sizing/alignment in CSS.
+function svgIcon(name, cls = "") {
+  const inner = ICONS[name];
+  if (!inner) return "";
+  return `<svg class="ico${cls ? " " + cls : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+}
 // Clock-skew guard. A device with the wrong date set could otherwise
 // stamp entries minutes/days in the future, breaking sort order and the
 // 30-day heatmap. Anything more than a minute ahead of now gets pulled
@@ -1015,7 +1043,7 @@ function freeformToMd(e, idx) {
 
 function activityToMd(e, idx) {
   const L = [];
-  const cat = ACTIVITY_CATEGORIES.find(c => c.value === e.category) || { label: "Activity", emoji: "" };
+  const cat = ACTIVITY_CATEGORIES.find(c => c.value === e.category) || { label: "Activity" };
   L.push("---", "", "### Activity " + (idx + 1) + " · " + cat.label, "");
   L.push("**Plan:** " + (e.body || "—"));
   if (e.plannedFor) L.push("**When:** " + fmtDateTime(e.plannedFor));
@@ -1712,7 +1740,7 @@ function renderCopingCards(favorites) {
           return `
             <article class="coping-card" data-action="jump-to-entry" data-id="${e.id}" tabindex="0" role="button" aria-label="Open coping card">
               <div class="coping-card-head">
-                <span class="coping-card-star" aria-hidden="true">★</span>
+                <span class="coping-card-star" aria-hidden="true">${svgIcon("star")}</span>
                 <span class="coping-card-date">${esc(fmtDate(e.createdAt))}</span>
               </div>
               <p class="coping-card-quote display">${esc(e.newThought) || '<span class="muted">(no reframe yet)</span>'}</p>
@@ -1784,7 +1812,7 @@ function renderJournal() {
           <button class="btn btn-ghost" data-action="open-import">Import backup</button>
         </div>
         <p class="empty-safety">
-          Overwhelmed right now? Tap the <strong>⚡</strong> icon in the top-right for a 30-second quick capture, or
+          Overwhelmed right now? Tap the ${svgIcon("bolt", "ico--inline")} icon in the top-right for a 30-second quick capture, or
           <button class="link-button" data-action="open-safety">see crisis resources</button>.
         </p>
       </div>
@@ -1850,14 +1878,14 @@ function renderJournal() {
 
   const viewChips = [
     { key: "all",        label: "All",          count: counts.all,        hint: "Every entry" },
-    { key: "favorites",  label: "★ Coping",     count: counts.favorites,  hint: "Pinned reframes" },
-    { key: "unfinished", label: "⚡ Unfinished",  count: counts.unfinished, hint: "Quick captures waiting" },
+    { key: "favorites",  label: "Coping",       ico: "star",  count: counts.favorites,  hint: "Pinned reframes" },
+    { key: "unfinished", label: "Unfinished",   ico: "bolt",  count: counts.unfinished, hint: "Quick captures waiting" },
     { key: "freeform",   label: "Free writes",  count: counts.freeform,   hint: "Open-form journal entries" },
     { key: "activities", label: "Activities",   count: counts.activities, hint: "Planned and logged activities" },
     { key: "worries",    label: "Worries",      count: counts.worries,    hint: "Parked worries and resolutions" },
-    { key: "week",       label: "This week",    count: counts.week,       hint: "Last 7 days — omits ⚡ quick thought records" },
-    { key: "pivoted",    label: "Pivoted",      count: counts.pivoted,    hint: "Pivot marked done — omits ⚡ quick thought records" },
-    { key: "pending",    label: "Pivot due",    count: counts.pending,    hint: "Pivot not done yet — omits ⚡ quick thought records" },
+    { key: "week",       label: "This week",    count: counts.week,       hint: "Last 7 days — omits quick thought records" },
+    { key: "pivoted",    label: "Pivoted",      count: counts.pivoted,    hint: "Pivot marked done — omits quick thought records" },
+    { key: "pending",    label: "Pivot due",    count: counts.pending,    hint: "Pivot not done yet — omits quick thought records" },
   ].filter(c => c.key === "all" || c.count > 0);
 
   return `
@@ -1884,8 +1912,8 @@ function renderJournal() {
 
     <div class="view-chips" role="tablist" aria-label="Scope">
       ${viewChips.map(c => `
-        <button class="view-chip ${state.viewFilter === c.key ? "active" : ""}" data-action="set-view-filter" data-value="${c.key}" title="${esc(c.hint)}" role="tab" aria-selected="${state.viewFilter === c.key}">
-          ${esc(c.label)}<span class="view-chip-count">${c.count}</span>
+        <button class="view-chip ${c.ico ? "view-chip--ico" : ""} ${state.viewFilter === c.key ? "active" : ""}" data-action="set-view-filter" data-value="${c.key}" title="${esc(c.hint)}" role="tab" aria-selected="${state.viewFilter === c.key}">
+          ${c.ico ? svgIcon(c.ico, "ico--chip") : ""}${esc(c.label)}<span class="view-chip-count">${c.count}</span>
         </button>
       `).join("")}
     </div>
@@ -2045,7 +2073,7 @@ function renderThoughtRecordCard(entry, index) {
   const flagPills = [];
   // Click the ⚡ flag directly to resume the entry — saves the user the
   // expand-then-find-button dance that was the only previous path.
-  if (entry.isQuick) flagPills.push(`<button type="button" class="entry-flag flag-quick" data-action="finish-quick" data-id="${entry.id}" title="Pick up where you left off">⚡ Finish this</button>`);
+  if (entry.isQuick) flagPills.push(`<button type="button" class="entry-flag flag-quick" data-action="finish-quick" data-id="${entry.id}" title="Pick up where you left off">${svgIcon("bolt", "ico--inline")} Finish this</button>`);
   if (entry.isSample) flagPills.push(`<button type="button" class="entry-flag flag-sample" data-action="remove-samples" title="Remove all sample entries">Sample</button>`);
   if (entry.pivotDone && !entry.outcomeRecorded) flagPills.push(`<button type="button" class="entry-flag flag-outcome" data-action="open-outcome" data-id="${entry.id}" title="Record what happened">Step 8 open</button>`);
 
@@ -2153,7 +2181,7 @@ function renderActivityCard(entry, index) {
     <article class="entry-card entry-card--activity ${expanded ? "expanded" : ""}" id="entry-${entry.id}">
       <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
         <div class="entry-meta-row">
-          <span class="entry-kind-tag">${cat.emoji} ${esc(cat.label)}</span>
+          <span class="entry-kind-tag">${catIcon(entry.category, "ico--kind")} ${esc(cat.label)}</span>
           <span class="entry-meta-dot">·</span>
           <span class="entry-meta-time">${esc(fmtDateTime(entry.plannedFor || entry.createdAt))}</span>
           <span class="entry-meta-flags">
@@ -2192,7 +2220,7 @@ function renderWorryCard(entry, index) {
     <article class="entry-card entry-card--worry ${expanded ? "expanded" : ""}" id="entry-${entry.id}">
       <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
         <div class="entry-meta-row">
-          <span class="entry-kind-tag">⏳ Worry</span>
+          <span class="entry-kind-tag">${svgIcon("clock", "ico--kind")} Worry</span>
           <span class="entry-meta-dot">·</span>
           <span class="entry-meta-time">${esc(fmtTime(entry.parkedAt || entry.createdAt))}${ago ? ` · ${esc(ago)} ago` : ""}</span>
           <span class="entry-meta-flags">
@@ -2270,7 +2298,7 @@ function renderEntryDetails(entry) {
           <ol class="thought-list">
             ${thoughts.map(t => `
               <li class="thought-list-item ${t.isHot ? "is-hot" : ""}">
-                <p class="detail-text italic">${t.isHot ? '<span class="thought-hot-tag">🔥</span> ' : ""}"${esc(t.text) || "—"}"</p>
+                <p class="detail-text italic">${t.isHot ? `<span class="thought-hot-tag">${svgIcon("flame")}</span> ` : ""}"${esc(t.text) || "—"}"</p>
                 ${typeof t.beliefBefore === "number" || typeof t.beliefAfter === "number" ? `
                   <div class="thought-belief-line">
                     ${typeof t.beliefBefore === "number" ? `<span>Belief start: <strong>${t.beliefBefore}%</strong></span>` : ""}
@@ -2686,7 +2714,7 @@ function renderActivityCapture(d) {
           <div class="activity-cats">
             ${cats.map(c => `
               <button type="button" class="activity-cat-chip ${d.category === c.value ? "active" : ""}" data-action="set-activity-category" data-value="${esc(c.value)}">
-                <span class="activity-cat-emoji" aria-hidden="true">${c.emoji}</span>
+                <span class="activity-cat-emoji" aria-hidden="true">${svgIcon(c.icon, "ico--cat")}</span>
                 <span class="activity-cat-label">${esc(c.label)}</span>
               </button>
             `).join("")}
@@ -2801,17 +2829,23 @@ function canAdvance(step, d) {
 }
 
 // Activity categories — keeping the list short and recognizable so the
-// "what category was this" question has obvious answers. Each has an
-// emoji for at-a-glance scanning.
+// "what category was this" question has obvious answers. Each maps to a
+// minimal line icon (see ICONS) for at-a-glance scanning.
 const ACTIVITY_CATEGORIES = [
-  { value: "connection", label: "Connection", emoji: "🤝" },
-  { value: "movement",   label: "Movement",   emoji: "🚶" },
-  { value: "creation",   label: "Creation",   emoji: "🎨" },
-  { value: "self-care",  label: "Self-care",  emoji: "🛁" },
-  { value: "chore",      label: "Chore",      emoji: "🧹" },
-  { value: "rest",       label: "Rest",       emoji: "😴" },
-  { value: "other",      label: "Other",      emoji: "•"  },
+  { value: "connection", label: "Connection", icon: "connection" },
+  { value: "movement",   label: "Movement",   icon: "movement" },
+  { value: "creation",   label: "Creation",   icon: "creation" },
+  { value: "self-care",  label: "Self-care",  icon: "selfcare" },
+  { value: "chore",      label: "Chore",      icon: "chore" },
+  { value: "rest",       label: "Rest",       icon: "rest" },
+  { value: "other",      label: "Other",      icon: "other" },
 ];
+// Resolve a category's icon by value, falling back to the neutral "other"
+// mark for unknown/legacy categories.
+function catIcon(value, cls = "") {
+  const c = ACTIVITY_CATEGORIES.find(x => x.value === value);
+  return svgIcon(c ? c.icon : "other", cls);
+}
 
 // Computes the next worry-window time given the user's settings.
 // If today's window time hasn't passed yet, return today; else tomorrow.
@@ -2858,7 +2892,7 @@ function renderCaptureStep(step, d) {
               <div class="row-head">
                 <label class="row-hot">
                   <input type="radio" name="hotThought" data-action="set-hot" data-id="${esc(t.id)}" ${t.isHot ? "checked" : ""}>
-                  <span class="row-hot-label">${t.isHot ? "🔥 Hot thought" : "Mark hot"}</span>
+                  <span class="row-hot-label">${t.isHot ? `${svgIcon("flame", "ico--inline")} Hot thought` : "Mark hot"}</span>
                 </label>
                 ${thoughts.length > 1 ? `<button type="button" class="row-remove" data-action="remove-thought" data-id="${esc(t.id)}" aria-label="Remove this thought">×</button>` : ""}
               </div>
@@ -3014,7 +3048,7 @@ function renderCaptureStep(step, d) {
       ` : ""}
       ${hot && hot.text ? `
         <div class="hot-thought-card" aria-label="Hot thought you're challenging">
-          <span class="hot-thought-eyebrow">🔥 Hot thought on trial</span>
+          <span class="hot-thought-eyebrow">${svgIcon("flame", "ico--inline")} Hot thought on trial</span>
           <p class="hot-thought-quote display italic">"${esc(hot.text)}"</p>
           ${typeof hot.beliefBefore === "number" ? `<span class="hot-thought-belief">Belief before: <strong>${hot.beliefBefore}%</strong></span>` : ""}
         </div>
@@ -3090,7 +3124,7 @@ function renderCaptureStep(step, d) {
         </div>
       ` : (hot && hot.text ? `
         <div class="hot-thought-card" aria-label="Hot thought you're reframing">
-          <span class="hot-thought-eyebrow">🔥 Reframing the hot thought</span>
+          <span class="hot-thought-eyebrow">${svgIcon("flame", "ico--inline")} Reframing the hot thought</span>
           <p class="hot-thought-quote display italic">"${esc(hot.text)}"</p>
           ${typeof hot.beliefBefore === "number" ? `<span class="hot-thought-belief">Belief before: <strong>${hot.beliefBefore}%</strong></span>` : ""}
         </div>
@@ -3224,7 +3258,7 @@ function renderReview(d) {
         <div class="review-meta-row">
           ${thoughts.map(t => `
             <div class="review-meta-item">
-              ${t.isHot ? '<span class="thought-hot-tag">🔥</span> ' : ""}
+              ${t.isHot ? `<span class="thought-hot-tag">${svgIcon("flame")}</span> ` : ""}
               <span class="italic">"${esc(t.text) || "(empty)"}"</span>
               ${typeof t.beliefBefore === "number" ? `<span class="muted"> — belief ${t.beliefBefore}%</span>` : ""}
             </div>
@@ -3714,11 +3748,11 @@ function renderPatterns() {
           </div>
           <div class="bar-list">
             ${activityCatRanked.map(({ cat, mean, n }) => {
-              const meta = ACTIVITY_CATEGORIES.find(c => c.value === cat) || { label: cap(cat), emoji: "•" };
+              const meta = ACTIVITY_CATEGORIES.find(c => c.value === cat) || { label: cap(cat) };
               const pct = (mean / 10) * 100;
               return `
                 <div class="bar-row">
-                  <div class="bar-row-label"><span aria-hidden="true">${meta.emoji}</span> ${esc(meta.label)} <span class="bar-row-sub">· ${n}</span></div>
+                  <div class="bar-row-label">${catIcon(cat, "ico--bar")} ${esc(meta.label)} <span class="bar-row-sub">· ${n}</span></div>
                   <div class="bar-track"><div class="bar-fill" style="width: ${pct.toFixed(1)}%"></div></div>
                   <div class="bar-row-value">${mean.toFixed(1)}</div>
                 </div>
@@ -4146,7 +4180,7 @@ function renderModal() {
         </button>
         <button class="modal-option" data-action="onboard-begin">
           <div class="modal-option-title">Begin your own entry</div>
-          <div class="modal-option-desc">Jump straight into Step 1. You can always tap the ⚡ icon in the top-right for a quick-capture if you're overwhelmed.</div>
+          <div class="modal-option-desc">Jump straight into Step 1. You can always tap the ${svgIcon("bolt", "ico--inline")} icon in the top-right for a quick-capture if you're overwhelmed.</div>
         </button>
       </div>
       <p class="modal-sub" style="font-size: 12px; margin-top: 16px;">
@@ -4485,7 +4519,7 @@ function renderLogActivityModal() {
   const cat = ACTIVITY_CATEGORIES.find(c => c.value === entry.category) || ACTIVITY_CATEGORIES[ACTIVITY_CATEGORIES.length - 1];
   return `
     <h3 class="display">How did it go?</h3>
-    <p class="modal-sub">${esc(cat.emoji)} ${esc(entry.body)} — planned for ${esc(fmtDateTime(entry.plannedFor))}</p>
+    <p class="modal-sub">${catIcon(entry.category, "ico--inline")} ${esc(entry.body)} — planned for ${esc(fmtDateTime(entry.plannedFor))}</p>
     <div class="modal-body">
       <label class="field-label-paper">Actual pleasure (0–10)</label>
       <div class="belief-control">
