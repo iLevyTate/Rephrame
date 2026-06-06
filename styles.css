@@ -245,6 +245,30 @@ main {
 .icon-pill:active { transform: scale(0.96); }
 .icon-pill svg { width: 18px; height: 18px; }
 
+/* Inline line-icon system (svgIcon() in app.js). The base `.ico` sizes to
+   the surrounding text via em and nudges its baseline so it sits centered
+   next to a label; flex contexts (chips, buttons) ignore the vertical-align
+   and lean on align-items instead. Modifiers tune size per context. */
+.ico {
+  display: inline-block;
+  width: 1.05em;
+  height: 1.05em;
+  flex: 0 0 auto;
+  vertical-align: -0.16em;
+}
+.ico--inline { width: 1.05em; height: 1.05em; }
+.ico--kind   { width: 13px; height: 13px; vertical-align: -0.22em; }
+.ico--cat    { width: 18px; height: 18px; }
+.ico--bar    { width: 15px; height: 15px; vertical-align: -0.2em; }
+.ico--chip   { width: 13px; height: 13px; }
+.ico--btn    { width: 1.15em; height: 1.15em; }
+.ico--xs     { width: 0.9em; height: 0.9em; vertical-align: -0.1em; }
+/* Glyph controls that used to render a text character now hold an SVG. */
+.row-remove .ico,
+.toast-close .ico { width: 16px; height: 16px; }
+.distortion-tile-check .ico { width: 10px; height: 10px; stroke-width: 2.6; }
+.btn-back { display: inline-flex; align-items: center; gap: 6px; }
+
 .install-pill {
   height: 40px;
   padding: 0 16px;
@@ -1560,6 +1584,7 @@ html[data-theme="light"] .capture-footer { background: rgba(235, 227, 213, 0.94)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.bar-row-label .ico { color: var(--copper); }
 @media (min-width: 480px) {
   .bar-row-label { width: 150px; }
 }
@@ -2669,7 +2694,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   font-size: 11px;
   color: var(--on-paper-mute);
 }
-.coping-card-star { color: var(--copper); font-size: 14px; }
+.coping-card-star { color: var(--copper); font-size: 14px; display: inline-flex; align-items: center; }
 .coping-card-date { font-family: var(--mono); letter-spacing: 0.05em; }
 .coping-card-quote {
   font-size: 15px;
@@ -2948,7 +2973,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   border-color: var(--copper);
   color: var(--copper-deep);
 }
-.activity-cat-emoji { font-size: 16px; line-height: 1; }
+.activity-cat-emoji { display: inline-flex; align-items: center; color: var(--copper); }
 .activity-cat-label { font-size: 12px; font-weight: 600; }
 .entry-card--activity .entry-card-trigger { font-size: 16px; }
 .flag-activity {
