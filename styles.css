@@ -1032,6 +1032,15 @@ body.kb-open .bottom-nav {
 
 .field-group { margin-bottom: 20px; }
 .field-group:last-child { margin-bottom: 0; }
+/* Emphasis for the reframe "new thought" field so it reads as the focal point
+   of Step 5 and isn't mistaken for an optional adjunct to the method picker. */
+.field-group.reframe-new-thought {
+  border-left: 3px solid var(--copper);
+  padding: 12px 0 12px 14px;
+  background: linear-gradient(to right, var(--copper-soft), transparent 70%);
+  border-radius: 0 var(--r-2) var(--r-2) 0;
+}
+.field-group.reframe-new-thought .field-label-paper { color: var(--copper-deep); }
 .field-label-paper {
   font-family: var(--mono);
   font-size: 10px;

@@ -70,25 +70,32 @@ try {
   await snap(page, 'initial-reaction');
   await nextStep();
 
-  // ── Step 3: CHALLENGE (post-PR6 reorder — was Distortion) ─────────────
-  assert.match(await stepTitle(), /Challenge/i, 'Step 3 should be Challenge after the reorder');
-  assert.equal(await page.locator('[data-field="evidenceFor"]').count(), 1, 'Step 3 has Evidence FOR field');
-  assert.equal(await page.locator('.distortion-grid').count(), 0, 'Step 3 must NOT show the distortion grid');
-  await page.locator('[data-field="evidenceFor"]').fill('They said "we should talk." That is what they said.');
-  await page.locator('[data-field="evidenceAgainst"]').fill('No complaint named. Last 1:1 was positive. On time on every deliverable this month.');
-  await page.locator('[data-field="socraticType"]').selectOption('Probability testing');
-  await page.waitForTimeout(250);
-  const socQ = await page.locator('[data-field="socraticQuestion"]').inputValue();
-  assert.ok(socQ.trim().length > 0, 'Picking a Socratic type pre-fills the question textarea');
-  await snap(page, 'challenge');
-  await nextStep();
-
-  // ── Step 4: DISTORTION (post-PR6 reorder — was Challenge) ─────────────
-  assert.match(await stepTitle(), /Distortion/i, 'Step 4 should be Distortion after the reorder');
-  assert.equal(await page.locator('.distortion-grid').count(), 1, 'Step 4 shows the distortion grid');
+  // ── Step 3: DISTORTION (distortion-first so its picks seed forward) ───
+  assert.match(await stepTitle(), /Distortion/i, 'Step 3 should be Distortion');
+  assert.equal(await page.locator('.distortion-grid').count(), 1, 'Step 3 shows the distortion grid');
+  assert.equal(await page.locator('[data-field="evidenceFor"]').count(), 0, 'Step 3 must NOT show the Challenge evidence field');
   await page.locator('[data-action="toggle-distortion"][data-name="Fortune Telling"]').click();
   await page.waitForTimeout(150);
   await snap(page, 'distortion');
+  await nextStep();
+
+  // ── Step 4: CHALLENGE (forward-seeded from the distortion) ────────────
+  assert.match(await stepTitle(), /Challenge/i, 'Step 4 should be Challenge');
+  assert.equal(await page.locator('[data-field="evidenceFor"]').count(), 1, 'Step 4 has Evidence FOR field');
+  assert.equal(await page.locator('.distortion-grid').count(), 0, 'Step 4 must NOT show the distortion grid');
+  // Distortion-first means picking "Fortune Telling" at Step 3 pre-seeds the
+  // Socratic type forward into Challenge and pre-fills the question template —
+  // no going back to a step you already passed.
+  assert.equal(
+    await page.locator('[data-field="socraticType"]').inputValue(),
+    'Probability testing',
+    'Distortion "Fortune Telling" pre-selects the "Probability testing" Socratic type',
+  );
+  const socQ = await page.locator('[data-field="socraticQuestion"]').inputValue();
+  assert.ok(socQ.trim().length > 0, 'Socratic question pre-fills from the seeded type');
+  await page.locator('[data-field="evidenceFor"]').fill('They said "we should talk." That is what they said.');
+  await page.locator('[data-field="evidenceAgainst"]').fill('No complaint named. Last 1:1 was positive. On time on every deliverable this month.');
+  await snap(page, 'challenge');
   await nextStep();
 
   // ── Step 5: REFRAME ───────────────────────────────────────────────────
@@ -134,8 +141,8 @@ try {
   log('review cards: ' + JSON.stringify(nums));
   assert.deepEqual(
     nums,
-    ['1 · TRIGGER', '2 · INITIAL REACTION', '3 · CHALLENGE', '4 · DISTORTION', '5 · REFRAME · REALISM', '6 · THE PIVOT'],
-    'Review lists Challenge (3) before Distortion (4)',
+    ['1 · TRIGGER', '2 · INITIAL REACTION', '3 · DISTORTION', '4 · CHALLENGE', '5 · REFRAME · REALISM', '6 · THE PIVOT'],
+    'Review lists Distortion (3) before Challenge (4)',
   );
   await snap(page, 'review');
 

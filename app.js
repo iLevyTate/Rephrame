@@ -22,8 +22,8 @@ const DISTORTIONS = [
   { name: "Control Fallacy (internal)", desc: "Overresponsibility.", cues: '"it\'s all on me to fix everything"' },
 ];
 
-// Default Socratic type + reframe method per distortion. Lets step 4 (Distortion)
-// seed Challenge (step 3) and Reframe (step 5) so a first-time user isn't asked
+// Default Socratic type + reframe method per distortion. Lets step 3 (Distortion)
+// seed Challenge (step 4) and Reframe (step 5) so a first-time user isn't asked
 // to map jargon-to-jargon mid-flow. The pairings
 // come from the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS;
 // this constant just encodes them as a lookup so the picker handler
@@ -112,12 +112,12 @@ const REFRAME_METHODS = [
 // PR 6: Challenge now comes BEFORE Distortion — Padesky's order (evidence-
 // first, label-after) prevents the "you already told me my thought is
 // distorted" priming effect that comes from labeling before examining.
-const STEP_TITLES = ["Trigger", "Initial Reaction", "Challenge", "Distortion", "Reframe", "Pivot", "Review"];
+const STEP_TITLES = ["Trigger", "Initial Reaction", "Distortion", "Challenge", "Reframe", "Pivot", "Review"];
 const STEP_PROMPTS = [
   "What's setting this off?",
   "What came up?",
-  "Put the thought on trial.",
   "Which patterns showed up?",
+  "Put the thought on trial.",
   "Write a thought you'd accept.",
   "One concrete action.",
   "Read it back.",
@@ -125,8 +125,8 @@ const STEP_PROMPTS = [
 const STEP_HINTS = [
   "An event, a thought, or a feeling — whatever's at the start of this. Skip interpretation for now; just name what's there.",
   "The first thought, the feeling, the body.",
+  "Name the thinking patterns at work — they point to how to challenge and reframe next. Multiple is normal; zero is fine too.",
   "Both sides on the table, then one well-placed question.",
-  "Now that you've examined the evidence, which patterns showed up? Multiple is normal — zero is fine too.",
   "Eye-roll test: would you say \"yeah, that's fair\"?",
   "Specific enough to do today.",
   "Make changes by tapping a section. Save when it's right.",
@@ -1133,27 +1133,28 @@ function thoughtRecordToMd(e, idx) {
     L.push("- **Body Check:** " + e.bodyCheck + infTag, "");
   }
 
-  // Padesky order: evidence-first, distortion-label after. Matches the
-  // capture flow's reordered Steps 3 (Challenge) and 4 (Distortion).
+  // Distortion-first: naming the pattern points to how to challenge and
+  // reframe, so it leads and the evidence trial follows. Matches the capture
+  // flow's Steps 3 (Distortion) and 4 (Challenge).
   // When thoughtsAccurate is set the writer explicitly opted out of the
   // distortion / challenge / reframe arc — only emit those sections if
   // they actually carry content, otherwise the export looks padded with
   // empty "—" placeholders.
-  const hasChallenge = e.evidenceFor || e.evidenceAgainst || e.socraticQuestion;
-  if (!e.thoughtsAccurate || hasChallenge) {
-    L.push("**3. Challenge (The Trial)**", "");
-    L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
-    L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
-    if (e.socraticQuestion) L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
-    else L.push("");
-  }
-
-  L.push("**4. Distortion Identified**", "");
+  L.push("**3. Distortion Identified**", "");
   if (e.thoughtsAccurate) {
     L.push("*Marked as accurate, not distorted — the thought here was true to the writer; the rest of the entry holds it rather than arguing with it.*", "");
   } else {
     L.push(e.distortions.length ? e.distortions.map(d => "**" + d + "**").join(" + ") : "—", "");
     if (e.distortionNote) L.push(e.distortionNote, "");
+  }
+
+  const hasChallenge = e.evidenceFor || e.evidenceAgainst || e.socraticQuestion;
+  if (!e.thoughtsAccurate || hasChallenge) {
+    L.push("**4. Challenge (The Trial)**", "");
+    L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
+    L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
+    if (e.socraticQuestion) L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
+    else L.push("");
   }
 
   const hasReframe = e.reframeMethod || e.newThought;
@@ -2324,8 +2325,20 @@ function renderEntryDetails(entry) {
           <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(inferred from speech)</span>` : ""}</p>
         ` : ""}
       </div>
+      ${entry.thoughtsAccurate ? `
+        <div class="detail-row">
+          <div class="detail-label">3 · Distortion</div>
+          <p class="detail-text"><span class="accurate-detail">Marked as accurate, not distorted — these thoughts feel true to you, and the rest of the entry holds them rather than arguing with them.</span></p>
+        </div>
+      ` : entry.distortions.length || entry.distortionNote ? `
+        <div class="detail-row">
+          <div class="detail-label">3 · Distortion${entry.distortions.length > 1 ? "s" : ""}</div>
+          ${entry.distortions.length ? `<p class="detail-text">${entry.distortions.map(d => `<strong>${esc(d)}</strong>`).join(" + ")}</p>` : ""}
+          ${entry.distortionNote ? `<p class="detail-text" style="margin-top: 4px;">${esc(entry.distortionNote)}</p>` : ""}
+        </div>
+      ` : ""}
       <div class="detail-row">
-        <div class="detail-label">3 · Challenge (evidence + Socratic)</div>
+        <div class="detail-label">4 · Challenge (evidence + Socratic)</div>
         <div class="evidence-split">
           <div>
             <div class="detail-label" style="margin-bottom: 4px;">For</div>
@@ -2346,18 +2359,6 @@ function renderEntryDetails(entry) {
           </div>
         ` : ""}
       </div>
-      ${entry.thoughtsAccurate ? `
-        <div class="detail-row">
-          <div class="detail-label">4 · Distortion</div>
-          <p class="detail-text"><span class="accurate-detail">Marked as accurate, not distorted — these thoughts feel true to you, and the rest of the entry holds them rather than arguing with them.</span></p>
-        </div>
-      ` : entry.distortions.length || entry.distortionNote ? `
-        <div class="detail-row">
-          <div class="detail-label">4 · Distortion${entry.distortions.length > 1 ? "s" : ""}</div>
-          ${entry.distortions.length ? `<p class="detail-text">${entry.distortions.map(d => `<strong>${esc(d)}</strong>`).join(" + ")}</p>` : ""}
-          ${entry.distortionNote ? `<p class="detail-text" style="margin-top: 4px;">${esc(entry.distortionNote)}</p>` : ""}
-        </div>
-      ` : ""}
       <div class="detail-row">
         <div class="detail-label">
           5 · Reframe${entry.reframeMethod ? " · " + esc(entry.reframeMethod) : ""}
@@ -2882,7 +2883,7 @@ function renderCaptureStep(step, d) {
 
     case 2: {
       // Sectioned layout: Thoughts → Moods → Body. Multi-row, each row
-      // editable in place. Hot-thought radio drives Challenge (step 3) and Reframe (step 5).
+      // editable in place. Hot-thought radio drives Challenge (step 4) and Reframe (step 5).
       const thoughts = d.thoughts.length ? d.thoughts : [normalizeThought({ isHot: true })];
       const moods    = d.moods.length    ? d.moods    : [normalizeMood({})];
       return `
@@ -2890,7 +2891,7 @@ function renderCaptureStep(step, d) {
         <div class="step2-section-head">
           <span class="step2-eyebrow">A · Thoughts</span>
           <h3 class="step2-title display">What thoughts came up?</h3>
-          <p class="step2-sub">List every automatic thought, not just one. Mark the one that's hottest — the most distressing or believable — and we'll put that one on trial in Step 3.</p>
+          <p class="step2-sub">List every automatic thought, not just one. Mark the one that's hottest — the most distressing or believable — and we'll put that one on trial in Step 4.</p>
         </div>
         <div class="row-list" data-list="thoughts">
           ${thoughts.map((t, idx) => `
@@ -2988,7 +2989,7 @@ function renderCaptureStep(step, d) {
     `;
     }
 
-    case 4: return `
+    case 3: return `
       <div class="field-group">
         <button class="accurate-tile ${d.thoughtsAccurate ? "active" : ""}" data-action="toggle-accurate">
           <div class="accurate-tile-name">
@@ -3018,7 +3019,7 @@ function renderCaptureStep(step, d) {
           <p class="step-hint" style="margin-top: 10px;">Pick any that apply. Zero is also fine — the question is whether you notice these patterns, not whether you must find one.</p>
           ${(d.distortions && d.distortions[0] && DISTORTION_DEFAULTS[d.distortions[0]]) ? `
             <div class="auto-suggest-note" role="note">
-              <strong>You picked ${esc(d.distortions[0])}.</strong> The next step will start with a reframe style that usually fits — adapt or swap if a different angle lands better for you.
+              <strong>You picked ${esc(d.distortions[0])}.</strong> The next steps come pre-set with a question type and a reframe style that usually fit — adapt or swap if a different angle lands better for you.
             </div>
           ` : ""}
           <details class="ref-inline">
@@ -3036,7 +3037,7 @@ function renderCaptureStep(step, d) {
       `}
     `;
 
-    case 3: {
+    case 4: {
       const hot = hotThought(d);
       // Grounding gate now keys off the highest-intensity mood, since
       // there may be several. If anything is ≥80 we surface the prompt.
@@ -3153,9 +3154,9 @@ function renderCaptureStep(step, d) {
         </select>
         ${d.reframeMethod ? `<div class="field-help-paper">${esc(REFRAME_METHODS.find(r => r.method === d.reframeMethod)?.does || "")}</div>` : ""}
       </div>
-      <div class="field-group">
-        <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "New Thought"}</label>
-        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (() => { const rm = REFRAME_METHODS.find(r => r.method === d.reframeMethod); return (rm && rm.template) ? applyTemplate(rm.template, d) : "Pick a method above and a starter thought will fill in — then make it your own."; })())}">${esc(d.newThought)}</textarea>
+      <div class="field-group reframe-new-thought">
+        <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "Your new thought — write the reframe here"}</label>
+        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (() => { const rm = REFRAME_METHODS.find(r => r.method === d.reframeMethod); return (rm && rm.template) ? applyTemplate(rm.template, d) : "Write a more balanced, reasonable thought you'd actually accept — the one to replace the hot thought. (Optional: pick a method above for a starter.)"; })())}">${esc(d.newThought)}</textarea>
         <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.`}</div>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All reframe methods</summary>
@@ -3284,27 +3285,27 @@ function renderReview(d) {
 
     <div class="review-card">
       <div class="review-card-head">
-        <span class="review-card-num">3 · Challenge${draftedSocraticMatchesBuiltInTemplate(d) && d.socraticQuestion ? ` <span class="suggested-pill" title="Still matches the template for this question type — edit if you like">Starter text</span>` : ""}</span>
+        <span class="review-card-num">3 · Distortion</span>
         <button class="review-edit-btn" data-action="goto-step" data-step="3">Edit</button>
-      </div>
-      <div class="review-card-content">
-        ${hot && hot.text ? `<div class="review-meta-item" style="margin-bottom: 6px;"><span class="muted italic">Putting on trial:</span> "${esc(hot.text)}"</div>` : ""}
-        <div class="review-meta-item"><strong>For:</strong> ${d.evidenceFor ? esc(d.evidenceFor) : '<span class="empty">—</span>'}</div>
-        <div class="review-meta-item" style="margin-top: 4px;"><strong>Against:</strong> ${d.evidenceAgainst ? esc(d.evidenceAgainst) : '<span class="empty">—</span>'}</div>
-        ${d.socraticQuestion ? `<div class="italic" style="margin-top: 8px; color: var(--on-paper-soft);">"${esc(d.socraticQuestion)}"</div>` : ""}
-      </div>
-    </div>
-
-    <div class="review-card">
-      <div class="review-card-head">
-        <span class="review-card-num">4 · Distortion</span>
-        <button class="review-edit-btn" data-action="goto-step" data-step="4">Edit</button>
       </div>
       <div class="review-card-content">
         ${d.thoughtsAccurate
           ? '<span class="accurate-detail">Marked as accurate, not distorted.</span>'
           : ((d.distortions || []).length ? (d.distortions || []).map(x => `<strong>${esc(x)}</strong>`).join(" + ") : '<span class="empty">none selected</span>')}
         ${!d.thoughtsAccurate && d.distortionNote ? `<div style="margin-top: 6px; font-size: 13px; color: var(--on-paper-mute);">${esc(d.distortionNote)}</div>` : ""}
+      </div>
+    </div>
+
+    <div class="review-card">
+      <div class="review-card-head">
+        <span class="review-card-num">4 · Challenge${draftedSocraticMatchesBuiltInTemplate(d) && d.socraticQuestion ? ` <span class="suggested-pill" title="Still matches the template for this question type — edit if you like">Starter text</span>` : ""}</span>
+        <button class="review-edit-btn" data-action="goto-step" data-step="4">Edit</button>
+      </div>
+      <div class="review-card-content">
+        ${hot && hot.text ? `<div class="review-meta-item" style="margin-bottom: 6px;"><span class="muted italic">Putting on trial:</span> "${esc(hot.text)}"</div>` : ""}
+        <div class="review-meta-item"><strong>For:</strong> ${d.evidenceFor ? esc(d.evidenceFor) : '<span class="empty">—</span>'}</div>
+        <div class="review-meta-item" style="margin-top: 4px;"><strong>Against:</strong> ${d.evidenceAgainst ? esc(d.evidenceAgainst) : '<span class="empty">—</span>'}</div>
+        ${d.socraticQuestion ? `<div class="italic" style="margin-top: 8px; color: var(--on-paper-soft);">"${esc(d.socraticQuestion)}"</div>` : ""}
       </div>
     </div>
 
@@ -3867,7 +3868,7 @@ function renderReference() {
       </div>
       <div class="ref-item">
         <div class="ref-item-name">CBT alone tends to fall short for</div>
-        <div class="ref-item-desc"><strong>Active trauma processing</strong> (intrusive memories, flashbacks, dissociation) — needs trauma-specialized care, not solo cognitive work. <strong>Severe depression</strong> where motivation is collapsed and the cognitive frame itself is suspect. <strong>Psychosis or thought disorders.</strong> <strong>Acute suicidal ideation</strong> — please reach for the resources below first. <strong>Grief</strong> — grief usually doesn't want fixing, just witness; the "accurate, not distorted" tile on Step 4 is for exactly this.</div>
+        <div class="ref-item-desc"><strong>Active trauma processing</strong> (intrusive memories, flashbacks, dissociation) — needs trauma-specialized care, not solo cognitive work. <strong>Severe depression</strong> where motivation is collapsed and the cognitive frame itself is suspect. <strong>Psychosis or thought disorders.</strong> <strong>Acute suicidal ideation</strong> — please reach for the resources below first. <strong>Grief</strong> — grief usually doesn't want fixing, just witness; the "accurate, not distorted" tile on Step 3 is for exactly this.</div>
       </div>
       <div class="ref-item">
         <div class="ref-item-name">If a thought turns out to be accurate</div>
@@ -3911,11 +3912,11 @@ function renderReference() {
 
     <div class="ref-section">
       <div class="ref-section-head">
-        <span class="ref-section-num">4</span>
+        <span class="ref-section-num">3</span>
         <h2 class="ref-section-title display">Cognitive Distortions</h2>
-        <span class="ref-section-step">Step 4</span>
+        <span class="ref-section-step">Step 3</span>
       </div>
-      <p class="ref-section-intro">Patterns of thinking that warp interpretation. Padesky's order puts this after the evidence work — once you've looked at both sides, naming the pattern is more grounded than guessing up front.</p>
+      <p class="ref-section-intro">Patterns of thinking that warp interpretation. Naming the pattern first points you toward how to challenge and reframe it next — the suggested question type and reframe method follow from the distortion you pick.</p>
       ${DISTORTIONS.map(d => `
         <div class="ref-item">
           <div class="ref-item-name">${esc(d.name)}</div>
@@ -3984,9 +3985,9 @@ function renderReference() {
 
     <div class="ref-section">
       <div class="ref-section-head">
-        <span class="ref-section-num">3</span>
+        <span class="ref-section-num">4</span>
         <h2 class="ref-section-title display">Socratic Questions</h2>
-        <span class="ref-section-step">Step 3</span>
+        <span class="ref-section-step">Step 4</span>
       </div>
       <p class="ref-section-intro">Pick the question type that matches what the thought is doing — catastrophizing, mind-reading, self-blame, etc. The template gives you a starting line you can rewrite.</p>
       ${SOCRATIC_TYPES.map(s => `
@@ -4154,18 +4155,7 @@ function renderModal() {
           <input type="checkbox" id="quickVentOnly" ${q.ventOnly ? "checked" : ""}>
           <span>Just venting — don't follow up. Sometimes naming it is enough.</span>
         </label>
-        ${q.intensity >= 80 ? `
-          <div class="grounding-note grounding-note--modal" role="note">
-            <div class="grounding-note-eyebrow">At this intensity…</div>
-            <div class="grounding-note-body">
-              <p>Above 80 is a lot to sit with. Before — or instead of — writing more, try slowing the breath out (4-second in, 6-second out) for a minute, or name 5 things you can see. ${'<button class="link-button" data-action="open-safety">Crisis support is here</button>'} if you need it.</p>
-            </div>
-          </div>
-        ` : `
-          <p class="modal-sub" style="margin-top: 16px; font-size: 13px;">
-            ${SAFETY_LINK_INLINE}
-          </p>
-        `}
+        <div id="quickIntensityNote">${quickIntensityNoteHTML(q.intensity)}</div>
       </div>
       <div class="modal-actions">
         <button class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
@@ -4309,6 +4299,20 @@ const SAFETY_LINK_INLINE =
   'Rephrame is a journaling tool, not a substitute for therapy or crisis care. ' +
   'In the US, call or text <strong>988</strong> (Suicide &amp; Crisis Lifeline) or text <strong>HOME</strong> to <strong>741741</strong> (Crisis Text Line). ' +
   `<button class="link-button" data-action="open-safety">See more crisis resources ${svgIcon("arrowRight", "ico--xs")}</button>`;
+
+// Quick-capture intensity note. Shared by renderModal and the live intensity
+// slider handler so the >=80 grounding prompt can be swapped in place (no
+// full renderModal mid-drag, which flashed the modal and dropped the grab).
+function quickIntensityNoteHTML(intensity) {
+  return intensity >= 80
+    ? `<div class="grounding-note grounding-note--modal" role="note">
+        <div class="grounding-note-eyebrow">At this intensity…</div>
+        <div class="grounding-note-body">
+          <p>Above 80 is a lot to sit with. Before — or instead of — writing more, try slowing the breath out (4-second in, 6-second out) for a minute, or name 5 things you can see. <button class="link-button" data-action="open-safety">Crisis support is here</button> if you need it.</p>
+        </div>
+      </div>`
+    : `<p class="modal-sub" style="margin-top: 16px; font-size: 13px;">${SAFETY_LINK_INLINE}</p>`;
+}
 
 function renderSettingsModal() {
   const s = state.settings;
@@ -5283,7 +5287,7 @@ function bindCapture() {
       (state.draft.thoughts || []).forEach(t => { t.isHot = (t.id === id); });
       saveDraft(state.draft);
       // No render — the browser already moved the radio's checked
-      // state. Steps 3 and 5 (which derive the hot-thought card from
+      // state. Steps 4 and 5 (which derive the hot-thought card from
       // state.draft via hotThought()) aren't on-screen during step 2;
       // they'll render fresh when the user advances. Avoids a step-2
       // view flash on every radio change.
@@ -5400,7 +5404,7 @@ function bindCapture() {
   // tap was destroying and rebuilding the whole view's DOM and showing
   // as a visible flash on every click.
   function _updateAutoSuggestFootnote() {
-    if (state.view !== "capture" || state.captureStep !== 4) return;
+    if (state.view !== "capture" || state.captureStep !== 3) return;
     const grid = document.querySelector('.distortion-grid');
     if (!grid) return;
     const fieldGroup = grid.closest('.field-group');
@@ -5423,7 +5427,7 @@ function bindCapture() {
     }
     note.innerHTML =
       '<strong>You picked ' + esc(primary) + '.</strong> ' +
-      'The next step will start with a reframe style that usually fits — adapt or swap if a different angle lands better for you.';
+      'The next steps come pre-set with a question type and a reframe style that usually fit — adapt or swap if a different angle lands better for you.';
   }
 
   document.querySelectorAll('[data-action="toggle-distortion"]').forEach(btn => {
@@ -5439,8 +5443,10 @@ function bindCapture() {
 
       if (primarySwappedOrSet) {
         const seeded = seedDraftFromPrimaryDistortion(state.draft);
-        if (seeded && state.captureStep > 3) {
-          toast("Starters filled in for Steps 3 and 5 where they were empty — glance back at Challenge and Reframe.");
+        if (seeded && state.captureStep <= 3) {
+          toast("Starters ready for Challenge and Reframe ahead — pre-filled where they were empty.");
+        } else if (seeded) {
+          toast("Starters filled in for Challenge and Reframe where they were empty.");
         }
       }
       saveDraft(state.draft);
@@ -5503,10 +5509,10 @@ function bindCapture() {
 
   const next = document.querySelector('[data-action="next-step"]');
   if (next) next.addEventListener("click", () => {
-    // Challenge is now step 3 (was 4) — keep the empty-only Socratic
-    // pre-fill so leaving the step without typing a question still seeds
-    // the chosen type's template into the saved entry.
-    if (state.captureStep === 3 && state.draft.socraticType && !String(state.draft.socraticQuestion || "").trim()) {
+    // Challenge is step 4 (Distortion now precedes it at step 3) — keep the
+    // empty-only Socratic pre-fill so leaving the step without typing a
+    // question still seeds the chosen type's template into the saved entry.
+    if (state.captureStep === 4 && state.draft.socraticType && !String(state.draft.socraticQuestion || "").trim()) {
       const t = SOCRATIC_TYPES.find(s => s.type === state.draft.socraticType);
       if (t && t.template) state.draft.socraticQuestion = applyTemplate(t.template, state.draft);
     }
@@ -5807,9 +5813,18 @@ function bindModal() {
     state.quickDraft.intensity = v;
     if (qid) qid.textContent = v;
     if (qib) qib.textContent = band(v).label;
-    // Show / hide the grounding note as the user crosses the threshold, so
-    // they get the gentle prompt without having to dismiss and re-open.
-    if ((v >= 80) !== wasHigh) renderModal();
+    // Show / hide the grounding note as the user crosses the threshold. Swap
+    // it in place rather than calling renderModal() — re-rendering mid-drag
+    // flashed the modal and dropped the user's grip on the slider.
+    if ((v >= 80) !== wasHigh) {
+      const noteWrap = document.getElementById("quickIntensityNote");
+      if (noteWrap) {
+        noteWrap.innerHTML = quickIntensityNoteHTML(v);
+        noteWrap.querySelectorAll('[data-action="open-safety"]').forEach(el => {
+          el.addEventListener("click", e => { e.preventDefault(); setState({ modal: "safety" }); });
+        });
+      }
+    }
   });
   if (qv) qv.addEventListener("change", () => {
     state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
