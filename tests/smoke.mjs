@@ -108,6 +108,11 @@ try {
     'Probability testing',
     'Distortion "Fortune Telling" pre-selects the "Probability testing" Socratic type',
   );
+  // The scaling Socratic type added for All-or-Nothing is present in the list.
+  assert.ok(
+    (await page.locator('[data-field="socraticType"] option').allInnerTexts()).some(t => /Scale it/i.test(t)),
+    'Socratic type dropdown offers the "Scale it (0–100)" option',
+  );
   const socQ = await page.locator('[data-field="socraticQuestion"]').inputValue();
   assert.ok(socQ.trim().length > 0, 'Socratic question pre-fills from the seeded type');
   // The pre-fill is the Fortune-Telling-*tailored* starter, not the generic

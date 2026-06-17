@@ -30,7 +30,7 @@ const DISTORTIONS = [
 // can apply them. Keys must exactly match a DISTORTIONS[].name; values
 // must exactly match a SOCRATIC_TYPES[].type and REFRAME_METHODS[].method.
 const DISTORTION_DEFAULTS = {
-  "All-or-Nothing Thinking":    { socratic: "Zoom out (pie chart)",    reframe: "Continuum thinking" },
+  "All-or-Nothing Thinking":    { socratic: "Scale it (0–100)",        reframe: "Continuum thinking" },
   "Overgeneralization":         { socratic: "Historical test",         reframe: "Continuum thinking" },
   "Mental Filter":              { socratic: "Zoom out (pie chart)",    reframe: "Widen the frame" },
   "Disqualifying the Positive": { socratic: "Evidence examination",    reframe: "Widen the frame" },
@@ -94,6 +94,7 @@ const SOCRATIC_TYPES = [
   { type: "Decatastrophizing",      when: "Worst-case thinking",                         template: "If the worst case happened, what would I realistically do?" },
   { type: "Cost-benefit",           when: "Should statements / rigid rules",             template: "What does holding this belief cost me vs give me?" },
   { type: "Zoom out (pie chart)",   when: "Tunnel vision / mental filter / sole-blame",  template: "If I drew a pie chart of every factor that contributed, how big would my slice actually be? What else fills the circle?" },
+  { type: "Scale it (0–100)",       when: "All-or-nothing / black-and-white thinking",   template: "On a scale from 0 to 100, where does this actually land — instead of at one extreme or the other?" },
 ];
 
 const REFRAME_METHODS = [
