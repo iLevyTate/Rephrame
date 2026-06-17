@@ -32,19 +32,19 @@ const DISTORTIONS = [
 const DISTORTION_DEFAULTS = {
   "All-or-Nothing Thinking":    { socratic: "Zoom out (pie chart)",    reframe: "Continuum thinking" },
   "Overgeneralization":         { socratic: "Historical test",         reframe: "Continuum thinking" },
-  "Mental Filter":              { socratic: "Zoom out (pie chart)",    reframe: "Coping/encouraging thought" },
-  "Disqualifying the Positive": { socratic: "Evidence examination",    reframe: "Coping/encouraging thought" },
+  "Mental Filter":              { socratic: "Zoom out (pie chart)",    reframe: "Widen the frame" },
+  "Disqualifying the Positive": { socratic: "Evidence examination",    reframe: "Widen the frame" },
   "Mind Reading":               { socratic: "Alternative explanation", reframe: "Behavioral experiment" },
   "Fortune Telling":            { socratic: "Probability testing",     reframe: "Realism" },
   "Catastrophizing":            { socratic: "Decatastrophizing",       reframe: "Realism" },
-  "Minimization":               { socratic: "Zoom out (pie chart)",    reframe: "Coping/encouraging thought" },
+  "Minimization":               { socratic: "Double standard",         reframe: "Widen the frame" },
   "Emotional Reasoning":        { socratic: "Evidence examination",    reframe: "Realism" },
-  "Should Statements":          { socratic: "Cost-benefit",            reframe: "Continuum thinking" },
+  "Should Statements":          { socratic: "Cost-benefit",            reframe: "Flexible rule" },
   "Labeling":                   { socratic: "Double standard",         reframe: "Compassionate reattribution" },
   "Personalization":            { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
   "Blame":                      { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
-  "Fallacy of Fairness":        { socratic: "Cost-benefit",            reframe: "Realism" },
-  "Fallacy of Change":          { socratic: "Cost-benefit",            reframe: "Behavioral experiment" },
+  "Fallacy of Fairness":        { socratic: "Cost-benefit",            reframe: "Acceptance & agency" },
+  "Fallacy of Change":          { socratic: "Cost-benefit",            reframe: "Acceptance & agency" },
   "Control Fallacy (external)": { socratic: "Evidence examination",    reframe: "Behavioral experiment" },
   "Control Fallacy (internal)": { socratic: "Double standard",         reframe: "Compassionate reattribution" },
 };
@@ -107,6 +107,12 @@ const REFRAME_METHODS = [
     template: "This wasn't all on me. A fair split of responsibility looks more like [X]. I'd never apply this label to a friend in the same spot." },
   { method: "Behavioral experiment",       when: "Untested assumptions",         does: "Reframes as hypothesis to test",
     template: "I'm treating this prediction as fact, but I haven't tested it. The honest version: 'I expect [X] — let me see if that's actually what happens.'" },
+  { method: "Widen the frame",             when: "Filtering out or shrinking the good", does: "Brings the whole picture back in — the parts you cropped out or downplayed",
+    template: "I'm fixating on one piece and cropping out the rest. The fuller picture also includes [X] — both are real, and the whole frame is more accurate than its worst part." },
+  { method: "Flexible rule",               when: "Rigid shoulds, musts, have-tos", does: "Turns a rigid demand into a workable preference",
+    template: "There's no law that I must [X]. \"I'd prefer to\" is truer than \"I have to\" — a kinder, more flexible rule still moves me forward without the whip." },
+  { method: "Acceptance & agency",         when: "Fairness / control / others-should-change fallacies", does: "Accept what you can't control; act on the part you can",
+    template: "I can't control [X], and holding it against how things \"should\" be keeps me stuck. What's in my hands is my next move — so I'll put my energy there." },
 ];
 
 // Worked before→after reframe examples, keyed by distortion name (must match
@@ -297,6 +303,30 @@ const DISTORTION_STARTERS = {
     socratic: "Would I really expect a friend to be responsible for all of this? How much of it is genuinely mine to carry?",
     reframe: "I'm not responsible for everyone's feelings and outcomes. I can care and help with [X] without owning results that were never mine to control.",
   },
+};
+
+// Per-distortion nudges for the Step 4 evidence fields. The generic help text
+// above each box explains the prosecutor/defense idea; these sharpen the *kind*
+// of evidence the specific pattern distorts — most of the leverage is on the
+// AGAINST side, where the corrective lives. [person] is filled by applyTemplate.
+const DISTORTION_EVIDENCE_PROMPTS = {
+  "All-or-Nothing Thinking":    { forHint: "Concrete facts that fit the all-or-nothing version — only what you'd say out loud.", againstHint: "Any part that went fine, the middle ground — the times it wasn't all or nothing." },
+  "Overgeneralization":         { forHint: "Specific instances that fit the \"always / never\" — actual events, not impressions.", againstHint: "Times it went differently. Count the exceptions you usually skip past." },
+  "Mental Filter":              { forHint: "The one negative detail you're locked onto — state it plainly.", againstHint: "The neutral and good parts you filtered out. What else was in the picture?" },
+  "Disqualifying the Positive": { forHint: "Why you think the good thing \"doesn't count.\"", againstHint: "What actually happened, taken at face value. Would it count for someone else?" },
+  "Mind Reading":               { forHint: "Actual signals — what [person] said or did, not their inferred mood.", againstHint: "Other explanations for the same behavior. What would they say if you asked?" },
+  "Fortune Telling":            { forHint: "Real reasons it could go badly — facts, not the fear itself.", againstHint: "Times the predicted bad thing didn't happen. The realistic, likely outcome." },
+  "Catastrophizing":            { forHint: "Concrete reasons this is genuinely serious.", againstHint: "How you'd actually cope if the worst happened — and how likely it really is." },
+  "Minimization":               { forHint: "Why this seems minor to you.", againstHint: "The effort or impact you're shrinking. Would you call it minor for a friend?" },
+  "Emotional Reasoning":        { forHint: "Facts — not feelings — that support the thought.", againstHint: "What the evidence says with the feeling set to one side." },
+  "Should Statements":          { forHint: "Where this \"should / must\" rule actually comes from.", againstHint: "What the rule costs you. Whether it's a law or just a preference." },
+  "Labeling":                   { forHint: "The specific behavior behind the label — what happened.", againstHint: "Times you acted against the label. Would you brand a friend this way?" },
+  "Personalization":            { forHint: "Your actual part in what happened.", againstHint: "Other causes and other people's parts. How big is your slice, really?" },
+  "Blame":                      { forHint: "[person]'s actual part in this.", againstHint: "Your own part, even a small one — what's yours to act on now?" },
+  "Fallacy of Fairness":        { forHint: "Why this feels unfair — the standard you're measuring against.", againstHint: "What measuring against \"fair\" is costing you. What you'd do regardless." },
+  "Fallacy of Change":          { forHint: "Why you believe [person] should change.", againstHint: "What's in your control regardless of whether they change." },
+  "Control Fallacy (external)": { forHint: "What's genuinely outside your control here.", againstHint: "The one small thing you could still influence or try." },
+  "Control Fallacy (internal)": { forHint: "What you're holding yourself responsible for.", againstHint: "What's actually not yours to carry. Would you load this on a friend?" },
 };
 
 /**
@@ -1040,6 +1070,20 @@ function socraticStarterText(d, opts) {
   if (tailored) return applyTemplate(tailored, d);
   const t = SOCRATIC_TYPES.find(s => s.type === type);
   return t && t.template ? applyTemplate(t.template, d) : "";
+}
+
+/** Step 4 "Evidence FOR" placeholder — distortion-tailored, else the generic default. */
+function evidenceForPrompt(d) {
+  const primary = (d.distortions || [])[0];
+  const p = primary ? DISTORTION_EVIDENCE_PROMPTS[primary] : null;
+  return applyTemplate(p && p.forHint ? p.forHint : "Facts that would back this thought up — only count things you'd be willing to say out loud.", d);
+}
+
+/** Step 4 "Evidence AGAINST" placeholder — distortion-tailored, else the generic default. */
+function evidenceAgainstPrompt(d) {
+  const primary = (d.distortions || [])[0];
+  const p = primary ? DISTORTION_EVIDENCE_PROMPTS[primary] : null;
+  return applyTemplate(p && p.againstHint ? p.againstHint : "Facts that complicate the thought. Times the predicted bad thing didn't happen. What you'd tell a friend.", d);
 }
 
 /** The Step 5 reframe starter for a draft — mirror of socraticStarterText. */
@@ -3360,12 +3404,12 @@ function renderCaptureStep(step, d) {
       <div class="field-group">
         <label class="field-label-paper">Evidence FOR the thought</label>
         <p class="field-help-paper" style="margin: -4px 0 8px 0;">What facts, observations, or past events would support this thought if you were the prosecutor? Be honest — strawmanning the thought is the failure mode here.</p>
-        <textarea class="textarea" data-field="evidenceFor" rows="3" placeholder="Facts that would back this thought up — only count things you'd be willing to say out loud.">${esc(d.evidenceFor)}</textarea>
+        <textarea class="textarea" data-field="evidenceFor" rows="3" placeholder="${esc(evidenceForPrompt(d))}">${esc(d.evidenceFor)}</textarea>
       </div>
       <div class="field-group">
         <label class="field-label-paper">Evidence AGAINST the thought</label>
         <p class="field-help-paper" style="margin: -4px 0 8px 0;">What facts or past experiences would push back? Often the strongest counter-evidence is "I've thought this before and was wrong" or "I'd never apply this label to a friend in the same spot."</p>
-        <textarea class="textarea" data-field="evidenceAgainst" rows="3" placeholder="Facts that complicate the thought. Times the predicted bad thing didn't happen. What you'd tell a friend.">${esc(d.evidenceAgainst)}</textarea>
+        <textarea class="textarea" data-field="evidenceAgainst" rows="3" placeholder="${esc(evidenceAgainstPrompt(d))}">${esc(d.evidenceAgainst)}</textarea>
       </div>
 
       <div class="explainer-card explainer-card--socratic">

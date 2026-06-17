@@ -93,6 +93,13 @@ try {
   assert.match(await stepTitle(), /Challenge/i, 'Step 4 should be Challenge');
   assert.equal(await page.locator('[data-field="evidenceFor"]').count(), 1, 'Step 4 has Evidence FOR field');
   assert.equal(await page.locator('.distortion-grid').count(), 0, 'Step 4 must NOT show the distortion grid');
+  // Evidence prompts are distortion-aware: the AGAINST hint is tailored to
+  // Fortune Telling (its distinctive "realistic, likely outcome"), not generic.
+  assert.match(
+    await page.locator('[data-field="evidenceAgainst"]').getAttribute('placeholder'),
+    /realistic, likely outcome/i,
+    'Evidence AGAINST placeholder is tailored to the picked distortion',
+  );
   // Distortion-first means picking "Fortune Telling" at Step 3 pre-seeds the
   // Socratic type forward into Challenge and pre-fills the question template —
   // no going back to a step you already passed.
