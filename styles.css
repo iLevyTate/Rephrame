@@ -3290,6 +3290,85 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
 }
 .hot-thought-belief strong { color: var(--on-paper); }
 
+/* Tailored worked reframe examples on Step 5 — before→after pairs keyed to
+   the distortion(s) the user named, modelling the move without doing it for them. */
+.reframe-examples {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: linear-gradient(to right, rgba(184, 85, 44, 0.07), rgba(184, 85, 44, 0.02));
+  border-left: 3px solid var(--copper);
+  border-radius: var(--r-3);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.reframe-examples-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--copper);
+  font-weight: 600;
+}
+.reframe-examples-sub {
+  margin: -4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--on-paper-mute);
+}
+.reframe-example {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  background: var(--paper-2);
+  border-radius: var(--r-2);
+}
+.reframe-example-tagline {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--on-paper-mute);
+  margin-bottom: 1px;
+}
+.reframe-example-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.reframe-example-pill {
+  flex: 0 0 auto;
+  min-width: 52px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  text-align: center;
+}
+.reframe-example-before .reframe-example-pill {
+  color: var(--on-paper-mute);
+  background: rgba(120, 120, 120, 0.14);
+}
+.reframe-example-before .reframe-example-text {
+  color: var(--on-paper-soft);
+  font-style: italic;
+}
+.reframe-example-after .reframe-example-pill {
+  color: var(--copper);
+  background: rgba(184, 85, 44, 0.14);
+}
+.reframe-example-after .reframe-example-text {
+  color: var(--on-paper);
+}
+
 /* Thought list inside expanded entry details. */
 .thought-list {
   list-style: none;

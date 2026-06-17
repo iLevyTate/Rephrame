@@ -109,6 +109,164 @@ const REFRAME_METHODS = [
     template: "I'm treating this prediction as fact, but I haven't tested it. The honest version: 'I expect [X] — let me see if that's actually what happens.'" },
 ];
 
+// Worked before→after reframe examples, keyed by distortion name (must match
+// DISTORTIONS[].name). Step 5 pulls examples for the distortion(s) the user
+// named in Step 3 so it models the exact move their thought needs, rather than
+// generic advice. Two per distortion gives range when only one is picked.
+const REFRAME_EXAMPLES = {
+  "All-or-Nothing Thinking": [
+    { before: "I made one mistake in the presentation, so the whole thing was a disaster.",
+      after:  "Most of the talk landed; one slip doesn't erase the rest. It was a solid presentation with one rough moment." },
+    { before: "If I'm not the best at this, there's no point in doing it.",
+      after:  "Being somewhere in the middle is still worth something. \"Good enough to keep going\" is a real place to stand." },
+  ],
+  "Overgeneralization": [
+    { before: "I got rejected. I'll never find anyone.",
+      after:  "One person said no. That's a single data point, not a forecast of every future relationship." },
+    { before: "I always mess these things up.",
+      after:  "I'm remembering the misses and skipping the times it went fine. \"Sometimes\" is more honest than \"always.\"" },
+  ],
+  "Mental Filter": [
+    { before: "My review had one critical note, so it basically went badly.",
+      after:  "The review had one criticism and several genuine compliments. Fixating on the one note ignores the rest of what was said." },
+    { before: "The day was ruined by that one awkward conversation.",
+      after:  "One awkward moment doesn't cancel the parts of the day that were fine or good. Both were in it." },
+  ],
+  "Disqualifying the Positive": [
+    { before: "They thanked me, but they were just being polite.",
+      after:  "I'm explaining away the thanks to avoid feeling good. It's at least as likely they meant it — I can let it count." },
+    { before: "I did well, but that one was easy, so it doesn't count.",
+      after:  "I keep moving the goalposts so nothing I do qualifies. Done is done — this one counts." },
+  ],
+  "Mind Reading": [
+    { before: "She didn't text back, so she's annoyed with me.",
+      after:  "I don't actually know why she hasn't replied. Busy, tired, or distracted are all just as likely as annoyed." },
+    { before: "Everyone in that meeting thought my idea was stupid.",
+      after:  "I can't read the room's mind. Nobody said that — I'm filling the silence with the worst guess." },
+  ],
+  "Fortune Telling": [
+    { before: "There's no way this interview goes well.",
+      after:  "I can't predict the outcome. I've prepared, and the realistic range includes it going fine — I'll find out by showing up." },
+    { before: "If I bring it up, it'll definitely turn into a fight.",
+      after:  "I'm treating one possible outcome as certain. It could also go calmly — and I won't know unless I try." },
+  ],
+  "Catastrophizing": [
+    { before: "If I fail this exam, my whole career is over.",
+      after:  "Failing one exam would be a setback, not the end. I could retake it or adjust — I've handled setbacks before." },
+    { before: "This headache means something is seriously wrong with me.",
+      after:  "The most likely explanation is the ordinary one. If it persists I can check it — jumping to disaster doesn't help me decide." },
+  ],
+  "Minimization": [
+    { before: "Finishing that project was no big deal, anyone could have done it.",
+      after:  "It took real effort and follow-through to finish. Shrinking it doesn't make it less true that I did something hard." },
+    { before: "Sure I helped, but it barely mattered.",
+      after:  "I'm downplaying my part to stay safe from feeling proud. It mattered to the person I helped — that's enough." },
+  ],
+  "Emotional Reasoning": [
+    { before: "I feel like a failure, so I must be one.",
+      after:  "Feeling like a failure is a feeling, not evidence. The facts of what I've actually done tell a more balanced story." },
+    { before: "I feel anxious about this, so it must be dangerous.",
+      after:  "My alarm is loud, but loud isn't the same as accurate. I can check the actual risk instead of trusting the feeling." },
+  ],
+  "Should Statements": [
+    { before: "I should always have it together. I shouldn't be struggling.",
+      after:  "There's no rule that I must always cope perfectly. Struggling sometimes is human, not a failure of duty." },
+    { before: "I have to say yes or I'm letting everyone down.",
+      after:  "\"Have to\" is a rule I made up. I can choose what I take on, and a kind no is allowed." },
+  ],
+  "Labeling": [
+    { before: "I snapped at my partner. I'm a terrible person.",
+      after:  "I did something I regret, and I can repair it. One harsh moment is a behavior, not a verdict on who I am." },
+    { before: "I forgot the deadline — I'm such an idiot.",
+      after:  "I made a mistake; that doesn't make me the label. A careful person can still have an off day." },
+  ],
+  "Personalization": [
+    { before: "The team missed the deadline. It's all my fault.",
+      after:  "A missed deadline has many causes — scope, resourcing, other people's parts. My share is real, but it's one piece, not the whole." },
+    { before: "My friend seemed off today. I must have done something.",
+      after:  "Their mood probably has its own reasons that have nothing to do with me. I can ask instead of assuming I caused it." },
+  ],
+  "Blame": [
+    { before: "This is entirely their fault. I had nothing to do with it.",
+      after:  "Responsibility is usually shared. Naming my own part — even a small one — gives me something I can actually act on." },
+    { before: "If they hadn't done that, I wouldn't be stuck like this.",
+      after:  "Their choice played a role, and so do mine from here. Where I focus is on the next move that's actually in my hands." },
+  ],
+  "Fallacy of Fairness": [
+    { before: "It's not fair that I work this hard and get passed over.",
+      after:  "Fair isn't guaranteed, and measuring everything against it keeps me stuck. The useful question is what I want to do next, fair or not." },
+    { before: "I do more than they do, so it's unfair I'm not appreciated.",
+      after:  "The scorecard hurts more than it helps. I can ask directly for what I need instead of waiting for fairness to arrive." },
+  ],
+  "Fallacy of Change": [
+    { before: "I'd be happy if they would just change how they act.",
+      after:  "I can't make someone else change. What I can do is decide how I respond and what boundaries I keep." },
+    { before: "Once they finally get it, things will be fine.",
+      after:  "Waiting on someone else to change leaves me powerless. I can act on my own part now rather than holding my breath." },
+  ],
+  "Control Fallacy (external)": [
+    { before: "There's nothing I can do — it's all out of my hands.",
+      after:  "Some of this is outside my control, but not all of it. There's at least one small thing here I can influence." },
+    { before: "Things just happen to me; I have no say.",
+      after:  "I can't control everything, but I'm not powerless either. Naming the one piece I can move is where I start." },
+  ],
+  "Control Fallacy (internal)": [
+    { before: "It's on me to fix everyone's problems and keep everyone happy.",
+      after:  "I'm not responsible for everyone's feelings and outcomes. I can care and help without owning results that aren't mine." },
+    { before: "If anyone around me is upset, I've failed.",
+      after:  "Other people's emotions aren't mine to manage. I can be kind without taking the whole weight on myself." },
+  ],
+};
+
+/**
+ * Build the tailored worked-examples block for Step 5. Pulls before→after
+ * pairs for the distortion(s) the user named in Step 3; falls back to a small
+ * spread of common ones if none was picked. Returns "" when there's nothing
+ * useful to show.
+ */
+function reframeExamplesHTML(d) {
+  const picked = (d.distortions || []).filter(name => REFRAME_EXAMPLES[name]);
+  let examples = [];
+  let label = "";
+  let tagged = false;
+
+  if (picked.length) {
+    label = picked.length === 1 ? picked[0] : "the patterns you named";
+    tagged = picked.length > 1;
+    picked.forEach(name => {
+      REFRAME_EXAMPLES[name].forEach(ex => examples.push({ ...ex, distortion: name }));
+    });
+    // One distortion → show both for range; multiple → one each so it stays tight.
+    examples = picked.length === 1 ? examples.slice(0, 2) : picked.map(name => {
+      const ex = REFRAME_EXAMPLES[name][0];
+      return { ...ex, distortion: name };
+    });
+    examples = examples.slice(0, 3);
+  } else {
+    // No distortion named — a short, varied spread so the section still helps.
+    tagged = true;
+    ["Catastrophizing", "Mind Reading", "Labeling"].forEach(name => {
+      examples.push({ ...REFRAME_EXAMPLES[name][0], distortion: name });
+    });
+  }
+
+  if (!examples.length) return "";
+
+  return `
+    <div class="reframe-examples" role="note" aria-label="Worked reframe examples">
+      <div class="reframe-examples-eyebrow">${svgIcon("sparkle", "ico--inline")} Worked examples${label ? ` · ${esc(label)}` : ""}</div>
+      <p class="reframe-examples-sub">How a thought like this can move. Read for the shape, then write your own above — copying these won't land the way your own words will.</p>
+      ${examples.map(ex => `
+        <div class="reframe-example">
+          ${tagged ? `<div class="reframe-example-tagline">${esc(ex.distortion)}</div>` : ""}
+          <div class="reframe-example-line reframe-example-before"><span class="reframe-example-pill">Hot</span><span class="reframe-example-text">"${esc(ex.before)}"</span></div>
+          <div class="reframe-example-line reframe-example-after"><span class="reframe-example-pill">Reframe</span><span class="reframe-example-text">"${esc(ex.after)}"</span></div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 // PR 6: Challenge now comes BEFORE Distortion — Padesky's order (evidence-
 // first, label-after) prevents the "you already told me my thought is
 // distorted" priming effect that comes from labeling before examining.
@@ -917,6 +1075,7 @@ const ICONS = {
   bolt:       '<path d="M13 2.5 4.5 13.5H10l-1 8 8.5-11.5H12z" fill="currentColor" stroke="none"/>',
   clock:      '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.2 1.9"/>',
   star:       '<path d="M12 3.3l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.3 6.9 19l1-5.7-4.1-4 5.7-.8z" fill="currentColor" stroke="none"/>',
+  sparkle:    '<path d="M12 3.5c.6 3.6 1.9 4.9 5.5 5.5-3.6.6-4.9 1.9-5.5 5.5-.6-3.6-1.9-4.9-5.5-5.5 3.6-.6 4.9-1.9 5.5-5.5z" fill="currentColor" stroke="none"/><path d="M18.5 14.5c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z" fill="currentColor" stroke="none"/>',
   // Directional + control marks (replace ← → ＋ × ✓ used as UI affordances)
   arrowRight: '<path d="M4 12h14"/><path d="M12.5 6.5 18 12l-5.5 5.5"/>',
   arrowLeft:  '<path d="M20 12H6"/><path d="M11.5 6.5 6 12l5.5 5.5"/>',
@@ -3170,6 +3329,7 @@ function renderCaptureStep(step, d) {
             `).join("")}
           </div>
         </details>
+        ${reframeExamplesHTML(d)}
       </div>
 
       <div class="field-group rerate-group">

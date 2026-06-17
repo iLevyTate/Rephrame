@@ -123,6 +123,18 @@ try {
     (await page.locator('input.intensity-slider--emotion').count()) >= 1,
     'At least one color-graded emotion slider renders',
   );
+  // Tailored worked-examples section renders and is keyed to the distortion
+  // named in Step 3 (Fortune Telling), modelling a before→after move.
+  assert.equal(await page.locator('.reframe-examples').count(), 1, 'Worked-examples section renders on Step 5');
+  assert.match(
+    await page.locator('.reframe-examples-eyebrow').innerText(),
+    /Fortune Telling/i,
+    'Examples section is tailored to the picked distortion',
+  );
+  assert.ok(
+    (await page.locator('.reframe-example-after .reframe-example-text').count()) >= 1,
+    'At least one before→after reframe example is shown',
+  );
   await snap(page, 'reframe');
   await nextStep();
 
