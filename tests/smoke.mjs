@@ -76,6 +76,16 @@ try {
   assert.equal(await page.locator('[data-field="evidenceFor"]').count(), 0, 'Step 3 must NOT show the Challenge evidence field');
   await page.locator('[data-action="toggle-distortion"][data-name="Fortune Telling"]').click();
   await page.waitForTimeout(150);
+  // Picking a distortion surfaces a note that names the *actual* forward
+  // suggestions (not a vague "a question type and a reframe style"), so the
+  // choice→suggestion link is clear before the user reaches Steps 4–5.
+  assert.equal(await page.locator('.auto-suggest-note').count(), 1, 'Step 3 shows the auto-suggest note after a pick');
+  {
+    const note = await page.locator('.auto-suggest-note').innerText();
+    assert.match(note, /Fortune Telling/i, 'auto-suggest note names the picked distortion');
+    assert.match(note, /Probability testing/i, 'auto-suggest note names the suggested Socratic type');
+    assert.match(note, /Realism/i, 'auto-suggest note names the suggested reframe method');
+  }
   await snap(page, 'distortion');
   await nextStep();
 
@@ -93,6 +103,13 @@ try {
   );
   const socQ = await page.locator('[data-field="socraticQuestion"]').inputValue();
   assert.ok(socQ.trim().length > 0, 'Socratic question pre-fills from the seeded type');
+  // The "Suggested for X" pill makes the choice→suggestion link visible right
+  // at the dropdown the suggestion drove.
+  assert.match(
+    await page.locator('.suggested-pill').first().innerText(),
+    /Suggested for Fortune Telling/i,
+    'Challenge step shows a "Suggested for Fortune Telling" pill on the Socratic type',
+  );
   await page.locator('[data-field="evidenceFor"]').fill('They said "we should talk." That is what they said.');
   await page.locator('[data-field="evidenceAgainst"]').fill('No complaint named. Last 1:1 was positive. On time on every deliverable this month.');
   await snap(page, 'challenge');
@@ -104,6 +121,11 @@ try {
     await page.locator('[data-field="reframeMethod"]').inputValue(),
     'Realism',
     'Picking "Fortune Telling" pre-selects the "Realism" reframe method',
+  );
+  assert.match(
+    await page.locator('.suggested-pill').first().innerText(),
+    /Suggested for Fortune Telling/i,
+    'Reframe step shows a "Suggested for Fortune Telling" pill on the method',
   );
   assert.ok(
     (await page.locator('[data-field="newThought"]').inputValue()).trim().length > 0,

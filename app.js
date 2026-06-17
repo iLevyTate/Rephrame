@@ -267,9 +267,10 @@ function reframeExamplesHTML(d) {
   `;
 }
 
-// PR 6: Challenge now comes BEFORE Distortion — Padesky's order (evidence-
-// first, label-after) prevents the "you already told me my thought is
-// distorted" priming effect that comes from labeling before examining.
+// Step order: Distortion (3) comes BEFORE Challenge (4). Naming the pattern
+// first seeds the Socratic question type and reframe method for the steps that
+// follow, so every suggestion flows forward instead of asking the user to map
+// jargon-to-jargon mid-flow.
 const STEP_TITLES = ["Trigger", "Initial Reaction", "Distortion", "Challenge", "Reframe", "Pivot", "Review"];
 const STEP_PROMPTS = [
   "What's setting this off?",
@@ -942,36 +943,63 @@ function applyTemplate(template, d) {
 }
 
 /**
- * Seeds Socratic/reframe from DISTORTION_DEFAULTS[primary].
- * Empty-only so user text is never overwritten. Returns true if any field changed.
+ * One plain-language description of what the picked distortion seeds forward,
+ * so Step 3's footnote, the in-place update, and the toast all say the exact
+ * same thing — and name the *actual* suggestions (not a vague "a question type
+ * and a reframe style") so the link from choice to suggestion is obvious before
+ * the user ever reaches Steps 4–5. Returns "" when the distortion has no
+ * mapping (every DISTORTIONS entry has one; this just keeps callers safe).
  */
-function seedDraftFromPrimaryDistortion(d) {
-  const primary = (d.distortions || [])[0];
-  if (!primary) return false;
-  const defaults = DISTORTION_DEFAULTS[primary];
-  if (!defaults) return false;
+function autoSuggestNoteHTML(primary) {
+  const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
+  if (!sugg) return "";
+  return `<strong>You picked ${esc(primary)}.</strong> ` +
+    `Because of that, Step 4 (Challenge) starts with the <strong>${esc(sugg.socratic)}</strong> question type ` +
+    `and Step 5 (Reframe) with the <strong>${esc(sugg.reframe)}</strong> method — the pairing that usually fits ` +
+    `this pattern. Swap either if a different angle lands better.`;
+}
+
+/**
+ * Keep the Step 4 (Socratic) and Step 5 (reframe) suggestions pointed at the
+ * *current* primary distortion (the first one picked). Called whenever the
+ * primary changes — first pick, swap, or removal — so what's populated forward
+ * always lines up with what the user chose. A forward field is only re-pointed
+ * when it's still a suggestion: empty, or still exactly the OLD primary's
+ * filled-in starter. Anything the user typed survives untouched. Returns true
+ * if any field changed.
+ */
+function applyPrimaryDistortionSuggestions(d, prevPrimary, nextPrimary) {
+  const oldDef = prevPrimary ? DISTORTION_DEFAULTS[prevPrimary] : null;
+  const newDef = nextPrimary ? DISTORTION_DEFAULTS[nextPrimary] : null;
   let changed = false;
-  if (!d.socraticType) {
-    d.socraticType = defaults.socratic;
-    changed = true;
+
+  // Socratic question TYPE (Step 4 dropdown).
+  if (!d.socraticType || d.socraticType === (oldDef && oldDef.socratic)) {
+    const nv = newDef ? newDef.socratic : "";
+    if (d.socraticType !== nv) { d.socraticType = nv; changed = true; }
   }
-  if (!d.reframeMethod) {
-    d.reframeMethod = defaults.reframe;
-    changed = true;
+  // Socratic QUESTION text — the type's filled-in starter template.
+  const oldSocT = oldDef ? SOCRATIC_TYPES.find(s => s.type === oldDef.socratic) : null;
+  const oldSocStarter = oldSocT && oldSocT.template ? applyTemplate(oldSocT.template, d).trim() : "";
+  const qTrim = String(d.socraticQuestion || "").trim();
+  if (!qTrim || qTrim === oldSocStarter) {
+    const newSocT = newDef ? SOCRATIC_TYPES.find(s => s.type === newDef.socratic) : null;
+    const nv = newSocT && newSocT.template ? applyTemplate(newSocT.template, d) : "";
+    if ((d.socraticQuestion || "") !== nv) { d.socraticQuestion = nv; changed = true; }
   }
-  if (!(d.socraticQuestion || "").trim()) {
-    const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
-    if (t && t.template) {
-      d.socraticQuestion = applyTemplate(t.template, d);
-      changed = true;
-    }
+  // Reframe METHOD (Step 5 dropdown).
+  if (!d.reframeMethod || d.reframeMethod === (oldDef && oldDef.reframe)) {
+    const nv = newDef ? newDef.reframe : "";
+    if (d.reframeMethod !== nv) { d.reframeMethod = nv; changed = true; }
   }
-  if (!(d.newThought || "").trim()) {
-    const r = REFRAME_METHODS.find(m => m.method === defaults.reframe);
-    if (r && r.template) {
-      d.newThought = applyTemplate(r.template, d);
-      changed = true;
-    }
+  // NEW THOUGHT text — the method's filled-in starter template.
+  const oldRefM = oldDef ? REFRAME_METHODS.find(m => m.method === oldDef.reframe) : null;
+  const oldRefStarter = oldRefM && oldRefM.template ? applyTemplate(oldRefM.template, d).trim() : "";
+  const ntTrim = String(d.newThought || "").trim();
+  if (!ntTrim || ntTrim === oldRefStarter) {
+    const newRefM = newDef ? REFRAME_METHODS.find(m => m.method === newDef.reframe) : null;
+    const nv = newRefM && newRefM.template ? applyTemplate(newRefM.template, d) : "";
+    if ((d.newThought || "") !== nv) { d.newThought = nv; changed = true; }
   }
   return changed;
 }
@@ -3177,9 +3205,7 @@ function renderCaptureStep(step, d) {
           </div>
           <p class="step-hint" style="margin-top: 10px;">Pick any that apply. Zero is also fine — the question is whether you notice these patterns, not whether you must find one.</p>
           ${(d.distortions && d.distortions[0] && DISTORTION_DEFAULTS[d.distortions[0]]) ? `
-            <div class="auto-suggest-note" role="note">
-              <strong>You picked ${esc(d.distortions[0])}.</strong> The next steps come pre-set with a question type and a reframe style that usually fit — adapt or swap if a different angle lands better for you.
-            </div>
+            <div class="auto-suggest-note" role="note">${autoSuggestNoteHTML(d.distortions[0])}</div>
           ` : ""}
           <details class="ref-inline">
             <summary><span class="chev">▸</span> Common pairs</summary>
@@ -5569,11 +5595,10 @@ function bindCapture() {
     if (!grid) return;
     const fieldGroup = grid.closest('.field-group');
     if (!fieldGroup) return;
-    const d = state.draft;
-    const primary = (d.distortions || [])[0];
-    const sugg = primary ? DISTORTION_DEFAULTS[primary] : null;
+    const primary = (state.draft.distortions || [])[0];
+    const html = autoSuggestNoteHTML(primary);
     let note = fieldGroup.querySelector('.auto-suggest-note');
-    if (!primary || !sugg) {
+    if (!html) {
       if (note) note.remove();
       return;
     }
@@ -5585,9 +5610,7 @@ function bindCapture() {
       if (hint && hint.parentNode) hint.parentNode.insertBefore(note, hint.nextSibling);
       else fieldGroup.appendChild(note);
     }
-    note.innerHTML =
-      '<strong>You picked ' + esc(primary) + '.</strong> ' +
-      'The next steps come pre-set with a question type and a reframe style that usually fit — adapt or swap if a different angle lands better for you.';
+    note.innerHTML = html;
   }
 
   document.querySelectorAll('[data-action="toggle-distortion"]').forEach(btn => {
@@ -5599,14 +5622,16 @@ function bindCapture() {
       const next = has ? prev.filter(d => d !== name) : [...prev, name];
       state.draft.distortions = next;
       const nextPrimary = (next[0] || "");
-      const primarySwappedOrSet = !!(nextPrimary && nextPrimary !== prevPrimary);
 
-      if (primarySwappedOrSet) {
-        const seeded = seedDraftFromPrimaryDistortion(state.draft);
-        if (seeded && state.captureStep <= 3) {
-          toast("Starters ready for Challenge and Reframe ahead — pre-filled where they were empty.");
-        } else if (seeded) {
-          toast("Starters filled in for Challenge and Reframe where they were empty.");
+      // Whenever the primary (first-picked) distortion changes — set, swapped,
+      // or cleared — re-point the forward suggestions so what's populated in
+      // Challenge/Reframe always lines up with the current pick. User-typed
+      // text is preserved; only empty or still-starter fields move.
+      if (nextPrimary !== prevPrimary) {
+        const changed = applyPrimaryDistortionSuggestions(state.draft, prevPrimary, nextPrimary);
+        if (changed && nextPrimary) {
+          const def = DISTORTION_DEFAULTS[nextPrimary];
+          if (def) toast(`Challenge & Reframe set to fit ${nextPrimary}: ${def.socratic} · ${def.reframe}. Swap anytime.`);
         }
       }
       saveDraft(state.draft);
@@ -6390,11 +6415,15 @@ document.addEventListener("keydown", e => {
     const t = e.target;
     if (!t || !t.matches || !t.matches(FIELD)) return;
     lastFocused = t;
-    // Two rAFs: first lets the browser paint the focus state, second
-    // gives the VK a moment to start rising so the post-VK viewport
-    // height is what scrollIntoView sees.
+    // `nearest`, not `center`: only scroll when the field is genuinely out of
+    // view. Centering on *every* focus yanked the whole page on each click into
+    // a box — even on desktop, where there's no keyboard to avoid — which read
+    // as a flash/refresh. When the on-screen keyboard later rises on mobile and
+    // covers the field, the visualViewport 'resize' handler below re-centers it
+    // against the shrunken viewport. The rAFs let the browser paint the focus
+    // state first so the scroll math sees the settled layout.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      smoothScrollIntoView(lastFocused, { block: 'center' });
+      if (lastFocused) smoothScrollIntoView(lastFocused, { block: 'nearest' });
     }));
   });
   document.addEventListener('focusout', e => {
