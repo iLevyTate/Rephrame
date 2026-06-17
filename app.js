@@ -218,6 +218,87 @@ const REFRAME_EXAMPLES = {
   ],
 };
 
+// Per-distortion starter text for Step 4 (the Socratic question) and Step 5
+// (the reframe). The generic SOCRATIC_TYPES / REFRAME_METHODS templates only
+// know the question *type* / reframe *method*, not the specific pattern — so
+// e.g. the Compassionate-reattribution template ("This wasn't all on me") reads
+// backwards for Blame, where the distortion is over-blaming someone else, and
+// the Coping/encouraging line doesn't speak to a Mental Filter at all. When the
+// primary distortion has an entry here AND the selected type/method still
+// matches its suggestion, this tailored line is pre-filled instead. Placeholders
+// ([thought], [person], [worst case], [feared outcome]) are filled by
+// applyTemplate; [X] is left for the user. Keys must match DISTORTIONS[].name.
+const DISTORTION_STARTERS = {
+  "All-or-Nothing Thinking": {
+    socratic: "Where does this actually land on a scale from 0 to 100, instead of at one extreme or the other?",
+    reframe: "This isn't all-or-nothing. On a 0–100 line it sits around [X], not at either end — and that middle is a real, honest place to stand.",
+  },
+  "Overgeneralization": {
+    socratic: "How many times has this actually happened versus the times it didn't — counting honestly, not from memory's highlight reel?",
+    reframe: "One instance isn't a forever pattern. \"Sometimes\" is more honest than \"always\" or \"never\" here — this was one time, not the rule.",
+  },
+  "Mental Filter": {
+    socratic: "If I widen the frame past the one bad detail, what else was in the picture that I'm leaving out?",
+    reframe: "I'm zooming in on the one negative and cropping out the rest. The fuller picture also includes [X] — both were there, and the whole frame is more accurate than its worst piece.",
+  },
+  "Disqualifying the Positive": {
+    socratic: "What's my real reason for waving this away — and would that reason survive if a friend used it about themselves?",
+    reframe: "I keep explaining away the good so it can't count. But it happened, and it counts — I can let [X] land instead of deleting it.",
+  },
+  "Mind Reading": {
+    socratic: "What are two or three other reasons [person] might have done that, besides the one I jumped to?",
+    reframe: "I'm treating a guess about what [person] thinks as fact. I don't actually know — busy, tired, or distracted are all just as likely, and I could check instead of assuming.",
+  },
+  "Fortune Telling": {
+    socratic: "Realistically, on a scale of 0–100%, how likely is [feared outcome] — and what's the most probable outcome instead?",
+    reframe: "I can't actually predict this. The realistic outcome is more like [X], and I'd handle that the way I've handled similar things before.",
+  },
+  "Catastrophizing": {
+    socratic: "If [worst case] did happen, what would I realistically do next — and how much would it matter a month from now?",
+    reframe: "The worst case isn't the likely case. The realistic version is [X], and even the bad outcome is something I could cope with and come back from.",
+  },
+  "Minimization": {
+    socratic: "If someone else had done this, would I really call it \"no big deal\" — or would I give them credit?",
+    reframe: "I'm shrinking this to stay safe from feeling good about it. It took real [X], and it's allowed to count for what it actually was.",
+  },
+  "Emotional Reasoning": {
+    socratic: "What's the evidence beyond the feeling itself? If I set the feeling aside, what do the facts actually say?",
+    reframe: "Feeling this way is real, but a feeling isn't proof. The facts tell a more balanced story — the emotion is information, not a verdict.",
+  },
+  "Should Statements": {
+    socratic: "What does holding myself to this \"should\" actually cost me, and what would I gain by loosening it?",
+    reframe: "There's no law that I must [X]. \"I'd prefer to\" is truer than \"I have to\" — a kinder, more flexible rule still moves me forward without the whip.",
+  },
+  "Labeling": {
+    socratic: "If a friend did the exact same thing, would I pin this label on them — or would I see it as one moment?",
+    reframe: "One action isn't a verdict on who I am. I did [X]; that's a behavior I can learn from, not a permanent label — and I'd never brand a friend this way.",
+  },
+  "Personalization": {
+    socratic: "What else could be driving this that has nothing to do with me? How big is my actual slice of the cause?",
+    reframe: "This wasn't all on me. A fair share of the responsibility looks more like [X] — other people and other factors are in this too.",
+  },
+  "Blame": {
+    socratic: "Beyond putting this all on [person], what part of it is actually mine to own or act on?",
+    reframe: "This isn't entirely [person]'s fault — responsibility is usually shared. Naming my own part, even a small one like [X], gives me something I can actually do next.",
+  },
+  "Fallacy of Fairness": {
+    socratic: "What is measuring this against \"fair\" costing me — and what would I do here if I stopped waiting for it to be fair?",
+    reframe: "Fair isn't guaranteed, and keeping score keeps me stuck. Instead of waiting for fairness, I can decide what I want to do about [X] now.",
+  },
+  "Fallacy of Change": {
+    socratic: "What is it costing me to wait for [person] to change — and what could I do that doesn't depend on them changing?",
+    reframe: "I can't make [person] change. What's in my hands is how I respond and what boundaries I keep — so my next move is [X], whether or not they change.",
+  },
+  "Control Fallacy (external)": {
+    socratic: "What's the evidence that there's truly nothing I can do — and what's one small thing here I could still influence?",
+    reframe: "Some of this is out of my hands, but not all of it. There's at least one piece I can act on — I'll try [X] and see what shifts.",
+  },
+  "Control Fallacy (internal)": {
+    socratic: "Would I really expect a friend to be responsible for all of this? How much of it is genuinely mine to carry?",
+    reframe: "I'm not responsible for everyone's feelings and outcomes. I can care and help with [X] without owning results that were never mine to control.",
+  },
+};
+
 /**
  * Build the tailored worked-examples block for Step 5. Pulls before→after
  * pairs for the distortion(s) the user named in Step 3; falls back to a small
@@ -943,6 +1024,38 @@ function applyTemplate(template, d) {
 }
 
 /**
+ * The Step 4 Socratic starter for a draft: the primary distortion's tailored
+ * line when the selected type still matches its suggestion, otherwise the
+ * generic template for whatever type is selected. `opts` lets callers compute
+ * the starter for a specific primary/type (e.g. the PREVIOUS one) without
+ * touching the draft. Returns "" when no type is in play.
+ */
+function socraticStarterText(d, opts) {
+  const type = opts && "type" in opts ? opts.type : d.socraticType;
+  if (!type) return "";
+  const primary = opts && "primary" in opts ? opts.primary : (d.distortions || [])[0];
+  const def = primary ? DISTORTION_DEFAULTS[primary] : null;
+  const tailored = (def && def.socratic === type && DISTORTION_STARTERS[primary])
+    ? DISTORTION_STARTERS[primary].socratic : "";
+  if (tailored) return applyTemplate(tailored, d);
+  const t = SOCRATIC_TYPES.find(s => s.type === type);
+  return t && t.template ? applyTemplate(t.template, d) : "";
+}
+
+/** The Step 5 reframe starter for a draft — mirror of socraticStarterText. */
+function reframeStarterText(d, opts) {
+  const method = opts && "method" in opts ? opts.method : d.reframeMethod;
+  if (!method) return "";
+  const primary = opts && "primary" in opts ? opts.primary : (d.distortions || [])[0];
+  const def = primary ? DISTORTION_DEFAULTS[primary] : null;
+  const tailored = (def && def.reframe === method && DISTORTION_STARTERS[primary])
+    ? DISTORTION_STARTERS[primary].reframe : "";
+  if (tailored) return applyTemplate(tailored, d);
+  const r = REFRAME_METHODS.find(m => m.method === method);
+  return r && r.template ? applyTemplate(r.template, d) : "";
+}
+
+/**
  * One plain-language description of what the picked distortion seeds forward,
  * so Step 3's footnote, the in-place update, and the toast all say the exact
  * same thing — and name the *actual* suggestions (not a vague "a question type
@@ -978,13 +1091,11 @@ function applyPrimaryDistortionSuggestions(d, prevPrimary, nextPrimary) {
     const nv = newDef ? newDef.socratic : "";
     if (d.socraticType !== nv) { d.socraticType = nv; changed = true; }
   }
-  // Socratic QUESTION text — the type's filled-in starter template.
-  const oldSocT = oldDef ? SOCRATIC_TYPES.find(s => s.type === oldDef.socratic) : null;
-  const oldSocStarter = oldSocT && oldSocT.template ? applyTemplate(oldSocT.template, d).trim() : "";
+  // Socratic QUESTION text — the distortion-tailored (or type) starter.
+  const oldSocStarter = oldDef ? socraticStarterText(d, { primary: prevPrimary, type: oldDef.socratic }).trim() : "";
   const qTrim = String(d.socraticQuestion || "").trim();
   if (!qTrim || qTrim === oldSocStarter) {
-    const newSocT = newDef ? SOCRATIC_TYPES.find(s => s.type === newDef.socratic) : null;
-    const nv = newSocT && newSocT.template ? applyTemplate(newSocT.template, d) : "";
+    const nv = newDef ? socraticStarterText(d, { primary: nextPrimary, type: newDef.socratic }) : "";
     if ((d.socraticQuestion || "") !== nv) { d.socraticQuestion = nv; changed = true; }
   }
   // Reframe METHOD (Step 5 dropdown).
@@ -992,32 +1103,29 @@ function applyPrimaryDistortionSuggestions(d, prevPrimary, nextPrimary) {
     const nv = newDef ? newDef.reframe : "";
     if (d.reframeMethod !== nv) { d.reframeMethod = nv; changed = true; }
   }
-  // NEW THOUGHT text — the method's filled-in starter template.
-  const oldRefM = oldDef ? REFRAME_METHODS.find(m => m.method === oldDef.reframe) : null;
-  const oldRefStarter = oldRefM && oldRefM.template ? applyTemplate(oldRefM.template, d).trim() : "";
+  // NEW THOUGHT text — the distortion-tailored (or method) starter.
+  const oldRefStarter = oldDef ? reframeStarterText(d, { primary: prevPrimary, method: oldDef.reframe }).trim() : "";
   const ntTrim = String(d.newThought || "").trim();
   if (!ntTrim || ntTrim === oldRefStarter) {
-    const newRefM = newDef ? REFRAME_METHODS.find(m => m.method === newDef.reframe) : null;
-    const nv = newRefM && newRefM.template ? applyTemplate(newRefM.template, d) : "";
+    const nv = newDef ? reframeStarterText(d, { primary: nextPrimary, method: newDef.reframe }) : "";
     if ((d.newThought || "") !== nv) { d.newThought = nv; changed = true; }
   }
   return changed;
 }
 
-/** True when the drafted Socratic line still matches the built-in template for the selected type (context-aware). */
+/** True when the drafted Socratic line still matches the app starter (the
+ *  distortion-tailored one when applicable, else the type template). */
 function draftedSocraticMatchesBuiltInTemplate(d) {
   if (!d || !d.socraticType || !(d.socraticQuestion || "").trim()) return false;
-  const t = SOCRATIC_TYPES.find(s => s.type === d.socraticType);
-  if (!t || !t.template) return false;
-  return applyTemplate(t.template, d).trim() === String(d.socraticQuestion).trim();
+  const starter = socraticStarterText(d).trim();
+  return !!starter && starter === String(d.socraticQuestion).trim();
 }
 
-/** True when newThought matches the selected method's template (context-aware). */
+/** True when newThought still matches the app starter (tailored or method template). */
 function draftedNewThoughtMatchesBuiltInTemplate(d) {
   if (!d || !d.reframeMethod || !(d.newThought || "").trim()) return false;
-  const r = REFRAME_METHODS.find(m => m.method === d.reframeMethod);
-  if (!r || !r.template) return false;
-  return applyTemplate(r.template, d).trim() === String(d.newThought).trim();
+  const starter = reframeStarterText(d).trim();
+  return !!starter && starter === String(d.newThought).trim();
 }
 
 function loadEntries() {
@@ -3285,7 +3393,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">Your Socratic question</label>
-        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc((() => { const st = SOCRATIC_TYPES.find(s => s.type === d.socraticType); return (st && st.template) ? applyTemplate(st.template, d) : "Pick a type above and a starting question will fill in — then make it your own."; })())}">${esc(d.socraticQuestion)}</textarea>
+        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc(socraticStarterText(d) || "Pick a type above and a starting question will fill in — then make it your own.")}">${esc(d.socraticQuestion)}</textarea>
         <p class="field-help-paper" style="margin-top: 8px;">Picking a type above pre-fills a starting question — feel free to rewrite it in your own words. The point is to <em>genuinely consider</em> the answer, so the wording has to be one you can take seriously.</p>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All question types</summary>
@@ -3341,7 +3449,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group reframe-new-thought">
         <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "Your new thought — write the reframe here"}</label>
-        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (() => { const rm = REFRAME_METHODS.find(r => r.method === d.reframeMethod); return (rm && rm.template) ? applyTemplate(rm.template, d) : "Write a more balanced, reasonable thought you'd actually accept — the one to replace the hot thought. (Optional: pick a method above for a starter.)"; })())}">${esc(d.newThought)}</textarea>
+        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (reframeStarterText(d) || "Write a more balanced, reasonable thought you'd actually accept — the one to replace the hot thought. (Optional: pick a method above for a starter.)"))}">${esc(d.newThought)}</textarea>
         <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.`}</div>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All reframe methods</summary>
@@ -5359,32 +5467,23 @@ function bindCapture() {
       // selection's contextual template — customized wording is never smashed.
       if (field === "socraticType") {
         const prevType = state.draft.socraticType;
-        state.draft.socraticType = v;
         const qTrim = String(state.draft.socraticQuestion || "").trim();
-        const prevMeta = prevType ? SOCRATIC_TYPES.find(s => s.type === prevType) : null;
-        const stillPrevStarter =
-          !!(prevMeta && prevMeta.template && applyTemplate(prevMeta.template, state.draft).trim() === qTrim);
-        if (!v) {
-          if (!qTrim || stillPrevStarter) state.draft.socraticQuestion = "";
-        }
-        else if (!qTrim || stillPrevStarter) {
-          const tNew = SOCRATIC_TYPES.find(s => s.type === v);
-          if (tNew && tNew.template) state.draft.socraticQuestion = applyTemplate(tNew.template, state.draft);
+        // "Still a starter" compares against the starter the PREVIOUS type
+        // produced (tailored to the current distortion when it applied), so
+        // anything the user actually typed is preserved across the swap.
+        const stillPrevStarter = qTrim.length > 0 && qTrim === socraticStarterText(state.draft, { type: prevType }).trim();
+        state.draft.socraticType = v;
+        if (!qTrim || stillPrevStarter) {
+          state.draft.socraticQuestion = v ? socraticStarterText(state.draft, { type: v }) : "";
         }
       }
       else if (field === "reframeMethod") {
         const prevMethod = state.draft.reframeMethod;
-        state.draft.reframeMethod = v;
         const ntTrim = String(state.draft.newThought || "").trim();
-        const prevMeta = prevMethod ? REFRAME_METHODS.find(r => r.method === prevMethod) : null;
-        const stillPrevStarter =
-          !!(prevMeta && prevMeta.template && applyTemplate(prevMeta.template, state.draft).trim() === ntTrim);
-        if (!v) {
-          if (!ntTrim || stillPrevStarter) state.draft.newThought = "";
-        }
-        else if (!ntTrim || stillPrevStarter) {
-          const rNew = REFRAME_METHODS.find(r => r.method === v);
-          if (rNew && rNew.template) state.draft.newThought = applyTemplate(rNew.template, state.draft);
+        const stillPrevStarter = ntTrim.length > 0 && ntTrim === reframeStarterText(state.draft, { method: prevMethod }).trim();
+        state.draft.reframeMethod = v;
+        if (!ntTrim || stillPrevStarter) {
+          state.draft.newThought = v ? reframeStarterText(state.draft, { method: v }) : "";
         }
       }
       else {
@@ -5663,12 +5762,12 @@ function bindCapture() {
         for (const name of formerDistortions) {
           const def = DISTORTION_DEFAULTS[name];
           if (!def) continue;
+          const socStarter = socraticStarterText(state.draft, { primary: name, type: def.socratic }).trim();
+          const refStarter = reframeStarterText(state.draft, { primary: name, method: def.reframe }).trim();
           if (state.draft.socraticType === def.socratic) state.draft.socraticType = "";
           if (state.draft.reframeMethod === def.reframe) state.draft.reframeMethod = "";
-          const t = SOCRATIC_TYPES.find(s => s.type === def.socratic);
-          if (t && t.template && String(state.draft.socraticQuestion || "").trim() === applyTemplate(t.template, state.draft).trim()) state.draft.socraticQuestion = "";
-          const r = REFRAME_METHODS.find(m => m.method === def.reframe);
-          if (r && r.template && String(state.draft.newThought || "").trim() === applyTemplate(r.template, state.draft).trim()) state.draft.newThought = "";
+          if (socStarter && String(state.draft.socraticQuestion || "").trim() === socStarter) state.draft.socraticQuestion = "";
+          if (refStarter && String(state.draft.newThought || "").trim() === refStarter) state.draft.newThought = "";
         }
       }
       saveDraft(state.draft);
@@ -5698,12 +5797,10 @@ function bindCapture() {
     // empty-only Socratic pre-fill so leaving the step without typing a
     // question still seeds the chosen type's template into the saved entry.
     if (state.captureStep === 4 && state.draft.socraticType && !String(state.draft.socraticQuestion || "").trim()) {
-      const t = SOCRATIC_TYPES.find(s => s.type === state.draft.socraticType);
-      if (t && t.template) state.draft.socraticQuestion = applyTemplate(t.template, state.draft);
+      state.draft.socraticQuestion = socraticStarterText(state.draft);
     }
     if (state.captureStep === 5 && state.draft.reframeMethod && !(state.draft.newThought || "").trim()) {
-      const r = REFRAME_METHODS.find(m => m.method === state.draft.reframeMethod);
-      if (r && r.template) state.draft.newThought = applyTemplate(r.template, state.draft);
+      state.draft.newThought = reframeStarterText(state.draft);
     }
     if (state.captureStep === 2) persistDefaultBeliefsForFilledThoughts(state.draft);
     state.captureStep++;

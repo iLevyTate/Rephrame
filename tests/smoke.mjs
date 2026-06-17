@@ -103,6 +103,9 @@ try {
   );
   const socQ = await page.locator('[data-field="socraticQuestion"]').inputValue();
   assert.ok(socQ.trim().length > 0, 'Socratic question pre-fills from the seeded type');
+  // The pre-fill is the Fortune-Telling-*tailored* starter, not the generic
+  // Probability-testing template — that is the per-distortion starter at work.
+  assert.match(socQ, /most probable outcome/i, 'Socratic question uses the Fortune-Telling-tailored starter');
   // The "Suggested for X" pill makes the choice→suggestion link visible right
   // at the dropdown the suggestion drove.
   assert.match(
@@ -127,10 +130,10 @@ try {
     /Suggested for Fortune Telling/i,
     'Reframe step shows a "Suggested for Fortune Telling" pill on the method',
   );
-  assert.ok(
-    (await page.locator('[data-field="newThought"]').inputValue()).trim().length > 0,
-    'Reframe method pre-fills the new-thought textarea',
-  );
+  const newT = await page.locator('[data-field="newThought"]').inputValue();
+  assert.ok(newT.trim().length > 0, 'Reframe method pre-fills the new-thought textarea');
+  // Tailored to Fortune Telling (prediction), not the generic Realism template.
+  assert.match(newT, /can't actually predict/i, 'New thought uses the Fortune-Telling-tailored reframe starter');
   // New-thought belief slider (added in PR6) exists and is live.
   assert.equal(await page.locator('[data-field="newThoughtBelief"]').count(), 1, 'newThoughtBelief slider exists');
   await page.locator('[data-field="newThoughtBelief"]').fill('73');
