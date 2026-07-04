@@ -78,24 +78,35 @@ try {
     });
     assert.equal(await journalCount(), 0, 'Journal cleared to 0 before import');
 
-    const importFile = async (mode, json) => {
+    const importFile = async (mode, json, expectedCount) => {
       await page.evaluate((m) => { document.getElementById('import-file').dataset.mode = m; }, mode);
       await page.locator('#import-file').setInputFiles({
         name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(json),
       });
-      await page.waitForTimeout(250); // FileReader is async
+      // FileReader → parse → persist → render is genuinely async; poll for
+      // the outcome instead of sleeping a fixed 250ms (flaky on loaded CI).
+      await page.waitForFunction(
+        (n) => document.querySelectorAll('.entry-card').length === n,
+        expectedCount,
+        { timeout: 5000 }
+      );
     };
 
-    await importFile('replace', exportedJson);
+    await importFile('replace', exportedJson, 2);
     assert.equal(await journalCount(), 2, 'Import (replace) restores both entries');
 
     // Re-import the same file in merge mode — dedupe-by-id must keep it at 2.
-    await importFile('merge', exportedJson);
+    // Count stays 2, so poll on the toast the merge fires instead.
+    await page.evaluate((m) => { document.getElementById('import-file').dataset.mode = m; }, 'merge');
+    await page.locator('#import-file').setInputFiles({
+      name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(exportedJson),
+    });
+    await page.locator('.toast', { hasText: 'Nothing new to import' }).first().waitFor({ timeout: 5000 });
     assert.equal(await journalCount(), 2, 'Import (merge) of the same file dedupes by id (still 2)');
 
     // Merge a backup carrying one genuinely new entry → count grows to 3.
     const withNew = JSON.stringify([...exported, entry('e3', 'a third, new entry')]);
-    await importFile('merge', withNew);
+    await importFile('merge', withNew, 3);
     assert.equal(await journalCount(), 3, 'Import (merge) adds only the new entry (now 3)');
 
     await snap(page, 'import-merge');

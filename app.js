@@ -536,6 +536,11 @@ function makeSampleEntries() {
 const STORAGE_KEY = "reframe-journal-v1";
 const DRAFT_KEY   = "reframe-journal-draft-v1";
 const ONBOARDED_KEY = "reframe-onboarded-v1";
+// Best-effort write — a quota error mid-click must not surface the global
+// "Something went wrong" toast just because the onboarding flag didn't stick.
+function markOnboarded() {
+  try { localStorage.setItem(ONBOARDED_KEY, "1"); } catch (_) { /* best-effort */ }
+}
 const SETTINGS_KEY = "reframe-settings-v1";
 const PIN_KEY = "reframe-pin-hash-v1";
 const UNLOCK_KEY = "reframe-unlocked";   // sessionStorage; cleared when tab closes
@@ -592,7 +597,11 @@ function _readStoredPin() {
   return null;
 }
 
-function hasPin() { return !!localStorage.getItem(PIN_KEY); }
+// A PIN "exists" only if the stored record actually parses — a corrupted
+// record (not 64-hex, not valid v2 JSON) can never verify, so treating raw
+// key presence as "has PIN" would lock the journal permanently. The PIN is a
+// glance-privacy screen, not encryption; failing open beats bricking.
+function hasPin() { return !!_readStoredPin(); }
 
 async function verifyPin(pin) {
   // Enforce the brute-force lockout here — not only in the lock-screen form —
@@ -602,7 +611,7 @@ async function verifyPin(pin) {
   if (pinLockoutMsLeft() > 0) return false;
   const stored = _readStoredPin();
   if (!stored) return false;
-  let ok = false;
+  let ok;
   if (stored.v === 1) {
     ok = (await _legacyHashPin(pin)) === stored.hash;
     // Opportunistic migration on first successful unlock: upgrade the
@@ -689,7 +698,7 @@ function saveSettings(s) {
   // always means storage is full from entries — surface it rather than crash.
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-  } catch (err) {
+  } catch (_) {
     if (typeof toast === "function") {
       toast("Couldn't save settings — storage may be full.", { variant: "error" });
     }
@@ -702,12 +711,6 @@ const REMINDER_MS = {
   daily:   24 * 3600 * 1000,
   "3days": 3 * 24 * 3600 * 1000,
   weekly:  7 * 24 * 3600 * 1000,
-};
-const REMINDER_LABELS = {
-  off:     "Off",
-  daily:   "Daily",
-  "3days": "Every 3 days",
-  weekly:  "Weekly",
 };
 
 // Fields added after v1 shipped. Existing JSON exports won't carry them, so
@@ -743,13 +746,22 @@ const REFRAME_RENAME = {
 
 function normalizeEntry(e) {
   const kind = (ENTRY_KINDS.includes(e && e.kind)) ? e.kind : "thought-record";
+  // Mint an id if the source object lacks one — hand-edited or stripped
+  // backups can omit it; without a fresh id the dedupe-by-id Map in
+  // processImportFile would collapse every such entry into one. Also re-mint
+  // ids that aren't plain tokens: entry ids are interpolated into HTML
+  // attributes and querySelector strings throughout the renderers, so a
+  // crafted id in an imported backup or a synced peer payload could inject
+  // markup or break selectors. Every ingress path (import, P2P merge,
+  // storage load) funnels through here, so this one gate covers them all.
+  const rawId = e.id == null ? "" : String(e.id);
   const out = {
-    // Mint an id if the source object lacks one. Hand-edited or stripped
-    // backups can omit it; without a fresh id the dedupe-by-id Map in
-    // processImportFile would collapse every such entry into one.
-    id: e.id || newId(),
+    id: /^[A-Za-z0-9_.:-]{1,64}$/.test(rawId) ? rawId : newId(),
     kind,
-    createdAt: e.createdAt || "",
+    // Clamp future-dated stamps from imports/peers the same way new captures
+    // are clamped, so the newest-first sort and the 30-day views hold. Drafts
+    // legitimately carry an empty createdAt until save — leave those alone.
+    createdAt: e.createdAt ? clampDate(e.createdAt) : "",
     updatedAt: e.updatedAt || undefined,
 
     trigger: e.trigger || "",
@@ -815,6 +827,9 @@ function normalizeEntry(e) {
     linkedEntryId: e.linkedEntryId || "",
 
     isQuick: !!e.isQuick,
+    // "Just venting" quick captures: named, saved, deliberately not taken
+    // through the structured flow. Excluded from thought-record statistics.
+    isVent: !!e.isVent,
     isSample: !!e.isSample,
     isFavorite: !!e.isFavorite,
   };
@@ -853,7 +868,7 @@ function normalizeEntry(e) {
   if (kind === "activity" && !out.plannedFor) {
     const t = new Date(Date.now() + 60 * 60 * 1000);
     t.setSeconds(0, 0);
-    out.plannedFor = t.toISOString().slice(0, 16);
+    out.plannedFor = toLocalDatetimeValue(t);
   }
   return out;
 }
@@ -933,12 +948,13 @@ function templatePlaceholderContext(d) {
 function applyTemplate(template, d) {
   if (!template || typeof template !== "string") return "";
   const { thought, person, worstCase, fearedOutcome } = templatePlaceholderContext(d);
+  // Function replacers: user text can contain `$&`, `$'` etc., which string
+  // replacements would expand as substitution patterns and corrupt the seed.
   return template
-    .replace(/\[thought\]/gi, thought)
-    .replace(/\[person\]/gi, person)
-    .replace(/\[worst case\]/gi, worstCase)
-    .replace(/\[feared\s*outcome\]/gi, fearedOutcome);
-
+    .replace(/\[thought\]/gi, () => thought)
+    .replace(/\[person\]/gi, () => person)
+    .replace(/\[worst case\]/gi, () => worstCase)
+    .replace(/\[feared\s*outcome\]/gi, () => fearedOutcome);
 }
 
 /**
@@ -1023,6 +1039,13 @@ function _saveDraftNow(d) {
 let _saveDraftTimer = null;
 let _pendingDraft = null;
 function saveDraft(d) {
+  // Never autosave while editing an existing entry. The edit copy carries the
+  // original entry's id, so persisting it to DRAFT_KEY (a) overwrites any
+  // stashed unfinished NEW entry the user still expects to resume, and (b) if
+  // the tab closes mid-edit, the resumed "draft" would save as a second entry
+  // with a duplicate id. Edits live in state.entries once saved; an abandoned
+  // edit should simply evaporate.
+  if (state.editingId) return;
   _pendingDraft = d;
   if (_saveDraftTimer !== null) return;
   _saveDraftTimer = setTimeout(() => {
@@ -1102,6 +1125,27 @@ function clampDate(iso) {
 }
 const band = n => INTENSITY_BANDS.find(b => n <= b.max) || INTENSITY_BANDS[4];
 
+// Format a Date as a LOCAL "YYYY-MM-DDTHH:MM" string — the value shape
+// <input type="datetime-local"> and `new Date(str)` both interpret as local
+// wall-clock time. toISOString().slice(0,16) looks identical but is UTC, so
+// using it shifts the value by the timezone offset (hours in the past east
+// of UTC, hours further ahead west of it).
+function toLocalDatetimeValue(date) {
+  const pad = n => String(n).padStart(2, "0");
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+    "T" + pad(date.getHours()) + ":" + pad(date.getMinutes());
+}
+
+// Coerce any stored plannedFor value into the shape <input type="datetime-local">
+// accepts. Sample entries and some historical saves carry full ISO-Z strings,
+// which the input silently rejects (it renders blank).
+function toDatetimeLocalInputValue(v) {
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return v;
+  const t = Date.parse(v);
+  return isNaN(t) ? "" : toLocalDatetimeValue(new Date(t));
+}
+
 function emptyEntry() {
   // Default: full Mind Over Mood thought record (kind: "thought-record").
   // Other kinds use the dedicated factories below.
@@ -1127,7 +1171,7 @@ function emptyActivity() {
     kind: "activity",
     moods: [],
     thoughts: [],
-    plannedFor: t.toISOString().slice(0, 16),
+    plannedFor: toLocalDatetimeValue(t),
   });
 }
 
@@ -1706,15 +1750,26 @@ function retriggerAnimation(node, cls, fallbackMs) {
   node.classList.add(cls);
   const cleanup = () => node.classList.remove(cls);
   let done = false;
-  node.addEventListener("animationend", function once() {
-    if (done) return;
+  const once = (e) => {
+    // animationend bubbles: a descendant's animation (e.g. a capture step
+    // entering inside #view) must not end the node's own animation early.
+    if (e.target !== node || done) return;
     done = true;
     node.removeEventListener("animationend", once);
     cleanup();
-  });
+  };
+  node.addEventListener("animationend", once);
   // Safety net — `animationend` is reliable but not infallible (e.g. the
-  // node gets removed mid-animation). Clean up after the duration anyway.
-  setTimeout(() => { if (!done) { done = true; cleanup(); } }, fallbackMs || 400);
+  // node gets removed mid-animation, or prefers-reduced-motion suppresses
+  // the animation entirely). Clean up — including the listener, so repeated
+  // view changes don't accumulate inert handlers — after the duration.
+  setTimeout(() => {
+    if (!done) {
+      done = true;
+      node.removeEventListener("animationend", once);
+      cleanup();
+    }
+  }, fallbackMs || 400);
 }
 
 function render() {
@@ -2149,13 +2204,16 @@ function shouldShowWorryWindow() {
   const now = new Date();
   const winStart = new Date(); winStart.setHours(h, m, 0, 0);
   const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000);
-  if (now >= winStart && now <= winEnd) return true;
-  // Missed-window catch-up: any worry whose scheduledFor is in the past.
+  const inWindow = now >= winStart && now <= winEnd;
   const nowMs = now.getTime();
+  // A worry only counts as due once its scheduledFor has arrived — a worry
+  // parked moments ago (scheduled for tomorrow's window) must not trigger
+  // "It's worry time" seconds after the user was told it's parked until
+  // tomorrow. Worries without a valid schedule surface during the window.
   return parked.some(w => {
-    if (!w.scheduledFor) return false;
     const t = Date.parse(w.scheduledFor);
-    return !isNaN(t) && t <= nowMs;
+    if (isNaN(t)) return inWindow;
+    return t <= nowMs;
   });
 }
 
@@ -2245,7 +2303,7 @@ function renderThoughtRecordCard(entry, index) {
 
   return `
     <article class="entry-card ${expanded ? "expanded" : ""} ${entry.isQuick ? "is-quick" : ""} ${entry.isFavorite ? "is-favorite" : ""}" id="entry-${entry.id}">
-      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
+      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}">
         <div class="entry-meta-row">
           <span class="entry-meta-num">No. ${String(index + 1).padStart(2, "0")}</span>
           <span class="entry-meta-dot">·</span>
@@ -2283,7 +2341,7 @@ function renderThoughtRecordCard(entry, index) {
           ${(entry.distortions || []).length > 2 ? `<span class="dist-more">+${(entry.distortions || []).length - 2}</span>` : ""}
         </div>
       </div>
-      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
+      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}"${expanded ? "" : " inert"}>
         ${renderEntryDetails(entry)}
       </div>
     </article>
@@ -2302,7 +2360,7 @@ function renderFreeformCard(entry, index) {
   const preview = (entry.body || "").replace(/\s+/g, " ").trim().slice(0, 160);
   return `
     <article class="entry-card entry-card--freeform ${expanded ? "expanded" : ""} ${entry.isFavorite ? "is-favorite" : ""}" id="entry-${entry.id}">
-      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
+      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}">
         <div class="entry-meta-row">
           <span class="entry-kind-tag">Free write</span>
           <span class="entry-meta-dot">·</span>
@@ -2325,7 +2383,7 @@ function renderFreeformCard(entry, index) {
           </div>
         ` : ""}
       </div>
-      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
+      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}"${expanded ? "" : " inert"}>
         ${renderFreeformDetails(entry)}
       </div>
     </article>
@@ -2345,7 +2403,7 @@ function renderActivityCard(entry, index) {
   const mDelta = (isCompleted && typeof entry.predictedM === "number" && typeof entry.actualM === "number") ? entry.actualM - entry.predictedM : null;
   return `
     <article class="entry-card entry-card--activity ${expanded ? "expanded" : ""}" id="entry-${entry.id}">
-      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
+      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}">
         <div class="entry-meta-row">
           <span class="entry-kind-tag">${catIcon(entry.category, "ico--kind")} ${esc(cat.label)}</span>
           <span class="entry-meta-dot">·</span>
@@ -2364,7 +2422,7 @@ function renderActivityCard(entry, index) {
           ` : ""}
         </div>
       </div>
-      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
+      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}"${expanded ? "" : " inert"}>
         ${renderActivityDetails(entry)}
       </div>
     </article>
@@ -2384,7 +2442,7 @@ function renderWorryCard(entry, index) {
   const ago = entry.parkedAt ? humanDuration(Date.now() - new Date(entry.parkedAt).getTime()) : "";
   return `
     <article class="entry-card entry-card--worry ${expanded ? "expanded" : ""}" id="entry-${entry.id}">
-      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}">
+      <div class="entry-card-head" data-action="toggle-expand" data-id="${entry.id}" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}">
         <div class="entry-meta-row">
           <span class="entry-kind-tag">${svgIcon("clock", "ico--kind")} Worry</span>
           <span class="entry-meta-dot">·</span>
@@ -2399,7 +2457,7 @@ function renderWorryCard(entry, index) {
           ${entry.scheduledFor && !r ? `<span class="dist-chip">Window: ${esc(fmtDateTime(entry.scheduledFor))}</span>` : ""}
         </div>
       </div>
-      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}">
+      <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}"${expanded ? "" : " inert"}>
         ${renderWorryDetails(entry)}
       </div>
     </article>
@@ -2409,7 +2467,6 @@ function renderWorryCard(entry, index) {
 function renderEntryDetails(entry) {
   const thoughts = entry.thoughts || [];
   const moods = entry.moods || [];
-  const hot = hotThought(entry);
 
   // Three-stage mood arc per mood: initial → after reframe → after pivot.
   // Renders as a row per mood for legibility.
@@ -2889,7 +2946,7 @@ function renderActivityCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">When</label>
-          <input class="input" type="datetime-local" data-field="plannedFor" value="${esc(d.plannedFor)}">
+          <input class="input" type="datetime-local" data-field="plannedFor" value="${esc(toDatetimeLocalInputValue(d.plannedFor))}">
         </div>
 
         <div class="field-group">
@@ -3642,6 +3699,17 @@ function bindOutcome() {
     });
   });
 
+  // Persist reflection text as it's typed (debounced). The save/back click
+  // handlers below also read it, but they never fire when the user leaves
+  // via the bottom nav or Lock now — without this, a typed paragraph
+  // vanished on any exit that wasn't one of those two buttons.
+  const reflectionEl = document.getElementById("outcomeReflection");
+  if (reflectionEl) reflectionEl.addEventListener("input", () => {
+    entry.pivotReflection = reflectionEl.value;
+    touchEntry(entry);
+    _schedulePersist();
+  });
+
   const save = document.querySelector('[data-action="save-outcome"]');
   if (save) save.addEventListener("click", () => {
     const ref = document.getElementById("outcomeReflection");
@@ -3678,11 +3746,11 @@ function renderPatterns() {
   // pivot follow-through) only make sense for kind:"thought-record" entries.
   // Free-form/activity/worry have empty/undefined fields for those stats,
   // so including them silently inflates denominators.
-  const quickThoughtSkips = entries.filter(e => e.kind === "thought-record" && e.isQuick).length;
-  const thoughtRecords = entries.filter(e => e.kind === "thought-record" && !e.isQuick);
-  // 30-day heatmap + intensity sparkline: omit quick captures so the visual
+  const quickThoughtSkips = entries.filter(e => e.kind === "thought-record" && (e.isQuick || e.isVent)).length;
+  const thoughtRecords = entries.filter(e => e.kind === "thought-record" && !e.isQuick && !e.isVent);
+  // 30-day heatmap + intensity sparkline: omit quick/vent captures so the visual
   // matches structured thought-record stats; other kinds still count as "showed up."
-  const patternVizEntries = entries.filter(e => !(e.kind === "thought-record" && e.isQuick));
+  const patternVizEntries = entries.filter(e => !(e.kind === "thought-record" && (e.isQuick || e.isVent)));
   if (entries.length === 0) {
     return `
       <div class="page-header">
@@ -3883,6 +3951,12 @@ function renderPatterns() {
               <div class="rerate-stat">
                 <div class="rerate-stat-num display ${avgBeliefDrop > 0 ? "good" : avgBeliefDrop < 0 ? "bad" : ""}">${avgBeliefDrop > 0 ? "−" : avgBeliefDrop < 0 ? "+" : ""}${Math.abs(avgBeliefDrop)}<span class="rerate-stat-suffix">pts</span></div>
                 <div class="rerate-stat-label">avg belief drop<br><span class="rerate-stat-sub">across ${beliefRerated.length} ${beliefRerated.length === 1 ? "record" : "records"}</span></div>
+              </div>
+            ` : ""}
+            ${avgPivotDrop !== null ? `
+              <div class="rerate-stat">
+                <div class="rerate-stat-num display ${avgPivotDrop > 0 ? "good" : avgPivotDrop < 0 ? "bad" : ""}">${avgPivotDrop > 0 ? "−" : avgPivotDrop < 0 ? "+" : ""}${Math.abs(avgPivotDrop)}</div>
+                <div class="rerate-stat-label">avg drop after pivot<br><span class="rerate-stat-sub">across ${pivotDrops.length} re-rated ${pivotDrops.length === 1 ? "mood" : "moods"}</span></div>
               </div>
             ` : ""}
           </div>
@@ -4686,7 +4760,6 @@ function renderLogActivityModal() {
   if (!entry) {
     return `<h3 class="display">Activity not found</h3><div class="modal-actions"><button class="btn-modal btn-modal-secondary" data-action="close-modal">Close</button></div>`;
   }
-  const cat = ACTIVITY_CATEGORIES.find(c => c.value === entry.category) || ACTIVITY_CATEGORIES[ACTIVITY_CATEGORIES.length - 1];
   return `
     <h3 class="display">How did it go?</h3>
     <p class="modal-sub">${catIcon(entry.category, "ico--inline")} ${esc(entry.body)} — planned for ${esc(fmtDateTime(entry.plannedFor))}</p>
@@ -4756,7 +4829,7 @@ function renderSafetyModal() {
 
 function bindJournal() {
   document.querySelectorAll('[data-action="toggle-expand"]').forEach(el => {
-    el.addEventListener("click", () => {
+    const toggle = () => {
       const id = el.dataset.id;
       const card = document.getElementById("entry-" + id);
       const wasExpanded = state.expandedIds.has(id);
@@ -4767,8 +4840,24 @@ function bindJournal() {
       // reveal via CSS. Avoids a full view re-render flash on what's
       // the single most-tapped interaction in the app.
       if (card) card.classList.toggle("expanded", !wasExpanded);
+      el.setAttribute("aria-expanded", wasExpanded ? "false" : "true");
       const body = card && card.querySelector(".entry-body-wrap");
-      if (body) body.setAttribute("aria-hidden", wasExpanded ? "true" : "false");
+      if (body) {
+        body.setAttribute("aria-hidden", wasExpanded ? "true" : "false");
+        // `inert` keeps the Edit/Copy/Delete buttons inside a collapsed body
+        // out of the tab order — focusable content under aria-hidden is an
+        // ARIA violation and a keyboard trap.
+        if (wasExpanded) body.setAttribute("inert", "");
+        else body.removeAttribute("inert");
+      }
+    };
+    el.addEventListener("click", toggle);
+    // The card head is a div acting as a button; give keyboard users the
+    // same expand/collapse the pointer gets. Nested real buttons (favorite,
+    // flag pills) handle their own keys — ignore bubbled presses from them.
+    el.addEventListener("keydown", e => {
+      if (e.target !== el) return;
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
     });
   });
   document.querySelectorAll('[data-action="toggle-pivot"]').forEach(el => {
@@ -4829,7 +4918,10 @@ function bindJournal() {
       const changed = entry.pivotReflection !== v;
       const hasText = !!v.trim();
       const wasRecorded = entry.outcomeRecorded;
-      if (!changed && wasRecorded === hasText) return;
+      // No edit → no state change. (Step 8 can legitimately record an outcome
+      // with an empty reflection; a focus-then-blur on the empty inline
+      // textarea must not un-record it.)
+      if (!changed) return;
       entry.pivotReflection = v;
       entry.outcomeRecorded = hasText;
       touchEntry(entry);
@@ -4942,7 +5034,10 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (entry) {
-        state.draft = { ...entry };
+        // Deep-clone: a shallow spread would share the thoughts/moods arrays
+        // (and their objects) with the live entry, so edits would corrupt the
+        // saved entry even if the user taps Discard.
+        state.draft = normalizeEntry(JSON.parse(JSON.stringify(entry)));
         state.editingId = entry.id;
         state.captureStep = 7;
         setView("capture");
@@ -5040,7 +5135,7 @@ function bindJournal() {
         state.entries = [...makeSampleEntries(), ...state.entries];
         persist();
       }
-      localStorage.setItem(ONBOARDED_KEY, "1");
+      markOnboarded();
       render();
       toast(exists ? "Sample entries already loaded" : "Sample entries loaded — tap any to expand");
     });
@@ -5058,7 +5153,9 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
-      state.draft = { ...entry };
+      // Deep-clone for the same reason as the edit handler above: the draft
+      // must not alias the live entry's nested arrays.
+      state.draft = normalizeEntry(JSON.parse(JSON.stringify(entry)));
       state.editingId = entry.id;
       state.draft.isQuick = false;
       const h = hotThought(state.draft);
@@ -5103,6 +5200,9 @@ function bindJournal() {
                 e => new Date(e.createdAt).getTime() < t
               );
               if (insertAt === -1) insertAt = state.entries.length;
+              // Fresh updatedAt so the restore wins over the deletion
+              // tombstone a paired device still holds (see single-entry undo).
+              touchEntry(entry);
               state.entries.splice(insertAt, 0, entry);
               if (typeof syncClearEntryDeletion === "function") {
                 syncClearEntryDeletion(entry.id);
@@ -5204,6 +5304,10 @@ function bindJournal() {
 }
 
 function renderJournalListOnly() {
+  // Called from the 150ms search-input debounce — the user may have navigated
+  // away before the timer fires, and painting journal HTML over another view
+  // would desync nav state and drop that view's bindings.
+  if (state.view !== "journal") return;
   const view = document.getElementById("view");
   const focused = document.activeElement;
   const isSearch = focused && focused.classList.contains("search-input");
@@ -5244,7 +5348,28 @@ function finalizeWorryEntry(entry, now) {
   return out;
 }
 
+// The activity capture renders the predicted P/M sliders at 5/10, but the
+// underlying values stay null until dragged. A user who accepts the shown
+// default would otherwise save an activity with no prediction — the card
+// shows no predicted pills and the predicted-vs-actual lesson has no
+// baseline. Persist what the UI displayed (same rationale as
+// persistDefaultBeliefsForFilledThoughts).
+function finalizeActivityEntry(entry) {
+  if (entry.kind !== "activity") return entry;
+  const out = { ...entry };
+  if (typeof out.predictedP !== "number") out.predictedP = 5;
+  if (typeof out.predictedM !== "number") out.predictedM = 5;
+  return out;
+}
+
 function bindCapture() {
+  // The Step 4 grounding note (shown when any mood is ≥80) links to crisis
+  // support. It renders inside #view during capture, where neither
+  // bindJournal (#view, journal only) nor bindModal (modal-root only) runs —
+  // without this binding the link a user in high distress taps does nothing.
+  document.querySelectorAll('#view [data-action="open-safety"]').forEach(el => {
+    el.addEventListener("click", e => { e.preventDefault(); setState({ modal: "safety" }); });
+  });
   // Tap starters on trigger / pivot / parked worry — same append behavior as quick modal.
   document.querySelectorAll('[data-action="insert-capture-starter"]').forEach(btn => {
     btn.addEventListener("click", () => {
@@ -5705,15 +5830,21 @@ function bindCapture() {
       savedId = state.editingId;
       let updated = { ...state.draft, id: state.editingId, updatedAt: now };
       updated = finalizeWorryEntry(updated, now);
+      updated = finalizeActivityEntry(updated);
       state.entries = state.entries.map(e => e.id === state.editingId ? updated : e);
       toast("Entry updated");
     } else {
       // Honor a pre-assigned draft.id (used by worry-escalate to set up
       // bidirectional linking before the new entry exists). Otherwise mint
-      // a fresh id.
-      savedId = state.draft.id || newId();
+      // a fresh id — including when the draft's id already exists in the
+      // journal, which happens when an edit-in-progress draft from an older
+      // session is resumed as a new capture; reusing it would create two
+      // entries with one id, and deleting either would destroy both.
+      savedId = (state.draft.id && !state.entries.some(e => e.id === state.draft.id))
+        ? state.draft.id : newId();
       let entry = { ...state.draft, id: savedId, createdAt: clampDate(now) };
       entry = finalizeWorryEntry(entry, now);
+      entry = finalizeActivityEntry(entry);
       state.entries = [entry, ...state.entries];
       toast("Entry saved");
     }
@@ -5734,8 +5865,11 @@ function bindCapture() {
       state.pendingEscalateFromWorryId = null;
     }
     persist();
-    clearDraft();
-    state.draft = emptyEntry();
+    // Saving an EDIT must not clear the stashed new-entry draft (edits are
+    // never autosaved to DRAFT_KEY); reload it so its resume banner returns.
+    const wasEditing = !!state.editingId;
+    if (!wasEditing) clearDraft();
+    state.draft = wasEditing ? (loadDraft() || emptyEntry()) : emptyEntry();
     state.editingId = null;
     state.captureStep = 1;
     setView("journal");
@@ -5745,11 +5879,12 @@ function bindCapture() {
   if (discard) discard.addEventListener("click", () => {
     if (hasDraftContent(state.draft)) setState({ modal: "discard-draft" });
     else {
-      state.draft = emptyEntry();
+      const wasEditing = !!state.editingId;
+      if (!wasEditing) clearDraft();
+      state.draft = wasEditing ? (loadDraft() || emptyEntry()) : emptyEntry();
       state.editingId = null;
       state.captureStep = 1;
       state.pendingEscalateFromWorryId = null;
-      clearDraft();
       setView("journal");
     }
   });
@@ -5783,30 +5918,34 @@ function closeModal() {
 function bindModal() {
   const modalRoot = document.getElementById("modal-root");
   const mq = (sel) => modalRoot ? modalRoot.querySelector(sel) : null;
+  const mqa = (sel) => modalRoot ? modalRoot.querySelectorAll(sel) : [];
 
   // Populate the P2P sync panel inside the Settings modal. renderSyncPanel
   // (js/sync.js) builds its own markup and wires its own listeners against
   // the live sync state, so it survives Rephrame's full-modal re-renders.
   if (state.modal === "settings" && typeof renderSyncPanel === "function") renderSyncPanel();
 
-  document.querySelectorAll('[data-action="close-modal"]').forEach(el => {
+  // Scoped to #modal-root: the journal empty state renders its own
+  // open-import / open-safety buttons inside #view, which bindJournal wires.
+  // Document-wide queries here would double-bind those while a modal is open.
+  mqa('[data-action="close-modal"]').forEach(el => {
     el.addEventListener("click", e => {
       if (e.currentTarget === e.target || el.tagName === "BUTTON") {
         closeModal();
       }
     });
   });
-  document.querySelectorAll('[data-action="open-safety"]').forEach(el => {
+  mqa('[data-action="open-safety"]').forEach(el => {
     el.addEventListener("click", e => { e.preventDefault(); setState({ modal: "safety" }); });
   });
 
   // Reachable from inside the Settings modal. Switching state.modal
   // closes Settings and opens the targeted modal — Single-step nav, no
   // nested-modal stacking.
-  document.querySelectorAll('[data-action="open-export"]').forEach(el => {
+  mqa('[data-action="open-export"]').forEach(el => {
     el.addEventListener("click", () => setState({ modal: "export" }));
   });
-  document.querySelectorAll('[data-action="open-import"]').forEach(el => {
+  mqa('[data-action="open-import"]').forEach(el => {
     el.addEventListener("click", () => setState({ modal: "import" }));
   });
 
@@ -6006,6 +6145,10 @@ function bindModal() {
       thoughts: [normalizeThought({ text: thought, isHot: true })],
       moods: [normalizeMood({ intensity: q.intensity, estimated: true })],
       isQuick: !q.ventOnly,
+      // Vent-only captures are deliberately complete as-is — they must not be
+      // counted as full thought records in Patterns (they'd inflate the
+      // record count and permanently drag down the pivot follow-through ring).
+      isVent: !!q.ventOnly,
     };
     state.entries = [entry, ...state.entries];
     persist();
@@ -6064,13 +6207,13 @@ function bindModal() {
       state.entries = [...makeSampleEntries(), ...state.entries];
       persist();
     }
-    localStorage.setItem(ONBOARDED_KEY, "1");
+    markOnboarded();
     setState({ modal: null });
     toast(exists ? "Sample entries already loaded" : "Sample entries loaded — tap any to expand");
   });
   const onboardBegin = mq('[data-action="onboard-begin"]');
   if (onboardBegin) onboardBegin.addEventListener("click", () => {
-    localStorage.setItem(ONBOARDED_KEY, "1");
+    markOnboarded();
     state.modal = null;
     state.draft = emptyEntry();
     state.editingId = null;
@@ -6079,7 +6222,7 @@ function bindModal() {
   });
   const onboardSkip = mq('[data-action="onboard-skip"]');
   if (onboardSkip) onboardSkip.addEventListener("click", () => {
-    localStorage.setItem(ONBOARDED_KEY, "1");
+    markOnboarded();
     setState({ modal: null });
   });
 
@@ -6170,9 +6313,13 @@ function bindModal() {
             e => new Date(e.createdAt).getTime() < removedTime
           );
           if (insertAt === -1) insertAt = state.entries.length;
+          // Stamp updatedAt so the restore beats the deletion tombstone in
+          // last-write-wins merges. Clearing our local tombstone below isn't
+          // enough on its own: a paired device still holds the tombstone
+          // (tombstone merges are union-only), and without a fresh timestamp
+          // its next patch would re-delete the restored entry.
+          touchEntry(removed);
           state.entries.splice(insertAt, 0, removed);
-          // Clear the deletion tombstone so the restored entry survives the
-          // next P2P merge instead of being re-deleted by its own tombstone.
           if (typeof syncClearEntryDeletion === "function") syncClearEntryDeletion(removed.id);
           // Restore any worry back-references we cleared on delete.
           if (relinkOnUndo.length) {
@@ -6191,8 +6338,12 @@ function bindModal() {
 
   const discardDraft = document.querySelector('[data-action="confirm-discard-draft"]');
   if (discardDraft) discardDraft.addEventListener("click", () => {
-    clearDraft();
-    state.draft = emptyEntry();
+    // Discarding an EDIT must not clear the stashed new-entry draft (edits
+    // are never autosaved to DRAFT_KEY); restore it so its resume banner
+    // comes back. Discarding a new-entry draft clears the stash as before.
+    const wasEditing = !!state.editingId;
+    if (!wasEditing) clearDraft();
+    state.draft = wasEditing ? (loadDraft() || emptyEntry()) : emptyEntry();
     state.editingId = null;
     state.captureStep = 1;
     state.pendingEscalateFromWorryId = null;
@@ -6244,22 +6395,36 @@ function processImportFile(file, mode) {
         .filter(x => x && typeof x === "object")
         .map(normalizeEntry);
       const dedupedById = [...new Map(normalized.map(e => [e.id, e])).values()];
+      let importedCount;
       if (mode === "replace") {
         state.entries = dedupedById;
+        importedCount = dedupedById.length;
       } else {
         const existing = new Set(state.entries.map(x => x.id));
         const adds = dedupedById.filter(x => !existing.has(x.id));
         state.entries = [...adds, ...state.entries];
+        importedCount = adds.length;
       }
+      // Restore the newest-first invariant the journal grouping, sparkline
+      // slice and undo-splice logic all rely on — a merged backup's entries
+      // land at the top regardless of age otherwise.
+      state.entries.sort((a, b) =>
+        (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
       persist();
       setState({ modal: null });
-      toast("Imported " + dedupedById.length + " entries");
+      toast(importedCount === 0
+        ? "Nothing new to import — every entry was already in the journal"
+        : "Imported " + importedCount + (importedCount === 1 ? " entry" : " entries"));
     } catch (err) {
       // Replace native alert() — out of design and unstylable — with a
       // persistent error toast carrying the same information.
       toast("Couldn't read that backup — " + (err && err.message ? err.message : "invalid file"),
             { variant: "error", persist: true });
     }
+  };
+  reader.onerror = () => {
+    toast("Couldn't read that file — the browser reported a read error.",
+          { variant: "error", persist: true });
   };
   reader.readAsText(file);
 }
@@ -6320,9 +6485,13 @@ document.addEventListener("keydown", e => {
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
     if (state.view === "capture") {
-      if (state.captureStep < 7) {
-        const next = document.querySelector('[data-action="next-step"]');
-        if (next && !next.hasAttribute("disabled")) next.click();
+      // Structured flow: advance a step. Single-screen kinds (freeform /
+      // activity / worry) never render a next-step button — fall through to
+      // Save so the shortcut works for them too.
+      const next = state.captureStep < 7
+        ? document.querySelector('[data-action="next-step"]') : null;
+      if (next) {
+        if (!next.hasAttribute("disabled")) next.click();
       } else {
         const save = document.querySelector('[data-action="save-entry"]');
         if (save) save.click();

@@ -58,8 +58,14 @@ function _entryTs(e) {
 }
 
 function _genPeerId() {
+  // Crypto-strong randomness: the pairing code is the only pre-consent gate
+  // on incoming connections, so it must not be predictable the way
+  // Math.random() sequences can be. The alphabet has 32 symbols, which
+  // divides 256 evenly, so the modulo below is exactly uniform.
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
   let s = "";
-  for (let i = 0; i < 6; i++) s += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  for (let i = 0; i < 6; i++) s += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
   return "rephrame-" + s.toLowerCase();
 }
 
@@ -81,8 +87,12 @@ function _friendlySyncError(err) {
   return "Connection failed";
 }
 
+let _syncStatusMsg = "";
 function _setSyncStatus(status, msg) {
   _syncStatus = status;
+  // Remember the detail message so re-rendering the panel (closing and
+  // reopening Settings) doesn't degrade a specific error to a generic one.
+  _syncStatusMsg = msg || (status === "error" ? _syncStatusMsg : "");
   const el  = document.getElementById("syncStatus");
   const dot = document.getElementById("syncDot");
   if (!el) return;
@@ -93,7 +103,7 @@ function _setSyncStatus(status, msg) {
     waiting:    "Waiting for the other device…",
     connecting: "Connecting…",
     connected:  peerCode ? ("Synced with " + peerCode) : "Synced",
-    error:      msg || "Error",
+    error:      _syncStatusMsg || "Error",
   };
   el.textContent = labels[status] || status;
   if (dot) dot.className = "sync-dot sync-dot--" + status;
@@ -125,15 +135,25 @@ function _isValidCode(code) {
 
 // ── PeerJS loader (vendored, lazy) ───────────────────────────────────────────
 
+let _peerJSLoadPromise = null;
 function _loadPeerJS() {
-  return new Promise((res, rej) => {
-    if (window.Peer) return res(window.Peer);
+  if (window.Peer) return Promise.resolve(window.Peer);
+  // Reuse an in-flight load — concurrent callers (enable + connect) must not
+  // append duplicate <script> tags. A failed load clears the promise (and
+  // removes its tag) so a later manual retry can attempt a fresh load.
+  if (_peerJSLoadPromise) return _peerJSLoadPromise;
+  _peerJSLoadPromise = new Promise((res, rej) => {
     const s = document.createElement("script");
     s.src = "./js/vendor/peerjs.min.js";
     s.onload  = () => res(window.Peer);
-    s.onerror = () => rej(new Error("Failed to load PeerJS from js/vendor/peerjs.min.js"));
+    s.onerror = () => {
+      _peerJSLoadPromise = null;
+      s.remove();
+      rej(new Error("Failed to load PeerJS from js/vendor/peerjs.min.js"));
+    };
     document.head.appendChild(s);
   });
+  return _peerJSLoadPromise;
 }
 
 // ── Deletion tombstones ──────────────────────────────────────────────────────
@@ -205,7 +225,7 @@ function _packState() {
 
 function _payloadInvalid(remote) {
   if (!remote || typeof remote !== "object" || Array.isArray(remote)) return true;
-  let n = 0;
+  let n;
   try { n = JSON.stringify(remote).length; } catch { return true; }
   if (n > _SYNC_MAX_MSG_CHARS) return true;
   if (remote.syncV != null && remote.syncV !== SYNC_VERSION) return true;
@@ -295,6 +315,10 @@ function syncShowIncomingBanner(peerLabel) {
 }
 
 function syncAcceptInbound() {
+  // Defense-in-depth for the lock screen (see the _peer "connection" gate):
+  // never complete a pairing while the journal is PIN-locked.
+  if (typeof hasPin === "function" && typeof isUnlocked === "function" &&
+      hasPin() && !isUnlocked()) return;
   const conn = _pendingInboundConn;
   if (!conn) return;
   _pendingInboundConn = null;
@@ -318,7 +342,13 @@ function _wireConn(conn) {
   // when one side's "open" fired before we wired the connection.
   let _stateReplied = false;
 
+  // Every handler below checks `_conn === conn` first: when a connection is
+  // replaced (re-pair, accepted inbound while dialing), the OLD connection's
+  // close/error events fire asynchronously AFTER _conn already points at the
+  // new one — without the guard they'd null out the live connection and kill
+  // sync silently while the UI still says connected.
   const onOpen = () => {
+    if (_conn !== conn) return;
     _setSyncStatus("connected");
     if (_reconnectTimerId) { clearTimeout(_reconnectTimerId); _reconnectTimerId = null; }
     _reconnectAttempt = 0;
@@ -328,6 +358,7 @@ function _wireConn(conn) {
   };
 
   conn.on("data", (msg) => {
+    if (_conn !== conn) return;
     if (!msg || !msg.type) return;
     if (msg.type === "state") {
       _mergeState(msg.payload);
@@ -348,12 +379,17 @@ function _wireConn(conn) {
   });
 
   conn.on("close", () => {
+    if (_conn !== conn) return;
     _conn = null;
-    if (_syncStatus !== "error" && _syncStatus !== "connected") _setSyncStatus("waiting");
+    // A live channel closing must drop "connected" — on the accepting side
+    // there's no reconnect loop to correct the label, so leaving it reads
+    // as "Synced with …" forever while nothing syncs.
+    if (_syncStatus !== "error") _setSyncStatus("waiting");
     if (_lastConnectCode) _scheduleSyncReconnect();
   });
 
   conn.on("error", (err) => {
+    if (_conn !== conn) return;
     console.warn("[sync] conn error", err);
     _conn = null;
     if (_connectTimeoutId) { clearTimeout(_connectTimeoutId); _connectTimeoutId = null; }
@@ -380,16 +416,19 @@ function _resolvePeerId() {
   return saved;
 }
 
+// Resolves true when the peer engine is ready, false when it couldn't load.
+// Callers must check the result — treating a failed init as "ready" caused
+// an unbounded syncInit→syncConnect retry loop when peerjs was unreachable.
 let _syncInitPromise = null;
 async function syncInit() {
-  if (_peer) return;
+  if (_peer) return true;
   if (_syncInitPromise) return _syncInitPromise;
   _syncInitPromise = (async () => {
     _setSyncStatus("loading");
 
     let Peer;
     try { Peer = await _loadPeerJS(); }
-    catch { _setSyncStatus("error", "Sync engine unavailable"); return; }
+    catch { _setSyncStatus("error", "Sync engine unavailable"); return false; }
 
     const myId = _resolvePeerId();
     _myRoomCode = _idToCode(myId);
@@ -414,6 +453,12 @@ async function syncInit() {
 
     _peer.on("connection", (conn) => {
       if (!_syncEnabled)              { try { conn.close(); } catch { /* noop */ } return; }
+      // Never surface (or allow accepting) a consent banner while the PIN
+      // lock screen is up — the banner mounts on <body> above the lock
+      // overlay, and its Accept button would ship the whole journal to the
+      // connecting peer without a PIN ever being entered.
+      if (typeof hasPin === "function" && typeof isUnlocked === "function" &&
+          hasPin() && !isUnlocked())  { try { conn.close(); } catch { /* noop */ } return; }
       if (_conn && _conn.open)        { try { conn.close(); } catch { /* noop */ } return; }
       if (_pendingInboundConn)        { try { conn.close(); } catch { /* noop */ } return; }
       _pendingInboundConn = conn;
@@ -452,8 +497,9 @@ async function syncInit() {
       _setSyncStatus("waiting");
       try { _peer.reconnect(); } catch (e) { console.warn("[sync] reconnect", e); }
     });
+    return true;
   })();
-  try { await _syncInitPromise; } finally { _syncInitPromise = null; }
+  try { return await _syncInitPromise; } finally { _syncInitPromise = null; }
 }
 
 function _scheduleSyncReconnect() {
@@ -488,7 +534,13 @@ function syncReconnectNow() {
 }
 
 function syncConnect(code) {
-  if (!_peer) { syncInit().then(() => syncConnect(code)).catch(e => console.warn("[sync] init failed", e)); return; }
+  if (!_peer) {
+    // Only re-enter when init actually produced an engine — recursing on a
+    // failed init (e.g. peerjs script unreachable) would spin forever.
+    syncInit().then(ok => { if (ok && _peer) syncConnect(code); })
+      .catch(e => console.warn("[sync] init failed", e));
+    return;
+  }
   if (!_isValidCode(code)) {
     _setSyncStatus("error", "Invalid code — expected 6 letters/digits after " + CODE_BRAND + "-");
     return;
@@ -528,6 +580,13 @@ async function syncRegenerateCode() {
   if (!confirm(msg)) return;
   try { localStorage.removeItem(SYNC_PEER_KEY); } catch { /* noop */ }
   try { localStorage.removeItem(SYNC_ROOM_KEY); } catch { /* noop */ }
+  // Forget the reconnect target too — a pending backoff timer (or a later
+  // error) would otherwise redial the very device the user just unpaired
+  // and re-save SYNC_ROOM_KEY, defeating the point of regenerating.
+  if (_connectTimeoutId) { clearTimeout(_connectTimeoutId); _connectTimeoutId = null; }
+  if (_reconnectTimerId) { clearTimeout(_reconnectTimerId); _reconnectTimerId = null; }
+  _reconnectAttempt = 0;
+  _lastConnectCode = null;
   if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
   if (_peer) { try { _peer.destroy(); } catch { /* noop */ } _peer = null; }
   _setSyncStatus("loading");
@@ -556,6 +615,27 @@ window.addEventListener("beforeunload", () => {
 
 let _broadcastTimer  = null;
 let _lastBroadcastAt = 0;
+let _warnedOversize  = false;
+// Receivers enforce _SYNC_MAX_MSG_CHARS, so a journal past the cap would be
+// silently rejected by every peer — "connected" but never converging. Check
+// on the sender too and tell the user instead.
+function _sendPatch() {
+  const payload = _packState();
+  let size = 0;
+  try { size = JSON.stringify(payload).length; } catch { /* send anyway */ }
+  if (size > _SYNC_MAX_MSG_CHARS) {
+    if (!_warnedOversize) {
+      _warnedOversize = true;
+      console.warn("[sync] journal exceeds the sync payload cap; not broadcasting");
+      if (typeof toast === "function") {
+        toast("Journal is too large to sync between devices — use Export/Import for backups.", { variant: "error" });
+      }
+    }
+    return;
+  }
+  _warnedOversize = false;
+  try { _conn.send({ type: "patch", payload }); } catch (e) { console.warn("[sync] broadcast", e); }
+}
 function syncBroadcast() {
   if (_applyingRemote) return;          // don't echo a merge back to the peer
   if (!_conn || !_conn.open) return;
@@ -565,12 +645,13 @@ function syncBroadcast() {
     _broadcastTimer = setTimeout(() => {
       _lastBroadcastAt = Date.now();
       _broadcastTimer = null;
-      try { _conn.send({ type: "patch", payload: _packState() }); } catch (e) { console.warn("[sync] broadcast", e); }
+      if (!_conn || !_conn.open) return;
+      _sendPatch();
     }, 500);
     return;
   }
   _lastBroadcastAt = now;
-  try { _conn.send({ type: "patch", payload: _packState() }); } catch (e) { console.warn("[sync] broadcast", e); }
+  _sendPatch();
 }
 
 // ── Panel UI ─────────────────────────────────────────────────────────────────
@@ -673,7 +754,10 @@ function syncOnCodeInput(el) {
     if (compact.length > 3) formatted += "-" + compact.slice(3, 6);
     raw = formatted;
   }
-  el.value = raw;
+  // Only rewrite the field when formatting actually changed it — rewriting
+  // unconditionally jumps the caret to the end on every keystroke, which
+  // makes fixing a typo mid-code painful on mobile keyboards.
+  if (el.value !== raw) el.value = raw;
 
   const btn  = document.getElementById("syncConnectBtn");
   const hint = document.getElementById("syncInputHint");

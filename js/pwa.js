@@ -63,7 +63,7 @@
       const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
       const manifestEl = document.getElementById('pwa-manifest');
       if (manifestEl) manifestEl.href = URL.createObjectURL(manifestBlob);
-    } catch(e) {}
+    } catch(_) {}
   }
 
   // Listen for SW precache-incomplete reports so we can warn the user that
@@ -172,75 +172,19 @@
     });
   }
 
-  // Register the external service worker. Falls back to an inline blob SW
-  // only if sw.js can't be reached (subfolder hosting quirks, etc.).
+  // Register the service worker. There is deliberately no blob-URL fallback:
+  // the SW spec only allows http(s) same-origin script URLs (every browser
+  // rejects blob: registrations) and this page's CSP declares
+  // `worker-src 'self'`, so an inline fallback can never register. If sw.js
+  // fails, say so honestly instead of implying offline support exists.
   if ('serviceWorker' in navigator && !isFileProtocol) {
     navigator.serviceWorker.register('sw.js', {scope: './'}).then((reg)=>{
       window._swRegistered = true;
       window._swReg = reg;
       _watchForUpdate(reg);
     }).catch((err)=>{
-      console.warn('External sw.js failed, falling back to inline SW:', err);
-      const swCode = `
-        const CACHE = 'reframe-inline-v1';
-        const FONT_CACHE = 'reframe-fonts-v1';
-        self.addEventListener('install', e => self.skipWaiting());
-        self.addEventListener('activate', e => e.waitUntil(clients.claim()));
-        self.addEventListener('fetch', e => {
-          if (e.request.method !== 'GET') return;
-          const u = new URL(e.request.url);
-          if (u.hostname.includes('fonts.googleapis.com') || u.hostname.includes('fonts.gstatic.com')) {
-            // Cache-first so fonts render identically offline once seen.
-            e.respondWith(
-              caches.open(FONT_CACHE).then(c =>
-                c.match(e.request).then(cached => {
-                  const net = fetch(e.request).then(res => {
-                    if (res && (res.status === 200 || res.type === 'opaque')) {
-                      c.put(e.request, res.clone()).catch(()=>{});
-                    }
-                    return res;
-                  }).catch(() => cached || new Response('', {status: 504}));
-                  return cached || net;
-                })
-              )
-            );
-            return;
-          }
-          // Navigations: network-first so the fallback path doesn't pin the
-          // user to the first cached HTML forever; fall back to cache offline.
-          if (e.request.mode === 'navigate' || e.request.destination === 'document') {
-            e.respondWith(
-              fetch(e.request).then(resp => {
-                if (resp && resp.status === 200 && resp.type === 'basic') {
-                  const clone = resp.clone();
-                  caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{});
-                }
-                return resp;
-              }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
-            );
-            return;
-          }
-          e.respondWith(
-            caches.match(e.request).then(cached => {
-              if (cached) return cached;
-              return fetch(e.request).then(resp => {
-                if (resp.ok && resp.type === 'basic') {
-                  const clone = resp.clone();
-                  caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{});
-                }
-                return resp;
-              }).catch(() => cached || new Response('Offline', {status: 503}));
-            })
-          );
-        });
-      `;
-      try {
-        const swBlob = new Blob([swCode], {type: 'application/javascript'});
-        const swUrl = URL.createObjectURL(swBlob);
-        navigator.serviceWorker.register(swUrl).then(()=>{
-          window._swRegistered = true;
-        }).catch(()=>{ window._swRegistered = false; });
-      } catch(e) { window._swRegistered = false; }
+      window._swRegistered = false;
+      console.warn('Service worker registration failed — offline mode unavailable:', err);
     });
   }
 

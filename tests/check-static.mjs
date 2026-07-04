@@ -12,9 +12,9 @@ const ok = (m) => console.log('  ok  ' + m);
 const bad = (m) => { problems.push(m); console.log(' FAIL ' + m); };
 
 // 1. Standalone JS files parse. The app logic lives in external app.js
-//    (extracted from index.html); js/pwa.js bootstraps the SW; sw.js is the
-//    worker itself.
-for (const f of ['js/pwa.js', 'sw.js', 'app.js']) {
+//    (extracted from index.html); js/pwa.js bootstraps the SW; js/sync.js is
+//    the P2P sync layer; sw.js is the worker itself.
+for (const f of ['js/pwa.js', 'js/sync.js', 'sw.js', 'app.js']) {
   try {
     execFileSync(process.execPath, ['--check', path.join(ROOT, f)], { stdio: 'pipe' });
     ok(`${f} parses`);
@@ -66,6 +66,12 @@ if (!cacheName || !/^reframe-v\d+$/.test(cacheName)) {
 }
 const assetsBlock = sw.match(/const ASSETS\s*=\s*\[([\s\S]*?)\]/)?.[1] || '';
 const assets = [...assetsBlock.matchAll(/'([^']+)'/g)].map((m) => m[1]).filter((a) => a !== './');
+if (assets.length === 0) {
+  // If the ASSETS declaration is renamed/refactored the regex above stops
+  // matching — that must fail loudly, or the "every precached asset exists"
+  // check silently passes forever.
+  bad('could not parse the ASSETS precache list out of sw.js');
+}
 for (const a of assets) {
   const rel = a.replace(/^\.?\//, '');
   if (!existsSync(path.join(ROOT, rel))) bad(`sw.js precaches missing asset: ${a}`);
