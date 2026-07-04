@@ -1446,15 +1446,20 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
   position: sticky;
   bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
   z-index: 5;
-  /* Soft blur for the sticky band so content sliding under it doesn't
-     look harsh. Falls back to the solid bg on browsers without backdrop. */
-  background: rgba(235, 227, 213, 0.92);
   -webkit-backdrop-filter: saturate(180%) blur(8px);
   backdrop-filter: saturate(180%) blur(8px);
   transition: bottom var(--dur-short) var(--ease);
 }
+/* Soft blur for the sticky band so content sliding under it doesn't look
+   harsh. The translucent background is gated on backdrop-filter support —
+   as a plain declaration it would always win over the solid var(--paper-2)
+   above, leaving browsers WITHOUT backdrop-filter with a 92%-transparent
+   footer that content visibly scrolls through. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .capture-footer { background: rgba(235, 227, 213, 0.92); }
+  html[data-theme="light"] .capture-footer { background: rgba(235, 227, 213, 0.94); }
+}
 body.kb-open .capture-footer { bottom: 0; }
-html[data-theme="light"] .capture-footer { background: rgba(235, 227, 213, 0.94); }
 @media (min-width: 768px) { .capture-footer { padding: 16px 36px; } }
 .capture-footer-left {
   display: flex;
@@ -1961,7 +1966,9 @@ html[data-theme="light"] .capture-footer { background: rgba(235, 227, 213, 0.94)
   bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 40;
+  /* Above the modal overlay (z 50): error toasts fire while the import
+     modal is still open, and below it they were simply invisible. */
+  z-index: 60;
   pointer-events: none;
   display: flex;
   flex-direction: column;
@@ -2048,6 +2055,11 @@ html[data-theme="light"] .capture-footer { background: rgba(235, 227, 213, 0.94)
 
 body.is-locked .app,
 body.is-locked .toast-stack { display: none !important; }
+/* The P2P consent banner (js/sync.js) mounts directly on <body> at
+   z-index 8500 — far above .lock-screen. Hide it while locked so an
+   incoming pairing request can never be shown (or accepted) over the PIN
+   screen; js/sync.js also refuses inbound connections while locked. */
+body.is-locked #syncIncomingBar { display: none !important; }
 body.is-locked { overflow: hidden; }
 
 .lock-screen {
@@ -2261,9 +2273,6 @@ html[data-theme="light"] .lock-help-panel strong { color: var(--on-paper); }
 .grounding-note-body p:last-child { margin-bottom: 0; }
 .grounding-note-body strong { color: var(--on-paper); }
 .grounding-note-foot { font-size: 12px; color: var(--on-paper-mute); }
-
-html[data-theme="dark"] .grounding-note,
-html:not([data-theme="light"]) .grounding-note--modal { /* default dark */ }
 
 /* Onboarding scope caveat — slightly different visual weight than the
    regular modal-sub so users don't skim past it. */
@@ -3589,7 +3598,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
 }
 button.entry-flag {
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: background var(--dur-short) var(--ease), transform var(--dur-short) var(--ease);
 }
 button.entry-flag:hover { transform: translateY(-1px); }
 button.entry-flag:active { transform: translateY(0); }

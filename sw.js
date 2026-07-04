@@ -1,6 +1,9 @@
-// Reframe Service Worker — keep CACHE_NAME bumped on every release so old
+// Reframe Service Worker — CACHE_NAME must differ on every release so old
 // clients drop their caches and pick up the new index.html. The update
-// banner in js/pwa.js relies on this bump to detect that a new SW exists.
+// banner in js/pwa.js relies on this to detect that a new SW exists.
+// The deploy workflow (.github/workflows/pages.yml) stamps a unique version
+// over this value at deploy time; the committed value only matters for
+// local/self-hosted use.
 const CACHE_NAME = 'reframe-v37';
 // Fonts live in a separate cache so version bumps don't wipe them. Populated
 // lazily on first successful fetch — we can't precache cross-origin Google

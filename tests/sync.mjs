@@ -40,13 +40,17 @@ try {
   const clamp = await page.evaluate(() => {
     const h = window.__syncTestHooks;
     const now = Date.now();
+    const clampedFuture = h.clampTs(now + 10 * 60 * 1000);
     return {
-      future: h.clampTs(now + 10 * 60 * 1000) <= now + 1000, // far-future pulled back to ~now
+      // Bound on BOTH sides: clamped to ~now, not merely "not in the future".
+      // A regression that clamped future stamps to 0 would invert every
+      // last-write-wins comparison yet still satisfy a <=-only assertion.
+      future: clampedFuture <= now + 1000 && clampedFuture >= now - 1000,
       invalid: h.clampTs('not-a-date'),                        // unparseable → 0
       valid: h.clampTs(1000),                                  // a real past ms passes through
     };
   });
-  assert.ok(clamp.future, 'A far-future timestamp is clamped back to ~now');
+  assert.ok(clamp.future, 'A far-future timestamp is clamped back to ~now (not to 0)');
   assert.equal(clamp.invalid, 0, 'An unparseable timestamp clamps to 0');
   assert.equal(clamp.valid, 1000, 'A valid past timestamp passes through unchanged');
   log('PASS — timestamp clamping (future / invalid / valid).');
@@ -64,6 +68,10 @@ try {
         entries: Array.from({ length: h.MAX_ENTRIES + 1 }, () => ({})),
       }),
       good: h.payloadInvalid({ syncV: h.SYNC_VERSION, entries: [] }),
+      // Deliberate lenience: a payload with NO syncV at all is accepted
+      // (forward-compat with peers that predate version stamping). Pinned
+      // here so a change to that behavior is a conscious decision.
+      missingVersion: h.payloadInvalid({ entries: [] }),
     };
   });
   assert.equal(valid.nullPayload, true, 'null payload rejected');
@@ -72,6 +80,7 @@ try {
   assert.equal(valid.oversize, true, 'payload over the byte cap rejected');
   assert.equal(valid.tooManyEntries, true, 'payload over the entry-count cap rejected');
   assert.equal(valid.good, false, 'a well-formed payload is accepted');
+  assert.equal(valid.missingVersion, false, 'a payload without syncV is accepted (documented lenience)');
   log('PASS — payload validation (null / array / version / size / count / good).');
 
   // ── Merge: last-write-wins ────────────────────────────────────────────────

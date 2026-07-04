@@ -29,6 +29,19 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
+
+      # Stamp a unique SW cache version into the deployed sw.js. Doing this at
+      # deploy time (instead of a bot commit that bumps the file in-repo) means
+      # the bump always ships in the same deploy that changed the assets — no
+      # off-by-one release, no rebase races between rapid pushes. The offset
+      # keeps the number above the last committed value (reframe-v37) so the
+      # scheme stays monotonic for existing clients.
+      - name: Stamp SW cache version
+        run: |
+          next="reframe-v$((100 + ${{ github.run_number }}))"
+          sed -i -E "s/const CACHE_NAME = 'reframe-v[0-9]+'/const CACHE_NAME = '${next}'/" sw.js
+          grep -E "const CACHE_NAME = 'reframe-v[0-9]+'" sw.js
+
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
