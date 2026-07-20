@@ -14,6 +14,7 @@
 const SYNC_PEER_KEY = "rephrame_peer_id_v1";
 const SYNC_ROOM_KEY = "rephrame_sync_room";
 const SYNC_DELS_KEY = "rephrame_entry_dels";
+const SYNC_ENABLED_KEY = "rephrame_sync_enabled";
 const SYNC_VERSION  = 1;
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Crockford-ish, no 0/O/1/I
 const CODE_BRAND    = "RFR";
@@ -459,6 +460,31 @@ async function syncInit() {
       // connecting peer without a PIN ever being entered.
       if (typeof hasPin === "function" && typeof isUnlocked === "function" &&
           hasPin() && !isUnlocked())  { try { conn.close(); } catch { /* noop */ } return; }
+      const peerCode = _idToCode(conn.peer);
+      let knownRoom = null;
+      try { knownRoom = localStorage.getItem(SYNC_ROOM_KEY); } catch { /* noop */ }
+      if (peerCode && peerCode === knownRoom) {
+        // Already paired with this device — no consent banner needed.
+        // Both devices now auto-dial each other on boot (see the persisted
+        // enable + auto-reconnect), so resolve that glare deterministically:
+        // the two physical connections converge on the one whose CALLER has
+        // the smaller peer id, so both sides agree and no messages are sent
+        // into a channel the other side never wired.
+        if (_conn && _conn.open) { try { conn.close(); } catch { /* noop */ } return; }
+        const dialingThisPeer = _conn && !_conn.open && _lastConnectCode === peerCode;
+        if (dialingThisPeer && !(conn.peer < myId)) {
+          // Our outbound dial is the surviving link; reject the inbound.
+          try { conn.close(); } catch { /* noop */ }
+          return;
+        }
+        // Inbound is the surviving link (or there's no competing dial): drop
+        // our outbound / any pending inbound and accept this one.
+        if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
+        if (_pendingInboundConn) { try { _pendingInboundConn.close(); } catch { /* noop */ } _pendingInboundConn = null; }
+        syncHideIncomingBanner();
+        _wireConn(conn);
+        return;
+      }
       if (_conn && _conn.open)        { try { conn.close(); } catch { /* noop */ } return; }
       if (_pendingInboundConn)        { try { conn.close(); } catch { /* noop */ } return; }
       _pendingInboundConn = conn;
@@ -601,6 +627,7 @@ function syncDisconnect() {
   if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
   if (_peer) { try { _peer.destroy(); } catch { /* noop */ } _peer = null; }
   try { localStorage.removeItem(SYNC_ROOM_KEY); } catch { /* noop */ }
+  try { localStorage.removeItem(SYNC_ENABLED_KEY); } catch { /* noop */ }
   _setSyncStatus("off");
   _syncEnabled = false;
   renderSyncPanel();
@@ -685,6 +712,14 @@ function renderSyncPanel() {
     return;
   }
 
+  // Preserve a half-typed pairing code across re-renders. renderSyncPanel
+  // runs on every app render while Settings is open (theme tap, an incoming
+  // P2P patch, a cross-tab write), and rebuilding innerHTML would otherwise
+  // blank the input mid-entry and re-disable Connect.
+  const prevInput = document.getElementById("syncCodeInput");
+  const prevCode = prevInput ? prevInput.value : "";
+  const prevFocused = prevInput && document.activeElement === prevInput;
+
   panel.innerHTML =
     '<div class="sync-active">' +
       '<div class="sync-status-row"><span class="sync-dot sync-dot--' + _syncStatus + '" id="syncDot"></span><span id="syncStatus"></span></div>' +
@@ -727,6 +762,16 @@ function renderSyncPanel() {
   if (input) {
     input.oninput = () => syncOnCodeInput(input);
     input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); syncConnectFromInput(); } };
+    // Restore any text the user was mid-typing before this re-render, and
+    // re-derive the Connect button / hint state from it.
+    if (prevCode) {
+      input.value = prevCode;
+      syncOnCodeInput(input);
+      if (prevFocused) {
+        input.focus();
+        try { const n = input.value.length; input.setSelectionRange(n, n); } catch { /* noop */ }
+      }
+    }
   }
   if (connectBtn) connectBtn.onclick = () => syncConnectFromInput();
 
@@ -780,6 +825,11 @@ function syncOnCodeInput(el) {
 
 function syncEnable() {
   _syncEnabled = true;
+  // Persist so pairing survives a reload: without this the in-memory flag
+  // resets to false on every launch and the auto-reconnect in _peer.on("open")
+  // (which restores SYNC_ROOM_KEY) is never reached, so paired devices
+  // silently stop syncing until the user re-clicks "Enable sync" on both.
+  try { localStorage.setItem(SYNC_ENABLED_KEY, "1"); } catch { /* noop */ }
   renderSyncPanel();
   syncInit();
 }
@@ -814,4 +864,12 @@ if (typeof window !== "undefined") {
     SYNC_VERSION,
     MAX_ENTRIES:    _SYNC_MAX_ENTRIES,
   };
+
+  // Restore a previously-enabled sync session on boot. syncEnable() sets
+  // _syncEnabled and calls syncInit(), whose _peer.on("open") handler
+  // re-dials the last paired room (SYNC_ROOM_KEY) — so paired devices
+  // reconnect automatically instead of going dark until a manual re-enable.
+  let _wasEnabled = false;
+  try { _wasEnabled = localStorage.getItem(SYNC_ENABLED_KEY) === "1"; } catch { /* noop */ }
+  if (_wasEnabled) syncEnable();
 }

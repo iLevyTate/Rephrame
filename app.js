@@ -754,15 +754,22 @@ function normalizeEntry(e) {
   // crafted id in an imported backup or a synced peer payload could inject
   // markup or break selectors. Every ingress path (import, P2P merge,
   // storage load) funnels through here, so this one gate covers them all.
-  const rawId = e.id == null ? "" : String(e.id);
   const out = {
-    id: /^[A-Za-z0-9_.:-]{1,64}$/.test(rawId) ? rawId : newId(),
+    // safeId also excludes prototype-named ids, so a synced/imported entry
+    // can never reach the deletion-tombstone map (a plain object) with an id
+    // of "__proto__" — where map[id] = ts would be a silent no-op and the
+    // delete could never sync.
+    id: safeId(e.id),
     kind,
     // Clamp future-dated stamps from imports/peers the same way new captures
     // are clamped, so the newest-first sort and the 30-day views hold. Drafts
     // legitimately carry an empty createdAt until save — leave those alone.
     createdAt: e.createdAt ? clampDate(e.createdAt) : "",
-    updatedAt: e.updatedAt || undefined,
+    // Clamp future-dated updatedAt to a FIXED value here, not just at compare
+    // time: a poisoned/clock-skewed future stamp left raw re-evaluates to
+    // "now" on every sync merge (clampSyncTs clamps to Date.now() each call),
+    // so it would beat every genuine later edit forever and block deletions.
+    updatedAt: e.updatedAt ? clampDate(e.updatedAt) : undefined,
 
     trigger: e.trigger || "",
 
@@ -876,7 +883,7 @@ function normalizeEntry(e) {
 function normalizeMood(m) {
   m = m || {};
   return {
-    id: m.id || newId(),
+    id: safeId(m.id),
     family: m.family || "",
     variant: m.variant || "",
     intensity: typeof m.intensity === "number" ? m.intensity : 40,
@@ -888,7 +895,7 @@ function normalizeMood(m) {
 function normalizeThought(t) {
   t = t || {};
   return {
-    id: t.id || newId(),
+    id: safeId(t.id),
     text: t.text || "",
     beliefBefore: typeof t.beliefBefore === "number" ? t.beliefBefore : null,
     beliefAfter:  typeof t.beliefAfter  === "number" ? t.beliefAfter  : null,
@@ -1079,6 +1086,16 @@ function clearDraft() {
 // ═══════════════════════════════════════════════════════════════════
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+// Sanitize an id from any ingress (import, sync, storage): ids are
+// interpolated into HTML attributes and concatenated into querySelector
+// strings, so a value with quotes/brackets/backslashes breaks selectors,
+// and prototype-named ids ("__proto__" etc.) corrupt plain-object maps.
+// Re-mint anything that isn't a plain token. Same gate normalizeEntry uses.
+const ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
+const safeId = (raw) => {
+  const s = raw == null ? "" : String(raw);
+  return ID_RE.test(s) && s !== "__proto__" && s !== "constructor" && s !== "prototype" ? s : newId();
+};
 // Stamp an entry's updatedAt so P2P sync's last-write-wins merge (js/sync.js)
 // can tell which device holds the freshest copy after an in-place mutation
 // (favorite, pivot-done, worry resolution, activity log, etc.). The full
@@ -1446,7 +1463,14 @@ function toast(message, opts) {
     btn.type = "button";
     btn.className = "toast-action";
     btn.textContent = opts.action.label;
+    // One-shot: the toast stays clickable through its 300ms fade-out (no
+    // pointer-events:none), so a double-tap (easy on mobile) would run the
+    // action twice — e.g. undo splicing the same restored entry in twice,
+    // creating two cards with one id. Guard so onClick fires at most once.
+    let _fired = false;
     btn.addEventListener("click", () => {
+      if (_fired) return;
+      _fired = true;
       try { opts.action.onClick(); } catch(_) {}
       dismiss();
     });
@@ -1728,12 +1752,19 @@ function persist() {
 window.addEventListener("storage", (e) => {
   if (_persistingLocally) return;
   if (!e.key) return;  // null key = storage.clear() — ignore
+  // Don't yank focus/caret out from under someone mid-typing: if they're in
+  // an editable field, pull the fresh data into memory but defer the render
+  // (the next natural render picks it up). A background cross-tab change to
+  // entries/settings isn't urgent enough to interrupt active typing.
+  const ae = document.activeElement;
+  const typing = ae && (ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" ||
+    (ae.tagName === "INPUT" && !["checkbox", "radio", "range", "button"].includes(ae.type)));
   if (e.key === STORAGE_KEY) {
     state.entries = loadEntries();
-    render();
+    if (!typing) render();
   } else if (e.key === SETTINGS_KEY) {
     state.settings = loadSettings();
-    render();
+    if (!typing) render();
   } else if (e.key === DRAFT_KEY) {
     // If the local user has typed into the draft, they'd lose work if
     // we overwrote. Just warn and let them decide.
@@ -3836,7 +3867,11 @@ function renderPatterns() {
     e.kind === "activity" && e.completedAt &&
     typeof e.actualP === "number" && typeof e.actualM === "number"
   );
-  const activityByCat = {};
+  // Null-prototype map: `category` is a free string from imports/synced peers
+  // (not whitelisted), so a value of "__proto__" against a plain object would
+  // make the `!activityByCat[key]` guard read Object.prototype and the `+=`
+  // land on the prototype, polluting every object for the page session.
+  const activityByCat = Object.create(null);
   completedActivities.forEach(e => {
     const key = e.category || "other";
     if (!activityByCat[key]) activityByCat[key] = { sum: 0, n: 0 };
@@ -4937,6 +4972,16 @@ function bindJournal() {
   // the open-step pill until they go through the dedicated outcome page.
   document.querySelectorAll('[data-action="edit-reflection"]').forEach(el => {
     el.addEventListener("click", e => e.stopPropagation());
+    // Mirror keystrokes into in-memory state so a background render (a P2P
+    // merge or a cross-tab storage write, both of which rebuild #view via
+    // innerHTML) rebuilds the textarea from the just-typed text instead of
+    // discarding it — Chrome doesn't fire `blur` when innerHTML removes the
+    // focused node, so blur-only commit would lose the paragraph. The blur
+    // handler still owns persistence + the outcomeRecorded transition.
+    el.addEventListener("input", () => {
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (entry) entry.pivotReflection = el.value;
+    });
     el.addEventListener("blur", () => {
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
