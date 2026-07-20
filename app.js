@@ -574,12 +574,14 @@ async function _legacyHashPin(pin) {
   return _toHex(buf);
 }
 
-async function _pbkdf2Pin(pin, saltBytes) {
+async function _pbkdf2Pin(pin, saltBytes, iterations) {
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(String(pin)), { name: "PBKDF2" }, false, ["deriveBits"]
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    { name: "PBKDF2", salt: saltBytes,
+      iterations: (typeof iterations === "number" && iterations > 0) ? iterations : PBKDF2_ITERATIONS,
+      hash: "SHA-256" },
     key, 256
   );
   return _toHex(bits);
@@ -619,7 +621,11 @@ async function verifyPin(pin) {
     // doesn't fall back to the weak hash.
     if (ok) try { await setStoredPin(pin); } catch (_) {}
   } else {
-    const computed = await _pbkdf2Pin(pin, _fromHex(stored.salt));
+    // Derive with the iteration count the record was WRITTEN with, not the
+    // current constant — otherwise bumping PBKDF2_ITERATIONS would make every
+    // existing PIN unverifiable (correct PINs hash differently), and with no
+    // recovery path the user's only way back in is wiping all site data.
+    const computed = await _pbkdf2Pin(pin, _fromHex(stored.salt), stored.iterations);
     ok = computed === stored.hash;
   }
   if (ok) _clearLockout();
@@ -754,15 +760,22 @@ function normalizeEntry(e) {
   // crafted id in an imported backup or a synced peer payload could inject
   // markup or break selectors. Every ingress path (import, P2P merge,
   // storage load) funnels through here, so this one gate covers them all.
-  const rawId = e.id == null ? "" : String(e.id);
   const out = {
-    id: /^[A-Za-z0-9_.:-]{1,64}$/.test(rawId) ? rawId : newId(),
+    // safeId also excludes prototype-named ids, so a synced/imported entry
+    // can never reach the deletion-tombstone map (a plain object) with an id
+    // of "__proto__" — where map[id] = ts would be a silent no-op and the
+    // delete could never sync.
+    id: safeId(e.id),
     kind,
     // Clamp future-dated stamps from imports/peers the same way new captures
     // are clamped, so the newest-first sort and the 30-day views hold. Drafts
     // legitimately carry an empty createdAt until save — leave those alone.
     createdAt: e.createdAt ? clampDate(e.createdAt) : "",
-    updatedAt: e.updatedAt || undefined,
+    // Clamp future-dated updatedAt to a FIXED value here, not just at compare
+    // time: a poisoned/clock-skewed future stamp left raw re-evaluates to
+    // "now" on every sync merge (clampSyncTs clamps to Date.now() each call),
+    // so it would beat every genuine later edit forever and block deletions.
+    updatedAt: e.updatedAt ? clampDate(e.updatedAt) : undefined,
 
     trigger: e.trigger || "",
 
@@ -876,7 +889,7 @@ function normalizeEntry(e) {
 function normalizeMood(m) {
   m = m || {};
   return {
-    id: m.id || newId(),
+    id: safeId(m.id),
     family: m.family || "",
     variant: m.variant || "",
     intensity: typeof m.intensity === "number" ? m.intensity : 40,
@@ -888,7 +901,7 @@ function normalizeMood(m) {
 function normalizeThought(t) {
   t = t || {};
   return {
-    id: t.id || newId(),
+    id: safeId(t.id),
     text: t.text || "",
     beliefBefore: typeof t.beliefBefore === "number" ? t.beliefBefore : null,
     beliefAfter:  typeof t.beliefAfter  === "number" ? t.beliefAfter  : null,
@@ -1011,7 +1024,15 @@ function draftedNewThoughtMatchesBuiltInTemplate(d) {
 function loadEntries() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(raw) ? raw.map(normalizeEntry) : [];
+    // Guard each element: a single null / non-object in stored data (a hand-
+    // edit, a devtools mishap, an `undefined` serialized to `null`) would make
+    // normalizeEntry throw on `e.id` and take the whole array down to [] — and
+    // the next persist() would then overwrite the still-recoverable raw data.
+    // Mirror processImportFile's per-element filter so one bad record is
+    // dropped, not the entire journal.
+    return Array.isArray(raw)
+      ? raw.filter(x => x && typeof x === "object").map(normalizeEntry)
+      : [];
   }
   catch { return []; }
 }
@@ -1071,6 +1092,16 @@ function clearDraft() {
 // ═══════════════════════════════════════════════════════════════════
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+// Sanitize an id from any ingress (import, sync, storage): ids are
+// interpolated into HTML attributes and concatenated into querySelector
+// strings, so a value with quotes/brackets/backslashes breaks selectors,
+// and prototype-named ids ("__proto__" etc.) corrupt plain-object maps.
+// Re-mint anything that isn't a plain token. Same gate normalizeEntry uses.
+const ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
+const safeId = (raw) => {
+  const s = raw == null ? "" : String(raw);
+  return ID_RE.test(s) && s !== "__proto__" && s !== "constructor" && s !== "prototype" ? s : newId();
+};
 // Stamp an entry's updatedAt so P2P sync's last-write-wins merge (js/sync.js)
 // can tell which device holds the freshest copy after an in-place mutation
 // (favorite, pivot-done, worry resolution, activity log, etc.). The full
@@ -1438,7 +1469,14 @@ function toast(message, opts) {
     btn.type = "button";
     btn.className = "toast-action";
     btn.textContent = opts.action.label;
+    // One-shot: the toast stays clickable through its 300ms fade-out (no
+    // pointer-events:none), so a double-tap (easy on mobile) would run the
+    // action twice — e.g. undo splicing the same restored entry in twice,
+    // creating two cards with one id. Guard so onClick fires at most once.
+    let _fired = false;
     btn.addEventListener("click", () => {
+      if (_fired) return;
+      _fired = true;
       try { opts.action.onClick(); } catch(_) {}
       dismiss();
     });
@@ -1521,6 +1559,10 @@ const state = {
   // Holds the requested kind while the "switching will lose your draft"
   // modal is open. Cleared on cancel; consumed on confirm.
   pendingModeSwitch: null,
+  // Holds a pending "start a fresh draft" action (a thunk) while the
+  // "starting a new entry will discard your draft" modal is open. Set by
+  // startFreshDraft() when the current draft has content; run on confirm.
+  pendingDraftAction: null,
   settings: loadSettings(),
   // Print mode: when true, every entry renders expanded. Used by the
   // Print/PDF flow so the browser print dialog gets a full transcript.
@@ -1675,6 +1717,9 @@ function hasDraftContent(d) {
 // a redundant re-load + render mid-write.
 let _persistingLocally = false;
 
+// Returns true when the write reached disk, false on quota/error. Callers
+// that show a success toast and close a modal MUST check this — otherwise
+// they clobber the quota-error modal set below and lie about the outcome.
 function persist() {
   // Wrap the write so a QuotaExceededError surfaces a styled blocking
   // modal instead of silently failing. The user's most recent entry
@@ -1685,6 +1730,7 @@ function persist() {
     saveEntries(state.entries);
     // Push the new state to a paired device, if P2P sync is connected.
     if (typeof syncBroadcast === "function") syncBroadcast();
+    return true;
   } catch (err) {
     const isQuota = err && (
       err.name === "QuotaExceededError" ||
@@ -1698,6 +1744,7 @@ function persist() {
       toast("Couldn't save — " + (err && err.message ? err.message : "unknown error"),
             { variant: "error", persist: true });
     }
+    return false;
   } finally {
     _persistingLocally = false;
   }
@@ -1711,12 +1758,19 @@ function persist() {
 window.addEventListener("storage", (e) => {
   if (_persistingLocally) return;
   if (!e.key) return;  // null key = storage.clear() — ignore
+  // Don't yank focus/caret out from under someone mid-typing: if they're in
+  // an editable field, pull the fresh data into memory but defer the render
+  // (the next natural render picks it up). A background cross-tab change to
+  // entries/settings isn't urgent enough to interrupt active typing.
+  const ae = document.activeElement;
+  const typing = ae && (ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" ||
+    (ae.tagName === "INPUT" && !["checkbox", "radio", "range", "button"].includes(ae.type)));
   if (e.key === STORAGE_KEY) {
     state.entries = loadEntries();
-    render();
+    if (!typing) render();
   } else if (e.key === SETTINGS_KEY) {
     state.settings = loadSettings();
-    render();
+    if (!typing) render();
   } else if (e.key === DRAFT_KEY) {
     // If the local user has typed into the draft, they'd lose work if
     // we overwrote. Just warn and let them decide.
@@ -1779,6 +1833,13 @@ function render() {
   // "someone glanced at the unlocked phone" is closed.
   if (state.locked) {
     document.body.classList.add("is-locked");
+    // Release any modal focus-trap first. "Lock now" is reached from inside
+    // the Settings modal, so its capture-phase keydown handler is installed;
+    // this branch wipes #modal-root and returns before renderModal() (the
+    // only other place the trap is released), so without this the trap would
+    // stay bound and swallow every Tab on the lock screen for the whole
+    // locked session.
+    _releaseModalFocus();
     renderLockScreen();
     // Clear any in-flight modal/view content so nothing leaks behind the
     // lock screen via accidental z-index.
@@ -1823,6 +1884,13 @@ function render() {
   if (state.view === "capture" && state.captureStep !== lastRenderedStep) {
     retriggerAnimation(view.querySelector(".capture-screen"), "step-entering", 380);
     lastRenderedStep = state.captureStep;
+    // Focus the step's primary field ONCE on step entry. The fields used to
+    // carry the `autofocus` attribute, but Chromium re-focuses a dynamically
+    // inserted autofocus element on every intra-step re-render (e.g. tapping
+    // an activity category chip), yanking focus back and popping the mobile
+    // keyboard on each tap. Focusing only on the step transition avoids that.
+    const af = view.querySelector(".capture-screen [data-autofocus]");
+    if (af) setTimeout(() => { try { af.focus({ preventScroll: true }); } catch (_) { af.focus(); } }, 40);
   }
 
   renderModal();
@@ -1835,6 +1903,12 @@ function renderLockScreen() {
     el.id = "lockScreen";
     document.body.appendChild(el);
   }
+  // Preserve what the user typed across a failed-attempt re-render so they can
+  // see and correct a one-character typo instead of retyping the whole PIN
+  // (each retype otherwise burns another attempt toward the lockout). Only
+  // when an error is showing — a fresh lock starts with an empty field.
+  const _prevPinEl = document.getElementById("lockPinInput");
+  const _prevPin = (_prevPinEl && state.lockError) ? _prevPinEl.value : "";
   el.className = "lock-screen" + (state.lockError ? " has-error" : "");
   // Lock card is functionally a modal — block everything else on the
   // page until the PIN is correct — so expose it as a dialog with an
@@ -1881,7 +1955,13 @@ function renderLockScreen() {
   // because the lock screen lives outside the normal render tree.
   const form = document.getElementById("lockForm");
   const input = document.getElementById("lockPinInput");
-  if (input) setTimeout(() => input.focus(), 30);
+  if (input && _prevPin) input.value = _prevPin;
+  if (input) setTimeout(() => {
+    input.focus();
+    // Put the caret at the end of the restored text so correcting a typo
+    // doesn't require re-selecting first.
+    try { const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
+  }, 30);
   if (form) form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const pin = (input.value || "").trim();
@@ -2200,7 +2280,7 @@ function shouldShowWorryWindow() {
   const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
   if (parked.length === 0) return false;
   const s = state.settings || {};
-  const [h, m] = (s.worryWindowTime || "18:00").split(":").map(n => parseInt(n, 10));
+  const [h, m] = _parseHHMM(s.worryWindowTime);
   const now = new Date();
   const winStart = new Date(); winStart.setHours(h, m, 0, 0);
   const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000);
@@ -2854,7 +2934,7 @@ function renderFreeformCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">Body</label>
-          <textarea class="textarea input-large freeform-body" data-field="body" rows="14" autofocus placeholder="Whatever comes. One sentence is fine. So is ten paragraphs.">${esc(d.body)}</textarea>
+          <textarea class="textarea input-large freeform-body" data-field="body" rows="14" data-autofocus placeholder="Whatever comes. One sentence is fine. So is ten paragraphs.">${esc(d.body)}</textarea>
         </div>
 
         <div class="step2-section" style="margin-top: 18px;">
@@ -2929,7 +3009,7 @@ function renderActivityCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">What will you do?</label>
-          <input class="input" data-field="body" placeholder="Call my sister · Walk to the park · Cook dinner from scratch" value="${esc(d.body)}" autofocus>
+          <input class="input" data-field="body" placeholder="Call my sister · Walk to the park · Cook dinner from scratch" value="${esc(d.body)}" data-autofocus>
         </div>
 
         <div class="field-group">
@@ -3003,7 +3083,7 @@ function renderWorryCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">What's worrying you?</label>
-          <textarea class="textarea input-large" data-field="worryText" rows="5" autofocus placeholder="One sentence. You don't have to solve it now — you're parking it.">${esc(d.worryText)}</textarea>
+          <textarea class="textarea input-large" data-field="worryText" rows="5" data-autofocus placeholder="One sentence. You don't have to solve it now — you're parking it.">${esc(d.worryText)}</textarea>
           <div class="quick-prompts" role="group" aria-label="Worries people often park">
             <span class="quick-prompts-label">Starter lines:</span>
             ${WORRY_STARTER_CHIPS.map(p => `
@@ -3072,10 +3152,22 @@ function catIcon(value, cls = "") {
 
 // Computes the next worry-window time given the user's settings.
 // If today's window time hasn't passed yet, return today; else tomorrow.
+// Parse an HH:MM setting into validated [hours, minutes], falling back to the
+// 18:00 default for anything malformed (a hand-edited or older-version
+// setting, or a value written by another tab). Without validation a garbage
+// value yields NaN → setHours(NaN) → Invalid Date, which makes
+// computeNextWorryWindow throw on toISOString() mid-render/mid-save.
+function _parseHHMM(str) {
+  const mm = /^(\d{1,2}):(\d{2})$/.exec(String(str == null ? "" : str).trim());
+  let h = mm ? parseInt(mm[1], 10) : NaN;
+  let m = mm ? parseInt(mm[2], 10) : NaN;
+  if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59)) { h = 18; m = 0; }
+  return [h, m];
+}
+
 function computeNextWorryWindow() {
   const s = state.settings || {};
-  const timeStr = s.worryWindowTime || "18:00";
-  const [h, m] = timeStr.split(":").map(n => parseInt(n, 10));
+  const [h, m] = _parseHHMM(s.worryWindowTime);
   const t = new Date();
   t.setHours(h, m, 0, 0);
   if (t.getTime() < Date.now()) t.setDate(t.getDate() + 1);
@@ -3086,7 +3178,7 @@ function renderCaptureStep(step, d) {
   switch (step) {
     case 1: return `
       <div class="field-group">
-        <textarea class="textarea input-large" data-field="trigger" rows="3" autofocus placeholder="Texted a friend and they still haven't replied… · Stumbled over a number in a meeting… · Saw something online I wasn't invited to…">${esc(d.trigger)}</textarea>
+        <textarea class="textarea input-large" data-field="trigger" rows="3" data-autofocus placeholder="Texted a friend and they still haven't replied… · Stumbled over a number in a meeting… · Saw something online I wasn't invited to…">${esc(d.trigger)}</textarea>
         <div class="field-help-paper" style="margin-top: 8px;">An event, a thought, or a feeling — any of those can be the starting point. You don't need to know yet which one this is.</div>
         <div class="quick-prompts" role="group" aria-label="Starter lines for trigger">
           <span class="quick-prompts-label">Or tap a starter:</span>
@@ -3100,8 +3192,15 @@ function renderCaptureStep(step, d) {
     case 2: {
       // Sectioned layout: Thoughts → Moods → Body. Multi-row, each row
       // editable in place. Hot-thought radio drives Challenge (step 4) and Reframe (step 5).
-      const thoughts = d.thoughts.length ? d.thoughts : [normalizeThought({ isHot: true })];
-      const moods    = d.moods.length    ? d.moods    : [normalizeMood({})];
+      // Seed the draft's arrays in place when empty rather than rendering a
+      // throwaway placeholder: the row's controls look their model up by id in
+      // state.draft.moods/thoughts, so an un-backed placeholder (e.g. a legacy
+      // or imported record with moods:[]) would render a mood row whose family
+      // select, slider and checkbox all silently do nothing.
+      if (!d.thoughts.length) d.thoughts.push(normalizeThought({ isHot: true }));
+      if (!d.moods.length)    d.moods.push(normalizeMood({}));
+      const thoughts = d.thoughts;
+      const moods    = d.moods;
       return `
       <div class="step2-section">
         <div class="step2-section-head">
@@ -3420,7 +3519,7 @@ function renderCaptureStep(step, d) {
           </div>
         ` : ""}
 
-        ${(d.moods || []).filter(m => m.family || typeof m.intensity === "number").map(m => {
+        ${(d.moods || []).filter(m => m.family).map(m => {
           const label = m.variant ? cap(m.variant) : (m.family || "Mood");
           const cur = m.intensityAfterReframe ?? m.intensity;
           const delta = m.intensityAfterReframe !== null && m.intensityAfterReframe !== undefined ? (m.intensityAfterReframe - m.intensity) : null;
@@ -3776,6 +3875,9 @@ function renderPatterns() {
   function moodDeltaSamples(stage) {
     const out = [];
     thoughtRecords.forEach(e => (e.moods || []).forEach(m => {
+      // Only named moods are shown on cards and get re-rate sliders, so count
+      // only those — an unnamed placeholder mood must not inflate "N re-rated".
+      if (!m.family) return;
       const after = stage === "pivot" ? m.intensityAfterPivot : m.intensityAfterReframe;
       if (typeof after === "number" && typeof m.intensity === "number") {
         out.push(m.intensity - after);
@@ -3819,7 +3921,11 @@ function renderPatterns() {
     e.kind === "activity" && e.completedAt &&
     typeof e.actualP === "number" && typeof e.actualM === "number"
   );
-  const activityByCat = {};
+  // Null-prototype map: `category` is a free string from imports/synced peers
+  // (not whitelisted), so a value of "__proto__" against a plain object would
+  // make the `!activityByCat[key]` guard read Object.prototype and the `+=`
+  // land on the prototype, polluting every object for the page session.
+  const activityByCat = Object.create(null);
   completedActivities.forEach(e => {
     const key = e.category || "other";
     if (!activityByCat[key]) activityByCat[key] = { sum: 0, n: 0 };
@@ -3908,7 +4014,7 @@ function renderPatterns() {
           <span class="pattern-card-title">Thought records</span>
         </div>
         <div class="pattern-stat-big display">${total}</div>
-        <div class="pattern-stat-label">${total} full thought records (${entries.length} journal entries total${quickThoughtSkips ? "; " + quickThoughtSkips + " quick" : ""}). Heatmap & spark chart: ${activeDays} active ${activeDays === 1 ? "day" : "days"}, structured captures only.</div>
+        <div class="pattern-stat-label">${total} full thought ${total === 1 ? "record" : "records"} (${entries.length} journal ${entries.length === 1 ? "entry" : "entries"} total${quickThoughtSkips ? "; " + quickThoughtSkips + " quick" : ""}). Heatmap & spark chart: ${activeDays} active ${activeDays === 1 ? "day" : "days"}, structured captures only.</div>
       </div>
 
       <div class="pattern-card">
@@ -4329,6 +4435,15 @@ function renderModal() {
         <button class="btn-modal btn-modal-danger" data-action="confirm-discard-draft">Discard</button>
       </div>
     `;
+  } else if (state.modal === "confirm-new-draft") {
+    inner = `
+      <h3 class="display">Start a new entry?</h3>
+      <p class="modal-sub">You have an unfinished draft. Starting fresh will discard it. This can't be undone.</p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="cancel-new-draft">Keep draft</button>
+        <button class="btn-modal btn-modal-danger" data-action="confirm-new-draft">Discard &amp; start</button>
+      </div>
+    `;
   } else if (state.modal === "switch-kind") {
     const targetLabel = ({
       "thought-record": "Thought record",
@@ -4702,12 +4817,12 @@ function renderSetPinModal() {
     <form id="pinSetForm" class="pin-form" autocomplete="off">
       ${isChanging ? `
         <label class="field-label-paper">Current PIN</label>
-        <input id="pinCurrent" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off">
+        <input id="pinCurrent" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" value="${esc(f ? f.current : "")}">
       ` : ""}
       <label class="field-label-paper" style="margin-top: ${isChanging ? "14px" : "0"};">${isChanging ? "New PIN" : "PIN"}</label>
-      <input id="pinNew" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" autofocus>
+      <input id="pinNew" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" value="${esc(f ? f.next : "")}" autofocus>
       <label class="field-label-paper" style="margin-top: 14px;">Confirm</label>
-      <input id="pinConfirm" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password">
+      <input id="pinConfirm" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" value="${esc(f ? f.confirm : "")}">
       ${f && f.error ? `<p class="pin-error" role="alert">${esc(f.error)}</p>` : ""}
       <div class="modal-actions" style="margin-top: 16px;">
         <button type="button" class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
@@ -4724,7 +4839,7 @@ function renderRemovePinModal() {
     <p class="modal-sub">Enter your current PIN to confirm. After removal, the app will open straight to the journal on every new session.</p>
     <form id="pinRemoveForm" class="pin-form" autocomplete="off">
       <label class="field-label-paper">Current PIN</label>
-      <input id="pinCurrentRemove" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" autofocus>
+      <input id="pinCurrentRemove" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" value="${esc(f ? f.current : "")}" autofocus>
       ${f && f.error ? `<p class="pin-error" role="alert">${esc(f.error)}</p>` : ""}
       <div class="modal-actions" style="margin-top: 16px;">
         <button type="button" class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
@@ -4911,11 +5026,27 @@ function bindJournal() {
   // the open-step pill until they go through the dedicated outcome page.
   document.querySelectorAll('[data-action="edit-reflection"]').forEach(el => {
     el.addEventListener("click", e => e.stopPropagation());
+    // Value at render time == the last persisted reflection (the textarea is
+    // rendered from entry.pivotReflection). The blur commit must diff against
+    // THIS, not the live entry.pivotReflection, because the input listener
+    // below mutates that field on every keystroke — diffing against it would
+    // always read "unchanged" and skip persist()/outcomeRecorded/the toast.
+    const committed = el.value;
+    // Mirror keystrokes into in-memory state so a background render (a P2P
+    // merge or a cross-tab storage write, both of which rebuild #view via
+    // innerHTML) rebuilds the textarea from the just-typed text instead of
+    // discarding it — Chrome doesn't fire `blur` when innerHTML removes the
+    // focused node, so blur-only commit would lose the paragraph. The blur
+    // handler still owns persistence + the outcomeRecorded transition.
+    el.addEventListener("input", () => {
+      const entry = state.entries.find(x => x.id === el.dataset.id);
+      if (entry) entry.pivotReflection = el.value;
+    });
     el.addEventListener("blur", () => {
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
       const v = el.value;
-      const changed = entry.pivotReflection !== v;
+      const changed = committed !== v;
       const hasText = !!v.trim();
       const wasRecorded = entry.outcomeRecorded;
       // No edit → no state change. (Step 8 can legitimately record an outcome
@@ -4937,7 +5068,13 @@ function bindJournal() {
   });
   // View-scope chips (All / Favorites / Unfinished / This week / Pivoted / Pivot due).
   document.querySelectorAll('[data-action="set-view-filter"]').forEach(el => {
-    el.addEventListener("click", () => setState({ viewFilter: el.dataset.value }));
+    // Clear the distortion filter when the scope changes. The distortion
+    // chip row is derived from the scoped entries, so switching to a scope
+    // with no distortion-bearing entries (e.g. free writes) would hide the
+    // row — and with it the active chip and the "All distortions" clear
+    // button — leaving an invisible, unclearable filter that also made the
+    // empty state claim the scope itself was empty.
+    el.addEventListener("click", () => setState({ viewFilter: el.dataset.value, filter: "" }));
   });
   document.querySelectorAll('[data-action="reset-filters"]').forEach(el => {
     el.addEventListener("click", () => {
@@ -4981,16 +5118,18 @@ function bindJournal() {
   document.querySelectorAll('[data-action="start-kind"]').forEach(el => {
     el.addEventListener("click", () => {
       const kind = el.dataset.kind;
-      const factory =
-        kind === "freeform" ? emptyFreeform :
-        kind === "activity" ? emptyActivity :
-        kind === "worry"    ? emptyWorry    :
-                              emptyEntry;
-      state.draft = factory();
-      state.editingId = null;
-      state.captureStep = 1;
-      saveDraft(state.draft);
-      setView("capture");
+      startFreshDraft(() => {
+        const factory =
+          kind === "freeform" ? emptyFreeform :
+          kind === "activity" ? emptyActivity :
+          kind === "worry"    ? emptyWorry    :
+                                emptyEntry;
+        state.draft = factory();
+        state.editingId = null;
+        state.captureStep = 1;
+        saveDraft(state.draft);
+        setView("capture");
+      });
     });
   });
   // "Not today" snooze — suppress the nudge banner for 18 hours so the user
@@ -5059,7 +5198,10 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
-      const idx = state.entries.indexOf(entry);
+      // Per-kind index so the heading reads "Nth entry of this kind" (e.g.
+      // "### Worry 1" for the only worry), matching the full export — not the
+      // entry's global position, which numbered a lone worry "### Worry 7".
+      const idx = state.entries.filter(x => (x.kind || "thought-record") === (entry.kind || "thought-record")).indexOf(entry);
       const md = entryToMd(entry, idx);
       const tryFallback = () => {
         const ta = document.createElement("textarea");
@@ -5111,7 +5253,7 @@ function bindJournal() {
     el.addEventListener("click", () => setState({ modal: "discard-draft" }));
   });
   document.querySelectorAll('[data-action="goto-capture"]').forEach(el => {
-    el.addEventListener("click", () => {
+    el.addEventListener("click", () => startFreshDraft(() => {
       state.draft = emptyEntry();
       state.editingId = null;
       state.captureStep = 1;
@@ -5119,7 +5261,7 @@ function bindJournal() {
       // the tab before typing would resurface the old draft on next launch.
       clearDraft();
       setView("capture");
-    });
+    }));
   });
   // open-safety and load-sample can appear inside the rendered view (empty
   // state); scope to #view so we don't double-bind the same modal buttons
@@ -5133,6 +5275,11 @@ function bindJournal() {
       const exists = state.entries.some(x => x.isSample);
       if (!exists) {
         state.entries = [...makeSampleEntries(), ...state.entries];
+        // makeSampleEntries() is oldest-first; restore the newest-first
+        // invariant the journal grouping, "No. NN" numbering and Patterns
+        // sparkline all assume, instead of leaving inverted date groups.
+        state.entries.sort((a, b) =>
+          (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
         persist();
       }
       markOnboarded();
@@ -5281,24 +5428,26 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
-      // Pre-mint the new thought-record's id so the draft can carry a
-      // back-link from the start. The worry itself stays parked — we
-      // finalize its resolution only when the new entry actually saves
-      // (handled in save-entry below), so backing out leaves the worry
-      // untouched instead of orphan-linked to a never-saved draft.
-      const newEntryId = newId();
-      const draft = emptyEntry();
-      draft.id = newEntryId;
-      const w = ((entry.worryText || "").trim());
-      draft.trigger = w.length ? ("Worry: " + (w.length > 400 ? w.slice(0, 397) + "…" : w)) : "Worry (from parked worry)";
-      draft.thoughts = [normalizeThought({ text: entry.worryText, isHot: true })];
-      draft.linkedEntryId = entry.id;
-      state.draft = draft;
-      state.editingId = null;
-      state.captureStep = 1;
-      state.pendingEscalateFromWorryId = entry.id;
-      saveDraft(state.draft);
-      setView("capture");
+      startFreshDraft(() => {
+        // Pre-mint the new thought-record's id so the draft can carry a
+        // back-link from the start. The worry itself stays parked — we
+        // finalize its resolution only when the new entry actually saves
+        // (handled in save-entry below), so backing out leaves the worry
+        // untouched instead of orphan-linked to a never-saved draft.
+        const newEntryId = newId();
+        const draft = emptyEntry();
+        draft.id = newEntryId;
+        const w = ((entry.worryText || "").trim());
+        draft.trigger = w.length ? ("Worry: " + (w.length > 400 ? w.slice(0, 397) + "…" : w)) : "Worry (from parked worry)";
+        draft.thoughts = [normalizeThought({ text: entry.worryText, isHot: true })];
+        draft.linkedEntryId = entry.id;
+        state.draft = draft;
+        state.editingId = null;
+        state.captureStep = 1;
+        state.pendingEscalateFromWorryId = entry.id;
+        saveDraft(state.draft);
+        setView("capture");
+      });
     });
   });
 }
@@ -5337,6 +5486,16 @@ function applyCaptureModeSwitch(kind) {
   state.pendingEscalateFromWorryId = null;
   saveDraft(state.draft);
   render();
+}
+
+// Guard every "start a brand-new capture" entry point so it can't silently
+// wipe a half-written draft. When editing, or when the current draft has no
+// content, the action runs immediately; otherwise we stash it and ask first
+// via the confirm-new-draft modal (mirrors the switch-kind confirmation).
+function startFreshDraft(action) {
+  if (state.editingId || !hasDraftContent(state.draft)) { action(); return; }
+  state.pendingDraftAction = action;
+  setState({ modal: "confirm-new-draft" });
 }
 
 function finalizeWorryEntry(entry, now) {
@@ -5831,7 +5990,17 @@ function bindCapture() {
       let updated = { ...state.draft, id: state.editingId, updatedAt: now };
       updated = finalizeWorryEntry(updated, now);
       updated = finalizeActivityEntry(updated);
-      state.entries = state.entries.map(e => e.id === state.editingId ? updated : e);
+      // If the entry vanished mid-edit (a "Replace everything" import, or a
+      // delete in another tab that the storage listener pulled in), .map()
+      // would match nothing and silently drop the edit under a success toast.
+      // Re-insert it instead so the user's writing is never lost.
+      if (state.entries.some(e => e.id === state.editingId)) {
+        state.entries = state.entries.map(e => e.id === state.editingId ? updated : e);
+      } else {
+        state.entries = [updated, ...state.entries];
+        state.entries.sort((a, b) =>
+          (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+      }
       toast("Entry updated");
     } else {
       // Honor a pre-assigned draft.id (used by worry-escalate to set up
@@ -5849,17 +6018,22 @@ function bindCapture() {
       toast("Entry saved");
     }
     // Finalize a deferred worry-escalation: now that the thought-record
-    // is real, point the original worry at it and mark it resolved. If
-    // the worry was deleted in the meantime, save still succeeds but
-    // we let the user know the link is broken rather than silently
-    // dropping the back-reference.
-    if (state.pendingEscalateFromWorryId) {
-      const w = state.entries.find(x => x.id === state.pendingEscalateFromWorryId && x.kind === "worry");
+    // is real, point the original worry at it and mark it resolved. The
+    // in-memory pendingEscalateFromWorryId is lost across a reload, so for a
+    // NEW entry fall back to the draft's own linkedEntryId (set when the
+    // escalation started) — otherwise a resumed escalation draft saved in a
+    // later session would leave the worry stuck "Parked" while the new record
+    // still shows a "From a parked worry" link to it. If the worry was
+    // deleted in the meantime, save still succeeds but we flag the broken link.
+    const escalateWorryId = state.pendingEscalateFromWorryId ||
+      (!state.editingId ? state.draft.linkedEntryId : null);
+    if (escalateWorryId) {
+      const w = state.entries.find(x => x.id === escalateWorryId && x.kind === "worry");
       if (w && !w.resolution) {
         w.resolution = "escalated";
         w.resolvedAt = now;
         w.linkedEntryId = savedId;
-      } else if (!w) {
+      } else if (!w && state.pendingEscalateFromWorryId) {
         toast("Original worry was deleted — thought record saved separately.");
       }
       state.pendingEscalateFromWorryId = null;
@@ -5972,6 +6146,26 @@ function bindModal() {
     });
   });
 
+  // Keep state.pinForm synced so a validation-error re-render restores every
+  // field instead of blanking them (forcing the user to retype a correct
+  // current PIN just to fix a mismatch typo). No render() on input.
+  const _syncPin = (id, key) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", () => { state.pinForm[key] = el.value; });
+  };
+  _syncPin("pinCurrent", "current");
+  _syncPin("pinNew", "next");
+  _syncPin("pinConfirm", "confirm");
+  _syncPin("pinCurrentRemove", "current");
+
+  // Surface a wait message when locked out instead of the misleading
+  // "Current PIN is incorrect" (verifyPin refuses unconditionally while
+  // locked out, so a correct PIN would otherwise read as wrong).
+  const _lockoutMsg = () => {
+    const wait = pinLockoutMsLeft();
+    return wait > 0 ? "Too many tries. Wait " + Math.ceil(wait / 1000) + "s before another attempt." : "";
+  };
+
   const setPinForm = document.getElementById("pinSetForm");
   if (setPinForm) setPinForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -5983,8 +6177,10 @@ function bindModal() {
     if (!/^[0-9]{4,8}$/.test(next))   { state.pinForm.error = "PIN must be 4–8 digits."; render(); return; }
     if (next !== confirm)             { state.pinForm.error = "The two PINs don't match."; render(); return; }
     if (isChanging) {
+      const locked = _lockoutMsg();
+      if (locked) { state.pinForm.error = locked; render(); return; }
       const ok = await verifyPin(current);
-      if (!ok) { state.pinForm.error = "Current PIN is incorrect."; render(); return; }
+      if (!ok) { state.pinForm.error = _lockoutMsg() || "Current PIN is incorrect."; render(); return; }
     }
     await setStoredPin(next);
     state.pinForm = { current: "", next: "", confirm: "", error: "" };
@@ -5997,8 +6193,10 @@ function bindModal() {
     e.preventDefault();
     const current = (document.getElementById("pinCurrentRemove").value || "").trim();
     if (!current) { state.pinForm.error = "Enter your current PIN to remove it."; render(); return; }
+    const locked = _lockoutMsg();
+    if (locked) { state.pinForm.error = locked; render(); return; }
     const ok = await verifyPin(current);
-    if (!ok) { state.pinForm.error = "Current PIN is incorrect."; render(); return; }
+    if (!ok) { state.pinForm.error = _lockoutMsg() || "Current PIN is incorrect."; render(); return; }
     clearStoredPin();
     state.pinForm = { current: "", next: "", confirm: "", error: "" };
     setState({ modal: "settings" });
@@ -6151,7 +6349,9 @@ function bindModal() {
       isVent: !!q.ventOnly,
     };
     state.entries = [entry, ...state.entries];
-    persist();
+    // Keep the modal (and the typed text) if the write failed on quota,
+    // rather than closing with a false "Captured" toast.
+    if (!persist()) { state.entries = state.entries.filter(e => e !== entry); return; }
     state.quickDraft = null;
     setState({ modal: null });
     toast(q.ventOnly ? "Named. That's enough." : "Captured. No need to finish — only if you want.");
@@ -6190,7 +6390,9 @@ function bindModal() {
     entry.activityNotes = d.notes;
     entry.completedAt = new Date().toISOString();
     touchEntry(entry);
-    persist();
+    // Only close the modal + claim success if the write reached disk; on a
+    // quota failure persist() has already surfaced the quota-error modal.
+    if (!persist()) return;
     state.logActivityDraft = null;
     state.expandedIds.add(entry.id);
     setState({ modal: null });
@@ -6205,6 +6407,9 @@ function bindModal() {
     const exists = state.entries.some(e => e.isSample);
     if (!exists) {
       state.entries = [...makeSampleEntries(), ...state.entries];
+      // See the other load-sample handler: keep entries newest-first.
+      state.entries.sort((a, b) =>
+        (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
       persist();
     }
     markOnboarded();
@@ -6215,10 +6420,12 @@ function bindModal() {
   if (onboardBegin) onboardBegin.addEventListener("click", () => {
     markOnboarded();
     state.modal = null;
-    state.draft = emptyEntry();
-    state.editingId = null;
-    state.captureStep = 1;
-    setView("capture");
+    startFreshDraft(() => {
+      state.draft = emptyEntry();
+      state.editingId = null;
+      state.captureStep = 1;
+      setView("capture");
+    });
   });
   const onboardSkip = mq('[data-action="onboard-skip"]');
   if (onboardSkip) onboardSkip.addEventListener("click", () => {
@@ -6246,9 +6453,19 @@ function bindModal() {
     if (state.entries.length === 0) {
       body = "*No entries yet.*";
     } else {
+      // Snapshot the list so the awaited yields below can't let a background
+      // mutation (undo timer firing persist, a storage/sync merge) shift
+      // indices mid-loop and skip or duplicate entries in the output. Number
+      // each heading per-kind ("### Worry N" = the Nth worry), not by global
+      // position, so a lone worry isn't labelled by where it sits overall.
+      const snapshot = state.entries.slice();
+      const perKind = Object.create(null);
       const parts = [];
-      for (let i = 0; i < state.entries.length; i++) {
-        parts.push(entryToMd(state.entries[i], i));
+      for (let i = 0; i < snapshot.length; i++) {
+        const e = snapshot[i];
+        const k = e.kind || "thought-record";
+        perKind[k] = (perKind[k] || 0) + 1;
+        parts.push(entryToMd(e, perKind[k] - 1));
         if (i > 0 && i % 50 === 0) await new Promise(r => setTimeout(r, 0));
       }
       body = parts.join("\n");
@@ -6366,6 +6583,21 @@ function bindModal() {
     state.pendingModeSwitch = null;
     setState({ modal: null });
   });
+
+  // Confirm/cancel for "start a new entry" over a draft with content.
+  const confirmNewDraft = document.querySelector('[data-action="confirm-new-draft"]');
+  if (confirmNewDraft) confirmNewDraft.addEventListener("click", () => {
+    const action = state.pendingDraftAction;
+    state.pendingDraftAction = null;
+    state.modal = null;
+    if (typeof action === "function") action();
+    else render();
+  });
+  const cancelNewDraft = document.querySelector('[data-action="cancel-new-draft"]');
+  if (cancelNewDraft) cancelNewDraft.addEventListener("click", () => {
+    state.pendingDraftAction = null;
+    setState({ modal: null });
+  });
 }
 
 // Process a JSON backup file (from the file picker OR a manifest
@@ -6397,6 +6629,13 @@ function processImportFile(file, mode) {
       const dedupedById = [...new Map(normalized.map(e => [e.id, e])).values()];
       let importedCount;
       if (mode === "replace") {
+        // Record tombstones for every entry being wiped, so a paired device
+        // doesn't union its still-live copies straight back on the next merge
+        // (a bare replace with no tombstones silently resurrects everything).
+        if (typeof syncRecordEntryDeletion === "function") {
+          const keep = new Set(dedupedById.map(e => e.id));
+          state.entries.forEach(e => { if (!keep.has(e.id)) syncRecordEntryDeletion(e.id); });
+        }
         state.entries = dedupedById;
         importedCount = dedupedById.length;
       } else {
@@ -6405,12 +6644,20 @@ function processImportFile(file, mode) {
         state.entries = [...adds, ...state.entries];
         importedCount = adds.length;
       }
+      // Clear any deletion tombstone for an imported id: restoring a
+      // previously-deleted entry from a backup must not be re-killed by its
+      // stale tombstone on the next sync merge.
+      if (typeof syncClearEntryDeletion === "function") {
+        dedupedById.forEach(e => syncClearEntryDeletion(e.id));
+      }
       // Restore the newest-first invariant the journal grouping, sparkline
       // slice and undo-splice logic all rely on — a merged backup's entries
       // land at the top regardless of age otherwise.
       state.entries.sort((a, b) =>
         (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
-      persist();
+      // Only claim success + close if the write reached disk; on a quota
+      // failure persist() has already surfaced the blocking quota-error modal.
+      if (!persist()) return;
       setState({ modal: null });
       toast(importedCount === 0
         ? "Nothing new to import — every entry was already in the journal"
@@ -6473,7 +6720,12 @@ document.querySelectorAll(".nav-item").forEach(b => {
 // where the buttons actually render.)
 document.querySelectorAll('[data-action="open-quick"]').forEach(b =>
   b.addEventListener("click", () => {
-    state.quickDraft = { thought: "", intensity: 60, ventOnly: false };
+    // Resume an unsaved quick draft: closing the modal (Escape / backdrop)
+    // doesn't discard the text — a successful save nulls quickDraft, so a
+    // lingering one with content means the user backed out mid-thought.
+    if (!(state.quickDraft && (state.quickDraft.thought || "").trim())) {
+      state.quickDraft = { thought: "", intensity: 60, ventOnly: false };
+    }
     setState({ modal: "quick" });
   }));
 document.querySelectorAll('[data-action="open-settings"]').forEach(b =>

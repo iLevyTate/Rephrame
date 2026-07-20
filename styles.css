@@ -2379,12 +2379,16 @@ html[data-theme="light"] .filter-chip.active {
   border-color: var(--copper);
 }
 
-html[data-theme="light"] .search-box {
+html[data-theme="light"] .search-box svg { color: var(--on-paper-mute); }
+/* The dark background + border live on .search-input, not the .search-box
+   wrapper (which the full-width input covers). The override must repaint the
+   INPUT, otherwise light mode shows near-black text on the base --ink-2
+   input (contrast ~1:1 — the typed query is invisible). */
+html[data-theme="light"] .search-input {
   background: var(--paper-2);
   border-color: var(--rule-paper);
+  color: var(--on-paper);
 }
-html[data-theme="light"] .search-box svg { color: var(--on-paper-mute); }
-html[data-theme="light"] .search-input { color: var(--on-paper); }
 html[data-theme="light"] .search-input::placeholder { color: var(--on-paper-mute); }
 
 html[data-theme="light"] .resume-banner,
@@ -3759,38 +3763,44 @@ button.entry-flag:focus-visible {
 .sync-off-actions { margin-top: 12px; }
 .sync-active { display: flex; flex-direction: column; gap: 16px; }
 
+/* The sync panel mounts inside the Settings modal, which is a paper card in
+   BOTH themes (.modal uses --paper / --on-paper unconditionally). So these
+   panel elements must use paper tokens regardless of theme — using --on-ink
+   here rendered the status text and labels paper-white on the paper modal
+   (invisible) in the default dark theme. The incoming-bar rules below live on
+   <body> instead, so those stay theme-dependent via the light overrides. */
 .sync-status-row {
   display: flex; align-items: center; gap: 8px;
-  font-size: 13px; font-weight: 600; color: var(--on-ink);
+  font-size: 13px; font-weight: 600; color: var(--on-paper);
 }
-.sync-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--on-ink-faint); }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--on-paper-faint); }
 .sync-dot--loading, .sync-dot--waiting, .sync-dot--connecting { background: var(--copper-light); animation: sync-pulse 1.2s infinite; }
 .sync-dot--connected { background: #5a9e6f; }
 .sync-dot--error { background: var(--copper-deep); }
 
 .sync-my-code-block, .sync-connect-block { display: flex; flex-direction: column; gap: 6px; }
 .sync-my-code-block label, .sync-connect-block label {
-  font-size: 12px; font-weight: 600; color: var(--on-ink); font-family: var(--body);
+  font-size: 12px; font-weight: 600; color: var(--on-paper); font-family: var(--body);
 }
 .sync-code {
   font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 0.15em;
-  color: var(--copper-light); padding: 10px 14px; background: var(--ink-3);
-  border-radius: var(--r-3); border: 1px solid var(--rule-ink-2);
+  color: var(--copper-deep); padding: 10px 14px; background: var(--paper-2);
+  border-radius: var(--r-3); border: 1px solid var(--rule-paper-2);
 }
 .sync-code-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .sync-input-row { display: flex; gap: 8px; }
 .sync-input-row input {
-  flex: 1; min-width: 0; background: var(--ink-3); border: 1px solid var(--rule-ink-2);
-  border-radius: var(--r-3); padding: 10px 14px; color: var(--on-ink);
+  flex: 1; min-width: 0; background: var(--paper-2); border: 1px solid var(--rule-paper-2);
+  border-radius: var(--r-3); padding: 10px 14px; color: var(--on-paper);
   font-family: var(--mono); letter-spacing: 0.1em; font-size: 14px;
 }
 .sync-input-row input:focus { outline: none; border-color: var(--copper); }
-.sync-input-hint { font-size: 11px; color: var(--on-ink-mute); line-height: 1.5; margin-top: 2px; }
+.sync-input-hint { font-size: 11px; color: var(--on-paper-mute); line-height: 1.5; margin-top: 2px; }
 .sync-input-hint code {
-  font-family: var(--mono); background: var(--ink-2); padding: 1px 5px;
-  border-radius: var(--r-2); border: 1px solid var(--rule-ink-2); color: var(--on-ink-soft);
+  font-family: var(--mono); background: var(--paper-3); padding: 1px 5px;
+  border-radius: var(--r-2); border: 1px solid var(--rule-paper-2); color: var(--on-paper-soft);
 }
-.sync-input-hint--err { color: var(--copper-light); }
+.sync-input-hint--err { color: var(--copper-deep); }
 .sync-disable { align-self: flex-start; margin-top: 4px; }
 /* Compact variant of .btn for the dense sync controls. */
 .sync-btn-sm { padding: 7px 12px; font-size: 11px; letter-spacing: 0.06em; }
@@ -3805,21 +3815,8 @@ button.entry-flag:focus-visible {
 .sync-incoming-inner code { font-family: var(--mono); font-size: 12px; color: var(--copper-light); }
 .sync-incoming-actions { display: flex; gap: 8px; align-items: center; }
 
-html[data-theme="light"] .sync-status-row,
-html[data-theme="light"] .sync-my-code-block label,
-html[data-theme="light"] .sync-connect-block label { color: var(--on-paper); }
-html[data-theme="light"] .sync-dot { background: var(--on-paper-faint); }
-html[data-theme="light"] .sync-code {
-  color: var(--copper-deep); background: var(--paper-2); border-color: var(--rule-paper-2);
-}
-html[data-theme="light"] .sync-input-row input {
-  background: var(--paper-2); border-color: var(--rule-paper-2); color: var(--on-paper);
-}
-html[data-theme="light"] .sync-input-row input:focus { border-color: var(--copper); }
-html[data-theme="light"] .sync-input-hint { color: var(--on-paper-mute); }
-html[data-theme="light"] .sync-input-hint code {
-  background: var(--paper-3); border-color: var(--rule-paper-2); color: var(--on-paper-soft);
-}
-html[data-theme="light"] .sync-input-hint--err { color: var(--copper-deep); }
+/* Panel colors are now paper-token defaults (see above), correct in both
+   themes, so the former light-theme panel overrides are gone. Only the
+   incoming-bar (on the theme-colored <body>) needs a light override. */
 html[data-theme="light"] .sync-incoming-bar { background: var(--paper-2); color: var(--on-paper); }
 html[data-theme="light"] .sync-incoming-inner code { color: var(--copper-deep); }
