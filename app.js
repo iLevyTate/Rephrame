@@ -1884,6 +1884,13 @@ function render() {
   if (state.view === "capture" && state.captureStep !== lastRenderedStep) {
     retriggerAnimation(view.querySelector(".capture-screen"), "step-entering", 380);
     lastRenderedStep = state.captureStep;
+    // Focus the step's primary field ONCE on step entry. The fields used to
+    // carry the `autofocus` attribute, but Chromium re-focuses a dynamically
+    // inserted autofocus element on every intra-step re-render (e.g. tapping
+    // an activity category chip), yanking focus back and popping the mobile
+    // keyboard on each tap. Focusing only on the step transition avoids that.
+    const af = view.querySelector(".capture-screen [data-autofocus]");
+    if (af) setTimeout(() => { try { af.focus({ preventScroll: true }); } catch (_) { af.focus(); } }, 40);
   }
 
   renderModal();
@@ -2273,7 +2280,7 @@ function shouldShowWorryWindow() {
   const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
   if (parked.length === 0) return false;
   const s = state.settings || {};
-  const [h, m] = (s.worryWindowTime || "18:00").split(":").map(n => parseInt(n, 10));
+  const [h, m] = _parseHHMM(s.worryWindowTime);
   const now = new Date();
   const winStart = new Date(); winStart.setHours(h, m, 0, 0);
   const winEnd = new Date(winStart.getTime() + 20 * 60 * 1000);
@@ -2927,7 +2934,7 @@ function renderFreeformCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">Body</label>
-          <textarea class="textarea input-large freeform-body" data-field="body" rows="14" autofocus placeholder="Whatever comes. One sentence is fine. So is ten paragraphs.">${esc(d.body)}</textarea>
+          <textarea class="textarea input-large freeform-body" data-field="body" rows="14" data-autofocus placeholder="Whatever comes. One sentence is fine. So is ten paragraphs.">${esc(d.body)}</textarea>
         </div>
 
         <div class="step2-section" style="margin-top: 18px;">
@@ -3002,7 +3009,7 @@ function renderActivityCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">What will you do?</label>
-          <input class="input" data-field="body" placeholder="Call my sister · Walk to the park · Cook dinner from scratch" value="${esc(d.body)}" autofocus>
+          <input class="input" data-field="body" placeholder="Call my sister · Walk to the park · Cook dinner from scratch" value="${esc(d.body)}" data-autofocus>
         </div>
 
         <div class="field-group">
@@ -3076,7 +3083,7 @@ function renderWorryCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">What's worrying you?</label>
-          <textarea class="textarea input-large" data-field="worryText" rows="5" autofocus placeholder="One sentence. You don't have to solve it now — you're parking it.">${esc(d.worryText)}</textarea>
+          <textarea class="textarea input-large" data-field="worryText" rows="5" data-autofocus placeholder="One sentence. You don't have to solve it now — you're parking it.">${esc(d.worryText)}</textarea>
           <div class="quick-prompts" role="group" aria-label="Worries people often park">
             <span class="quick-prompts-label">Starter lines:</span>
             ${WORRY_STARTER_CHIPS.map(p => `
@@ -3145,10 +3152,22 @@ function catIcon(value, cls = "") {
 
 // Computes the next worry-window time given the user's settings.
 // If today's window time hasn't passed yet, return today; else tomorrow.
+// Parse an HH:MM setting into validated [hours, minutes], falling back to the
+// 18:00 default for anything malformed (a hand-edited or older-version
+// setting, or a value written by another tab). Without validation a garbage
+// value yields NaN → setHours(NaN) → Invalid Date, which makes
+// computeNextWorryWindow throw on toISOString() mid-render/mid-save.
+function _parseHHMM(str) {
+  const mm = /^(\d{1,2}):(\d{2})$/.exec(String(str == null ? "" : str).trim());
+  let h = mm ? parseInt(mm[1], 10) : NaN;
+  let m = mm ? parseInt(mm[2], 10) : NaN;
+  if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59)) { h = 18; m = 0; }
+  return [h, m];
+}
+
 function computeNextWorryWindow() {
   const s = state.settings || {};
-  const timeStr = s.worryWindowTime || "18:00";
-  const [h, m] = timeStr.split(":").map(n => parseInt(n, 10));
+  const [h, m] = _parseHHMM(s.worryWindowTime);
   const t = new Date();
   t.setHours(h, m, 0, 0);
   if (t.getTime() < Date.now()) t.setDate(t.getDate() + 1);
@@ -3159,7 +3178,7 @@ function renderCaptureStep(step, d) {
   switch (step) {
     case 1: return `
       <div class="field-group">
-        <textarea class="textarea input-large" data-field="trigger" rows="3" autofocus placeholder="Texted a friend and they still haven't replied… · Stumbled over a number in a meeting… · Saw something online I wasn't invited to…">${esc(d.trigger)}</textarea>
+        <textarea class="textarea input-large" data-field="trigger" rows="3" data-autofocus placeholder="Texted a friend and they still haven't replied… · Stumbled over a number in a meeting… · Saw something online I wasn't invited to…">${esc(d.trigger)}</textarea>
         <div class="field-help-paper" style="margin-top: 8px;">An event, a thought, or a feeling — any of those can be the starting point. You don't need to know yet which one this is.</div>
         <div class="quick-prompts" role="group" aria-label="Starter lines for trigger">
           <span class="quick-prompts-label">Or tap a starter:</span>
@@ -3173,8 +3192,15 @@ function renderCaptureStep(step, d) {
     case 2: {
       // Sectioned layout: Thoughts → Moods → Body. Multi-row, each row
       // editable in place. Hot-thought radio drives Challenge (step 4) and Reframe (step 5).
-      const thoughts = d.thoughts.length ? d.thoughts : [normalizeThought({ isHot: true })];
-      const moods    = d.moods.length    ? d.moods    : [normalizeMood({})];
+      // Seed the draft's arrays in place when empty rather than rendering a
+      // throwaway placeholder: the row's controls look their model up by id in
+      // state.draft.moods/thoughts, so an un-backed placeholder (e.g. a legacy
+      // or imported record with moods:[]) would render a mood row whose family
+      // select, slider and checkbox all silently do nothing.
+      if (!d.thoughts.length) d.thoughts.push(normalizeThought({ isHot: true }));
+      if (!d.moods.length)    d.moods.push(normalizeMood({}));
+      const thoughts = d.thoughts;
+      const moods    = d.moods;
       return `
       <div class="step2-section">
         <div class="step2-section-head">
@@ -3493,7 +3519,7 @@ function renderCaptureStep(step, d) {
           </div>
         ` : ""}
 
-        ${(d.moods || []).filter(m => m.family || typeof m.intensity === "number").map(m => {
+        ${(d.moods || []).filter(m => m.family).map(m => {
           const label = m.variant ? cap(m.variant) : (m.family || "Mood");
           const cur = m.intensityAfterReframe ?? m.intensity;
           const delta = m.intensityAfterReframe !== null && m.intensityAfterReframe !== undefined ? (m.intensityAfterReframe - m.intensity) : null;
@@ -3849,6 +3875,9 @@ function renderPatterns() {
   function moodDeltaSamples(stage) {
     const out = [];
     thoughtRecords.forEach(e => (e.moods || []).forEach(m => {
+      // Only named moods are shown on cards and get re-rate sliders, so count
+      // only those — an unnamed placeholder mood must not inflate "N re-rated".
+      if (!m.family) return;
       const after = stage === "pivot" ? m.intensityAfterPivot : m.intensityAfterReframe;
       if (typeof after === "number" && typeof m.intensity === "number") {
         out.push(m.intensity - after);
@@ -3985,7 +4014,7 @@ function renderPatterns() {
           <span class="pattern-card-title">Thought records</span>
         </div>
         <div class="pattern-stat-big display">${total}</div>
-        <div class="pattern-stat-label">${total} full thought records (${entries.length} journal entries total${quickThoughtSkips ? "; " + quickThoughtSkips + " quick" : ""}). Heatmap & spark chart: ${activeDays} active ${activeDays === 1 ? "day" : "days"}, structured captures only.</div>
+        <div class="pattern-stat-label">${total} full thought ${total === 1 ? "record" : "records"} (${entries.length} journal ${entries.length === 1 ? "entry" : "entries"} total${quickThoughtSkips ? "; " + quickThoughtSkips + " quick" : ""}). Heatmap & spark chart: ${activeDays} active ${activeDays === 1 ? "day" : "days"}, structured captures only.</div>
       </div>
 
       <div class="pattern-card">
@@ -5033,7 +5062,13 @@ function bindJournal() {
   });
   // View-scope chips (All / Favorites / Unfinished / This week / Pivoted / Pivot due).
   document.querySelectorAll('[data-action="set-view-filter"]').forEach(el => {
-    el.addEventListener("click", () => setState({ viewFilter: el.dataset.value }));
+    // Clear the distortion filter when the scope changes. The distortion
+    // chip row is derived from the scoped entries, so switching to a scope
+    // with no distortion-bearing entries (e.g. free writes) would hide the
+    // row — and with it the active chip and the "All distortions" clear
+    // button — leaving an invisible, unclearable filter that also made the
+    // empty state claim the scope itself was empty.
+    el.addEventListener("click", () => setState({ viewFilter: el.dataset.value, filter: "" }));
   });
   document.querySelectorAll('[data-action="reset-filters"]').forEach(el => {
     el.addEventListener("click", () => {
@@ -5157,7 +5192,10 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
-      const idx = state.entries.indexOf(entry);
+      // Per-kind index so the heading reads "Nth entry of this kind" (e.g.
+      // "### Worry 1" for the only worry), matching the full export — not the
+      // entry's global position, which numbered a lone worry "### Worry 7".
+      const idx = state.entries.filter(x => (x.kind || "thought-record") === (entry.kind || "thought-record")).indexOf(entry);
       const md = entryToMd(entry, idx);
       const tryFallback = () => {
         const ta = document.createElement("textarea");
@@ -5231,6 +5269,11 @@ function bindJournal() {
       const exists = state.entries.some(x => x.isSample);
       if (!exists) {
         state.entries = [...makeSampleEntries(), ...state.entries];
+        // makeSampleEntries() is oldest-first; restore the newest-first
+        // invariant the journal grouping, "No. NN" numbering and Patterns
+        // sparkline all assume, instead of leaving inverted date groups.
+        state.entries.sort((a, b) =>
+          (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
         persist();
       }
       markOnboarded();
@@ -5969,17 +6012,22 @@ function bindCapture() {
       toast("Entry saved");
     }
     // Finalize a deferred worry-escalation: now that the thought-record
-    // is real, point the original worry at it and mark it resolved. If
-    // the worry was deleted in the meantime, save still succeeds but
-    // we let the user know the link is broken rather than silently
-    // dropping the back-reference.
-    if (state.pendingEscalateFromWorryId) {
-      const w = state.entries.find(x => x.id === state.pendingEscalateFromWorryId && x.kind === "worry");
+    // is real, point the original worry at it and mark it resolved. The
+    // in-memory pendingEscalateFromWorryId is lost across a reload, so for a
+    // NEW entry fall back to the draft's own linkedEntryId (set when the
+    // escalation started) — otherwise a resumed escalation draft saved in a
+    // later session would leave the worry stuck "Parked" while the new record
+    // still shows a "From a parked worry" link to it. If the worry was
+    // deleted in the meantime, save still succeeds but we flag the broken link.
+    const escalateWorryId = state.pendingEscalateFromWorryId ||
+      (!state.editingId ? state.draft.linkedEntryId : null);
+    if (escalateWorryId) {
+      const w = state.entries.find(x => x.id === escalateWorryId && x.kind === "worry");
       if (w && !w.resolution) {
         w.resolution = "escalated";
         w.resolvedAt = now;
         w.linkedEntryId = savedId;
-      } else if (!w) {
+      } else if (!w && state.pendingEscalateFromWorryId) {
         toast("Original worry was deleted — thought record saved separately.");
       }
       state.pendingEscalateFromWorryId = null;
@@ -6353,6 +6401,9 @@ function bindModal() {
     const exists = state.entries.some(e => e.isSample);
     if (!exists) {
       state.entries = [...makeSampleEntries(), ...state.entries];
+      // See the other load-sample handler: keep entries newest-first.
+      state.entries.sort((a, b) =>
+        (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
       persist();
     }
     markOnboarded();
@@ -6396,9 +6447,19 @@ function bindModal() {
     if (state.entries.length === 0) {
       body = "*No entries yet.*";
     } else {
+      // Snapshot the list so the awaited yields below can't let a background
+      // mutation (undo timer firing persist, a storage/sync merge) shift
+      // indices mid-loop and skip or duplicate entries in the output. Number
+      // each heading per-kind ("### Worry N" = the Nth worry), not by global
+      // position, so a lone worry isn't labelled by where it sits overall.
+      const snapshot = state.entries.slice();
+      const perKind = Object.create(null);
       const parts = [];
-      for (let i = 0; i < state.entries.length; i++) {
-        parts.push(entryToMd(state.entries[i], i));
+      for (let i = 0; i < snapshot.length; i++) {
+        const e = snapshot[i];
+        const k = e.kind || "thought-record";
+        perKind[k] = (perKind[k] || 0) + 1;
+        parts.push(entryToMd(e, perKind[k] - 1));
         if (i > 0 && i % 50 === 0) await new Promise(r => setTimeout(r, 0));
       }
       body = parts.join("\n");

@@ -176,7 +176,7 @@ try {
   else await page.evaluate(() => window.setView && window.setView('reference'));
   await page.waitForSelector('.ref-section-title', { timeout: 5000 });
   await snap(page, 'reference');
-  const refText = await page.locator('#app, body').first().innerText();
+  const refText = await page.locator('.app, body').first().innerText();
   for (const label of [
     'Mental Filter',
     'Historical test',
