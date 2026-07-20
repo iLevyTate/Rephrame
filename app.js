@@ -5026,6 +5026,12 @@ function bindJournal() {
   // the open-step pill until they go through the dedicated outcome page.
   document.querySelectorAll('[data-action="edit-reflection"]').forEach(el => {
     el.addEventListener("click", e => e.stopPropagation());
+    // Value at render time == the last persisted reflection (the textarea is
+    // rendered from entry.pivotReflection). The blur commit must diff against
+    // THIS, not the live entry.pivotReflection, because the input listener
+    // below mutates that field on every keystroke — diffing against it would
+    // always read "unchanged" and skip persist()/outcomeRecorded/the toast.
+    const committed = el.value;
     // Mirror keystrokes into in-memory state so a background render (a P2P
     // merge or a cross-tab storage write, both of which rebuild #view via
     // innerHTML) rebuilds the textarea from the just-typed text instead of
@@ -5040,7 +5046,7 @@ function bindJournal() {
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
       const v = el.value;
-      const changed = entry.pivotReflection !== v;
+      const changed = committed !== v;
       const hasText = !!v.trim();
       const wasRecorded = entry.outcomeRecorded;
       // No edit → no state change. (Step 8 can legitimately record an outcome
