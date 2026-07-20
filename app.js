@@ -574,12 +574,14 @@ async function _legacyHashPin(pin) {
   return _toHex(buf);
 }
 
-async function _pbkdf2Pin(pin, saltBytes) {
+async function _pbkdf2Pin(pin, saltBytes, iterations) {
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(String(pin)), { name: "PBKDF2" }, false, ["deriveBits"]
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    { name: "PBKDF2", salt: saltBytes,
+      iterations: (typeof iterations === "number" && iterations > 0) ? iterations : PBKDF2_ITERATIONS,
+      hash: "SHA-256" },
     key, 256
   );
   return _toHex(bits);
@@ -619,7 +621,11 @@ async function verifyPin(pin) {
     // doesn't fall back to the weak hash.
     if (ok) try { await setStoredPin(pin); } catch (_) {}
   } else {
-    const computed = await _pbkdf2Pin(pin, _fromHex(stored.salt));
+    // Derive with the iteration count the record was WRITTEN with, not the
+    // current constant — otherwise bumping PBKDF2_ITERATIONS would make every
+    // existing PIN unverifiable (correct PINs hash differently), and with no
+    // recovery path the user's only way back in is wiping all site data.
+    const computed = await _pbkdf2Pin(pin, _fromHex(stored.salt), stored.iterations);
     ok = computed === stored.hash;
   }
   if (ok) _clearLockout();
@@ -1827,6 +1833,13 @@ function render() {
   // "someone glanced at the unlocked phone" is closed.
   if (state.locked) {
     document.body.classList.add("is-locked");
+    // Release any modal focus-trap first. "Lock now" is reached from inside
+    // the Settings modal, so its capture-phase keydown handler is installed;
+    // this branch wipes #modal-root and returns before renderModal() (the
+    // only other place the trap is released), so without this the trap would
+    // stay bound and swallow every Tab on the lock screen for the whole
+    // locked session.
+    _releaseModalFocus();
     renderLockScreen();
     // Clear any in-flight modal/view content so nothing leaks behind the
     // lock screen via accidental z-index.
@@ -1883,6 +1896,12 @@ function renderLockScreen() {
     el.id = "lockScreen";
     document.body.appendChild(el);
   }
+  // Preserve what the user typed across a failed-attempt re-render so they can
+  // see and correct a one-character typo instead of retyping the whole PIN
+  // (each retype otherwise burns another attempt toward the lockout). Only
+  // when an error is showing — a fresh lock starts with an empty field.
+  const _prevPinEl = document.getElementById("lockPinInput");
+  const _prevPin = (_prevPinEl && state.lockError) ? _prevPinEl.value : "";
   el.className = "lock-screen" + (state.lockError ? " has-error" : "");
   // Lock card is functionally a modal — block everything else on the
   // page until the PIN is correct — so expose it as a dialog with an
@@ -1929,7 +1948,13 @@ function renderLockScreen() {
   // because the lock screen lives outside the normal render tree.
   const form = document.getElementById("lockForm");
   const input = document.getElementById("lockPinInput");
-  if (input) setTimeout(() => input.focus(), 30);
+  if (input && _prevPin) input.value = _prevPin;
+  if (input) setTimeout(() => {
+    input.focus();
+    // Put the caret at the end of the restored text so correcting a typo
+    // doesn't require re-selecting first.
+    try { const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
+  }, 30);
   if (form) form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const pin = (input.value || "").trim();
@@ -4763,12 +4788,12 @@ function renderSetPinModal() {
     <form id="pinSetForm" class="pin-form" autocomplete="off">
       ${isChanging ? `
         <label class="field-label-paper">Current PIN</label>
-        <input id="pinCurrent" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off">
+        <input id="pinCurrent" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" value="${esc(f ? f.current : "")}">
       ` : ""}
       <label class="field-label-paper" style="margin-top: ${isChanging ? "14px" : "0"};">${isChanging ? "New PIN" : "PIN"}</label>
-      <input id="pinNew" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" autofocus>
+      <input id="pinNew" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" value="${esc(f ? f.next : "")}" autofocus>
       <label class="field-label-paper" style="margin-top: 14px;">Confirm</label>
-      <input id="pinConfirm" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password">
+      <input id="pinConfirm" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" value="${esc(f ? f.confirm : "")}">
       ${f && f.error ? `<p class="pin-error" role="alert">${esc(f.error)}</p>` : ""}
       <div class="modal-actions" style="margin-top: 16px;">
         <button type="button" class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
@@ -4785,7 +4810,7 @@ function renderRemovePinModal() {
     <p class="modal-sub">Enter your current PIN to confirm. After removal, the app will open straight to the journal on every new session.</p>
     <form id="pinRemoveForm" class="pin-form" autocomplete="off">
       <label class="field-label-paper">Current PIN</label>
-      <input id="pinCurrentRemove" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" autofocus>
+      <input id="pinCurrentRemove" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" value="${esc(f ? f.current : "")}" autofocus>
       ${f && f.error ? `<p class="pin-error" role="alert">${esc(f.error)}</p>` : ""}
       <div class="modal-actions" style="margin-top: 16px;">
         <button type="button" class="btn-modal btn-modal-secondary" data-action="close-modal">Cancel</button>
@@ -6067,6 +6092,26 @@ function bindModal() {
     });
   });
 
+  // Keep state.pinForm synced so a validation-error re-render restores every
+  // field instead of blanking them (forcing the user to retype a correct
+  // current PIN just to fix a mismatch typo). No render() on input.
+  const _syncPin = (id, key) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", () => { state.pinForm[key] = el.value; });
+  };
+  _syncPin("pinCurrent", "current");
+  _syncPin("pinNew", "next");
+  _syncPin("pinConfirm", "confirm");
+  _syncPin("pinCurrentRemove", "current");
+
+  // Surface a wait message when locked out instead of the misleading
+  // "Current PIN is incorrect" (verifyPin refuses unconditionally while
+  // locked out, so a correct PIN would otherwise read as wrong).
+  const _lockoutMsg = () => {
+    const wait = pinLockoutMsLeft();
+    return wait > 0 ? "Too many tries. Wait " + Math.ceil(wait / 1000) + "s before another attempt." : "";
+  };
+
   const setPinForm = document.getElementById("pinSetForm");
   if (setPinForm) setPinForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -6078,8 +6123,10 @@ function bindModal() {
     if (!/^[0-9]{4,8}$/.test(next))   { state.pinForm.error = "PIN must be 4–8 digits."; render(); return; }
     if (next !== confirm)             { state.pinForm.error = "The two PINs don't match."; render(); return; }
     if (isChanging) {
+      const locked = _lockoutMsg();
+      if (locked) { state.pinForm.error = locked; render(); return; }
       const ok = await verifyPin(current);
-      if (!ok) { state.pinForm.error = "Current PIN is incorrect."; render(); return; }
+      if (!ok) { state.pinForm.error = _lockoutMsg() || "Current PIN is incorrect."; render(); return; }
     }
     await setStoredPin(next);
     state.pinForm = { current: "", next: "", confirm: "", error: "" };
@@ -6092,8 +6139,10 @@ function bindModal() {
     e.preventDefault();
     const current = (document.getElementById("pinCurrentRemove").value || "").trim();
     if (!current) { state.pinForm.error = "Enter your current PIN to remove it."; render(); return; }
+    const locked = _lockoutMsg();
+    if (locked) { state.pinForm.error = locked; render(); return; }
     const ok = await verifyPin(current);
-    if (!ok) { state.pinForm.error = "Current PIN is incorrect."; render(); return; }
+    if (!ok) { state.pinForm.error = _lockoutMsg() || "Current PIN is incorrect."; render(); return; }
     clearStoredPin();
     state.pinForm = { current: "", next: "", confirm: "", error: "" };
     setState({ modal: "settings" });

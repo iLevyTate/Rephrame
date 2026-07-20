@@ -135,19 +135,26 @@ try {
     await page.waitForSelector('#lockPinInput', { timeout: 10000 });
 
     // verifyPin runs PBKDF2 (100k iterations) so the failure records a beat
-    // after the click — wait for the lock screen to re-render (a fresh, empty
-    // input) before the next guess so all five failures actually register.
+    // after the click. The lock screen now RETAINS the typed PIN across a
+    // failed attempt (so a user can fix a typo without retyping), so we can't
+    // sync on an empty field anymore — instead wait until the recorded
+    // failure count reaches the expected value, which directly proves the
+    // async verifyPin settled and is fast (no fixed sleeps).
+    const submitWrong = async (pin, expect) => {
+      await page.locator('#lockPinInput').fill(pin);
+      await page.locator('#lockForm button[type="submit"]').click();
+      await page.waitForFunction((n) => {
+        try { return (JSON.parse(localStorage.getItem('reframe-pin-lockout') || '{}').attempts || 0) >= n; }
+        catch { return false; }
+      }, expect, { timeout: 5000 });
+    };
     const submitPin = async (pin) => {
       await page.locator('#lockPinInput').fill(pin);
       await page.locator('#lockForm button[type="submit"]').click();
-      await page.waitForFunction(() => {
-        const i = document.getElementById('lockPinInput');
-        return i && i.value === '';
-      }, { timeout: 5000 }).catch(() => {});
     };
 
     // Five wrong guesses trip the throttle (lockout arms on the 5th failure).
-    for (let i = 0; i < 5; i++) await submitPin('0000');
+    for (let i = 0; i < 5; i++) await submitWrong('0000', i + 1);
     await page.waitForFunction(() => {
       const e = document.querySelector('.lock-error');
       return e && /too many|wait/i.test(e.textContent || '');
