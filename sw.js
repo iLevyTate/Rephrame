@@ -4,7 +4,7 @@
 // The deploy workflow (.github/workflows/pages.yml) stamps a unique version
 // over this value at deploy time; the committed value only matters for
 // local/self-hosted use.
-const CACHE_NAME = 'reframe-v37';
+const CACHE_NAME = 'reframe-v38';
 // Fonts live in a separate cache so version bumps don't wipe them. Populated
 // lazily on first successful fetch — we can't precache cross-origin Google
 // Font responses reliably during install (opaque, CSS-driven woff2 URLs).
@@ -90,23 +90,37 @@ self.addEventListener('fetch', e => {
   }
   if(url.origin !== self.location.origin) return;
 
-  // Navigation: network-first so users get fresh HTML when online; fall back
-  // to cache if offline. Without this the app gets pinned to the install-time
-  // version forever.
+  // Navigation: cache-first with background refresh. Subresources below are
+  // cache-first too, so serving the HTML cache-first keeps both from the SAME
+  // cache generation — a network-first navigation would hand a fresh
+  // index.html to the still-controlling old worker, which then serves stale
+  // app.js/styles.css from its old cache (new markup running against old
+  // code) until the next reload. The pwa.js update banner still surfaces new
+  // versions (updatefound → SKIP_WAITING → reload), so this doesn't pin the
+  // app to the install-time version.
   const isNavigation = e.request.mode === 'navigate' || e.request.destination === 'document' ||
     url.pathname === '/' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('index.html');
   if(isNavigation){
-    e.respondWith(
-      fetch(e.request)
-        .then(res => {
-          if(res && res.status === 200 && res.type === 'basic'){
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then(c => c.put(e.request, clone).catch(() => {}));
-          }
-          return res;
-        })
-        .catch(() => caches.match('./index.html').then(r => r || caches.match(e.request)))
-    );
+    e.respondWith((async () => {
+      const c = await caches.open(CACHE_NAME);
+      const cached = (await c.match('./index.html')) || (await c.match('./')) || (await c.match(e.request));
+      const net = fetch(e.request).then(res => {
+        if(res && res.status === 200 && res.type === 'basic'){
+          c.put('./index.html', res.clone()).catch(() => {});
+        }
+        return res;
+      }).catch(() => null);
+      if(cached){ net.catch(() => {}); return cached; }
+      // Nothing cached yet (first-ever load, or a partial precache): use the
+      // network, and synthesize a real Response so respondWith is never handed
+      // undefined (which would surface a raw network-error page).
+      const fresh = await net;
+      return fresh || new Response(
+        '<!doctype html><meta charset="utf-8"><title>Offline</title>' +
+        '<body style="font:16px/1.5 system-ui,sans-serif;padding:2rem;color:#1a1715">' +
+        'You appear to be offline and this app hasn’t been cached yet. Reconnect and reload.</body>',
+        { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    })());
     return;
   }
 

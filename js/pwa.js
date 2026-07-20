@@ -107,6 +107,11 @@
   // Clicking Reload tells the new worker to skip waiting; the controllerchange
   // event then triggers a single full reload so the user gets the new app.
   let _reloadingForUpdate = false;
+  // Set when the user explicitly asks for the update (clicks Reload → we post
+  // SKIP_WAITING). It lets the controllerchange handler reload even on a
+  // first-ever visit, where _hadControllerAtStartup is false but the user
+  // genuinely requested the swap.
+  let _updateRequested = false;
   function _showUpdateBanner(reg){
     if (document.getElementById('swUpdateBanner')) return;
     const banner = document.createElement('div');
@@ -124,6 +129,7 @@
     reload.textContent = 'Reload';
     reload.onclick = () => {
       if (!reg || !reg.waiting) { location.reload(); return; }
+      _updateRequested = true;
       reg.waiting.postMessage({type: 'SKIP_WAITING'});
     };
     banner.appendChild(reload);
@@ -157,8 +163,10 @@
       if (_reloadingForUpdate) return;
       // First-install claim() (no prior controller) isn't an update — skip the
       // reload so the very first visit doesn't refresh itself out from under
-      // the user.
-      if (!_hadControllerAtStartup) return;
+      // the user. But if the user explicitly clicked Reload (SKIP_WAITING),
+      // honor it even on a first visit — otherwise their first click is
+      // silently swallowed and nothing happens until they click again.
+      if (!_hadControllerAtStartup && !_updateRequested) return;
       _reloadingForUpdate = true;
       location.reload();
     });
@@ -299,13 +307,21 @@
 
   window.installPWA = function(){
     if (window._deferredInstallPrompt) {
-      window._deferredInstallPrompt.prompt();
-      window._deferredInstallPrompt.userChoice.then(() => {
-        window._deferredInstallPrompt = null;
-        const btn = document.getElementById('installBtn');
-        if (btn) btn.hidden = true;
-        const help = document.getElementById('installHelpPanel');
-        if (help) help.hidden = true;
+      const deferred = window._deferredInstallPrompt;
+      deferred.prompt();
+      deferred.userChoice.then((choice) => {
+        // Only discard the prompt + hide the button when the user actually
+        // installed. Chrome doesn't re-fire beforeinstallprompt in the same
+        // page load, so nulling it on 'dismissed' would strand a user who
+        // cancelled by accident with no way to install for the rest of the
+        // session. On dismiss, leave the deferred prompt and button in place.
+        if (choice && choice.outcome === 'accepted') {
+          window._deferredInstallPrompt = null;
+          const btn = document.getElementById('installBtn');
+          if (btn) btn.hidden = true;
+          const help = document.getElementById('installHelpPanel');
+          if (help) help.hidden = true;
+        }
       });
       return;
     }
