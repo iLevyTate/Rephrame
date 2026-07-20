@@ -1011,7 +1011,15 @@ function draftedNewThoughtMatchesBuiltInTemplate(d) {
 function loadEntries() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(raw) ? raw.map(normalizeEntry) : [];
+    // Guard each element: a single null / non-object in stored data (a hand-
+    // edit, a devtools mishap, an `undefined` serialized to `null`) would make
+    // normalizeEntry throw on `e.id` and take the whole array down to [] — and
+    // the next persist() would then overwrite the still-recoverable raw data.
+    // Mirror processImportFile's per-element filter so one bad record is
+    // dropped, not the entire journal.
+    return Array.isArray(raw)
+      ? raw.filter(x => x && typeof x === "object").map(normalizeEntry)
+      : [];
   }
   catch { return []; }
 }
@@ -1521,6 +1529,10 @@ const state = {
   // Holds the requested kind while the "switching will lose your draft"
   // modal is open. Cleared on cancel; consumed on confirm.
   pendingModeSwitch: null,
+  // Holds a pending "start a fresh draft" action (a thunk) while the
+  // "starting a new entry will discard your draft" modal is open. Set by
+  // startFreshDraft() when the current draft has content; run on confirm.
+  pendingDraftAction: null,
   settings: loadSettings(),
   // Print mode: when true, every entry renders expanded. Used by the
   // Print/PDF flow so the browser print dialog gets a full transcript.
@@ -1675,6 +1687,9 @@ function hasDraftContent(d) {
 // a redundant re-load + render mid-write.
 let _persistingLocally = false;
 
+// Returns true when the write reached disk, false on quota/error. Callers
+// that show a success toast and close a modal MUST check this — otherwise
+// they clobber the quota-error modal set below and lie about the outcome.
 function persist() {
   // Wrap the write so a QuotaExceededError surfaces a styled blocking
   // modal instead of silently failing. The user's most recent entry
@@ -1685,6 +1700,7 @@ function persist() {
     saveEntries(state.entries);
     // Push the new state to a paired device, if P2P sync is connected.
     if (typeof syncBroadcast === "function") syncBroadcast();
+    return true;
   } catch (err) {
     const isQuota = err && (
       err.name === "QuotaExceededError" ||
@@ -1698,6 +1714,7 @@ function persist() {
       toast("Couldn't save — " + (err && err.message ? err.message : "unknown error"),
             { variant: "error", persist: true });
     }
+    return false;
   } finally {
     _persistingLocally = false;
   }
@@ -4329,6 +4346,15 @@ function renderModal() {
         <button class="btn-modal btn-modal-danger" data-action="confirm-discard-draft">Discard</button>
       </div>
     `;
+  } else if (state.modal === "confirm-new-draft") {
+    inner = `
+      <h3 class="display">Start a new entry?</h3>
+      <p class="modal-sub">You have an unfinished draft. Starting fresh will discard it. This can't be undone.</p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" data-action="cancel-new-draft">Keep draft</button>
+        <button class="btn-modal btn-modal-danger" data-action="confirm-new-draft">Discard &amp; start</button>
+      </div>
+    `;
   } else if (state.modal === "switch-kind") {
     const targetLabel = ({
       "thought-record": "Thought record",
@@ -4981,16 +5007,18 @@ function bindJournal() {
   document.querySelectorAll('[data-action="start-kind"]').forEach(el => {
     el.addEventListener("click", () => {
       const kind = el.dataset.kind;
-      const factory =
-        kind === "freeform" ? emptyFreeform :
-        kind === "activity" ? emptyActivity :
-        kind === "worry"    ? emptyWorry    :
-                              emptyEntry;
-      state.draft = factory();
-      state.editingId = null;
-      state.captureStep = 1;
-      saveDraft(state.draft);
-      setView("capture");
+      startFreshDraft(() => {
+        const factory =
+          kind === "freeform" ? emptyFreeform :
+          kind === "activity" ? emptyActivity :
+          kind === "worry"    ? emptyWorry    :
+                                emptyEntry;
+        state.draft = factory();
+        state.editingId = null;
+        state.captureStep = 1;
+        saveDraft(state.draft);
+        setView("capture");
+      });
     });
   });
   // "Not today" snooze — suppress the nudge banner for 18 hours so the user
@@ -5111,7 +5139,7 @@ function bindJournal() {
     el.addEventListener("click", () => setState({ modal: "discard-draft" }));
   });
   document.querySelectorAll('[data-action="goto-capture"]').forEach(el => {
-    el.addEventListener("click", () => {
+    el.addEventListener("click", () => startFreshDraft(() => {
       state.draft = emptyEntry();
       state.editingId = null;
       state.captureStep = 1;
@@ -5119,7 +5147,7 @@ function bindJournal() {
       // the tab before typing would resurface the old draft on next launch.
       clearDraft();
       setView("capture");
-    });
+    }));
   });
   // open-safety and load-sample can appear inside the rendered view (empty
   // state); scope to #view so we don't double-bind the same modal buttons
@@ -5281,24 +5309,26 @@ function bindJournal() {
       e.stopPropagation();
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
-      // Pre-mint the new thought-record's id so the draft can carry a
-      // back-link from the start. The worry itself stays parked — we
-      // finalize its resolution only when the new entry actually saves
-      // (handled in save-entry below), so backing out leaves the worry
-      // untouched instead of orphan-linked to a never-saved draft.
-      const newEntryId = newId();
-      const draft = emptyEntry();
-      draft.id = newEntryId;
-      const w = ((entry.worryText || "").trim());
-      draft.trigger = w.length ? ("Worry: " + (w.length > 400 ? w.slice(0, 397) + "…" : w)) : "Worry (from parked worry)";
-      draft.thoughts = [normalizeThought({ text: entry.worryText, isHot: true })];
-      draft.linkedEntryId = entry.id;
-      state.draft = draft;
-      state.editingId = null;
-      state.captureStep = 1;
-      state.pendingEscalateFromWorryId = entry.id;
-      saveDraft(state.draft);
-      setView("capture");
+      startFreshDraft(() => {
+        // Pre-mint the new thought-record's id so the draft can carry a
+        // back-link from the start. The worry itself stays parked — we
+        // finalize its resolution only when the new entry actually saves
+        // (handled in save-entry below), so backing out leaves the worry
+        // untouched instead of orphan-linked to a never-saved draft.
+        const newEntryId = newId();
+        const draft = emptyEntry();
+        draft.id = newEntryId;
+        const w = ((entry.worryText || "").trim());
+        draft.trigger = w.length ? ("Worry: " + (w.length > 400 ? w.slice(0, 397) + "…" : w)) : "Worry (from parked worry)";
+        draft.thoughts = [normalizeThought({ text: entry.worryText, isHot: true })];
+        draft.linkedEntryId = entry.id;
+        state.draft = draft;
+        state.editingId = null;
+        state.captureStep = 1;
+        state.pendingEscalateFromWorryId = entry.id;
+        saveDraft(state.draft);
+        setView("capture");
+      });
     });
   });
 }
@@ -5337,6 +5367,16 @@ function applyCaptureModeSwitch(kind) {
   state.pendingEscalateFromWorryId = null;
   saveDraft(state.draft);
   render();
+}
+
+// Guard every "start a brand-new capture" entry point so it can't silently
+// wipe a half-written draft. When editing, or when the current draft has no
+// content, the action runs immediately; otherwise we stash it and ask first
+// via the confirm-new-draft modal (mirrors the switch-kind confirmation).
+function startFreshDraft(action) {
+  if (state.editingId || !hasDraftContent(state.draft)) { action(); return; }
+  state.pendingDraftAction = action;
+  setState({ modal: "confirm-new-draft" });
 }
 
 function finalizeWorryEntry(entry, now) {
@@ -5831,7 +5871,17 @@ function bindCapture() {
       let updated = { ...state.draft, id: state.editingId, updatedAt: now };
       updated = finalizeWorryEntry(updated, now);
       updated = finalizeActivityEntry(updated);
-      state.entries = state.entries.map(e => e.id === state.editingId ? updated : e);
+      // If the entry vanished mid-edit (a "Replace everything" import, or a
+      // delete in another tab that the storage listener pulled in), .map()
+      // would match nothing and silently drop the edit under a success toast.
+      // Re-insert it instead so the user's writing is never lost.
+      if (state.entries.some(e => e.id === state.editingId)) {
+        state.entries = state.entries.map(e => e.id === state.editingId ? updated : e);
+      } else {
+        state.entries = [updated, ...state.entries];
+        state.entries.sort((a, b) =>
+          (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+      }
       toast("Entry updated");
     } else {
       // Honor a pre-assigned draft.id (used by worry-escalate to set up
@@ -6151,7 +6201,9 @@ function bindModal() {
       isVent: !!q.ventOnly,
     };
     state.entries = [entry, ...state.entries];
-    persist();
+    // Keep the modal (and the typed text) if the write failed on quota,
+    // rather than closing with a false "Captured" toast.
+    if (!persist()) { state.entries = state.entries.filter(e => e !== entry); return; }
     state.quickDraft = null;
     setState({ modal: null });
     toast(q.ventOnly ? "Named. That's enough." : "Captured. No need to finish — only if you want.");
@@ -6190,7 +6242,9 @@ function bindModal() {
     entry.activityNotes = d.notes;
     entry.completedAt = new Date().toISOString();
     touchEntry(entry);
-    persist();
+    // Only close the modal + claim success if the write reached disk; on a
+    // quota failure persist() has already surfaced the quota-error modal.
+    if (!persist()) return;
     state.logActivityDraft = null;
     state.expandedIds.add(entry.id);
     setState({ modal: null });
@@ -6215,10 +6269,12 @@ function bindModal() {
   if (onboardBegin) onboardBegin.addEventListener("click", () => {
     markOnboarded();
     state.modal = null;
-    state.draft = emptyEntry();
-    state.editingId = null;
-    state.captureStep = 1;
-    setView("capture");
+    startFreshDraft(() => {
+      state.draft = emptyEntry();
+      state.editingId = null;
+      state.captureStep = 1;
+      setView("capture");
+    });
   });
   const onboardSkip = mq('[data-action="onboard-skip"]');
   if (onboardSkip) onboardSkip.addEventListener("click", () => {
@@ -6366,6 +6422,21 @@ function bindModal() {
     state.pendingModeSwitch = null;
     setState({ modal: null });
   });
+
+  // Confirm/cancel for "start a new entry" over a draft with content.
+  const confirmNewDraft = document.querySelector('[data-action="confirm-new-draft"]');
+  if (confirmNewDraft) confirmNewDraft.addEventListener("click", () => {
+    const action = state.pendingDraftAction;
+    state.pendingDraftAction = null;
+    state.modal = null;
+    if (typeof action === "function") action();
+    else render();
+  });
+  const cancelNewDraft = document.querySelector('[data-action="cancel-new-draft"]');
+  if (cancelNewDraft) cancelNewDraft.addEventListener("click", () => {
+    state.pendingDraftAction = null;
+    setState({ modal: null });
+  });
 }
 
 // Process a JSON backup file (from the file picker OR a manifest
@@ -6397,6 +6468,13 @@ function processImportFile(file, mode) {
       const dedupedById = [...new Map(normalized.map(e => [e.id, e])).values()];
       let importedCount;
       if (mode === "replace") {
+        // Record tombstones for every entry being wiped, so a paired device
+        // doesn't union its still-live copies straight back on the next merge
+        // (a bare replace with no tombstones silently resurrects everything).
+        if (typeof syncRecordEntryDeletion === "function") {
+          const keep = new Set(dedupedById.map(e => e.id));
+          state.entries.forEach(e => { if (!keep.has(e.id)) syncRecordEntryDeletion(e.id); });
+        }
         state.entries = dedupedById;
         importedCount = dedupedById.length;
       } else {
@@ -6405,12 +6483,20 @@ function processImportFile(file, mode) {
         state.entries = [...adds, ...state.entries];
         importedCount = adds.length;
       }
+      // Clear any deletion tombstone for an imported id: restoring a
+      // previously-deleted entry from a backup must not be re-killed by its
+      // stale tombstone on the next sync merge.
+      if (typeof syncClearEntryDeletion === "function") {
+        dedupedById.forEach(e => syncClearEntryDeletion(e.id));
+      }
       // Restore the newest-first invariant the journal grouping, sparkline
       // slice and undo-splice logic all rely on — a merged backup's entries
       // land at the top regardless of age otherwise.
       state.entries.sort((a, b) =>
         (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
-      persist();
+      // Only claim success + close if the write reached disk; on a quota
+      // failure persist() has already surfaced the blocking quota-error modal.
+      if (!persist()) return;
       setState({ modal: null });
       toast(importedCount === 0
         ? "Nothing new to import — every entry was already in the journal"
@@ -6473,7 +6559,12 @@ document.querySelectorAll(".nav-item").forEach(b => {
 // where the buttons actually render.)
 document.querySelectorAll('[data-action="open-quick"]').forEach(b =>
   b.addEventListener("click", () => {
-    state.quickDraft = { thought: "", intensity: 60, ventOnly: false };
+    // Resume an unsaved quick draft: closing the modal (Escape / backdrop)
+    // doesn't discard the text — a successful save nulls quickDraft, so a
+    // lingering one with content means the user backed out mid-thought.
+    if (!(state.quickDraft && (state.quickDraft.thought || "").trim())) {
+      state.quickDraft = { thought: "", intensity: 60, ventOnly: false };
+    }
     setState({ modal: "quick" });
   }));
 document.querySelectorAll('[data-action="open-settings"]').forEach(b =>
