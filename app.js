@@ -1644,6 +1644,14 @@ function applyTheme() {
     override.setAttribute("content", resolved === "light" ? "#f5efe6" : "#1a1715");
   }
 }
+// Print always renders as light-on-white: the print stylesheet only resets
+// html/body, so dark-theme tokens (muted kickers, near-invisible rules)
+// otherwise carried through to paper. Covers both the in-app Print / PDF
+// export and a plain Ctrl/Cmd+P.
+window.addEventListener("beforeprint", () => {
+  document.documentElement.setAttribute("data-theme", "light");
+});
+window.addEventListener("afterprint", () => { applyTheme(); });
 // Watch the OS preference so "auto" updates live without a reload.
 if (window.matchMedia) {
   try {
@@ -2037,6 +2045,7 @@ function renderLockScreen() {
       state.locked = false;
       state.lockError = "";
       render();
+      _openPendingImport();
     } else {
       // verifyPin() already recorded the failure + advanced the lockout.
       const wait = pinLockoutMsLeft();
@@ -3844,8 +3853,12 @@ function renderOutcomeView() {
 }
 
 function bindOutcome() {
-  const entry = state.entries.find(e => e.id === state.outcomeEntryId);
-  if (!entry) {
+  // Re-resolve the entry by id at event time rather than closing over the
+  // object bound at render: a P2P merge that carries a newer copy of this
+  // entry replaces the object in state.entries, and edits made on the old
+  // reference would then never reach persist().
+  const getEntry = () => state.entries.find(e => e.id === state.outcomeEntryId);
+  if (!getEntry()) {
     document.querySelectorAll('[data-action="back-to-journal"]').forEach(el =>
       el.addEventListener("click", () => { state.outcomeEntryId = null; setView("journal"); }));
     return;
@@ -3862,6 +3875,8 @@ function bindOutcome() {
   };
   document.querySelectorAll('[data-action="edit-mood-after-pivot"]').forEach(el => {
     el.addEventListener("input", () => {
+      const entry = getEntry();
+      if (!entry) return;
       const m = (entry.moods || []).find(x => x.id === el.dataset.id);
       if (!m) return;
       m.intensityAfterPivot = parseInt(el.value, 10);
@@ -3882,6 +3897,8 @@ function bindOutcome() {
   // vanished on any exit that wasn't one of those two buttons.
   const reflectionEl = document.getElementById("outcomeReflection");
   if (reflectionEl) reflectionEl.addEventListener("input", () => {
+    const entry = getEntry();
+    if (!entry) return;
     entry.pivotReflection = reflectionEl.value;
     touchEntry(entry);
     _schedulePersist();
@@ -3889,6 +3906,8 @@ function bindOutcome() {
 
   const save = document.querySelector('[data-action="save-outcome"]');
   if (save) save.addEventListener("click", () => {
+    const entry = getEntry();
+    if (!entry) { state.outcomeEntryId = null; setView("journal"); return; }
     const ref = document.getElementById("outcomeReflection");
     if (ref) entry.pivotReflection = ref.value;
     entry.outcomeRecorded = true;
@@ -3906,6 +3925,8 @@ function bindOutcome() {
     // Flush any pending slider debounce, then save reflection text if the
     // user typed anything — both keep accidental data loss off the table.
     clearTimeout(_outcomePersistTimer);
+    const entry = getEntry();
+    if (!entry) { state.outcomeEntryId = null; setView("journal"); return; }
     const ref = document.getElementById("outcomeReflection");
     if (ref && ref.value !== entry.pivotReflection) {
       entry.pivotReflection = ref.value;
@@ -4057,14 +4078,16 @@ function renderPatterns() {
   // in the moment, since multi-mood entries don't fit on a single Y-axis).
   // Skip entries with no moods — activity/worry/freeform entries that don't
   // carry a mood would otherwise plot at peak=0 and tank the line.
-  // Named moods only: every thought record carries an unnamed placeholder
-  // mood row (intensity 40) from emptyEntry(), which is invisible everywhere
-  // else in the app — plotting it drew a flat line at 40 for records whose
-  // author never tagged a mood.
+  // Skip the untouched placeholder row every thought record carries from
+  // emptyEntry() (no family, not estimated, slider left at the default 40):
+  // plotting it drew a flat line at 40 for records whose author never tagged
+  // a mood. A family-less mood the user actually rated — a finished quick
+  // capture stores its intensity that way, flagged estimated — still counts.
+  const isPlaceholderMood = m => !m.family && !m.estimated && m.intensity === 40;
   function peakIntensity(e) {
-    return (e.moods || []).reduce((a, m) => Math.max(a, m.family ? (m.intensity || 0) : 0), 0);
+    return (e.moods || []).reduce((a, m) => Math.max(a, isPlaceholderMood(m) ? 0 : (m.intensity || 0)), 0);
   }
-  const recent = patternVizEntries.filter(e => (e.moods || []).some(m => m.family && typeof m.intensity === "number")).slice(0, 20).reverse();
+  const recent = patternVizEntries.filter(e => (e.moods || []).some(m => typeof m.intensity === "number" && !isPlaceholderMood(m))).slice(0, 20).reverse();
   const sparkW = 280, sparkH = 50, pad = 4;
   const sparkPath = recent.length > 1
     ? recent.map((e, i) => {
@@ -5469,6 +5492,10 @@ function bindJournal() {
             // Restore each sample at its chronologically-correct slot
             // (newest-first by createdAt), same approach as single-entry undo.
             removed.forEach(({ entry }) => {
+              // Already back (re-saved from an open editor, restored by an
+              // import or a peer merge)? Splicing a second copy would give two
+              // cards one id — and deleting either would remove both.
+              if (state.entries.some(e => e.id === entry.id)) return;
               const t = new Date(entry.createdAt).getTime();
               let insertAt = state.entries.findIndex(
                 e => new Date(e.createdAt).getTime() < t
@@ -6212,6 +6239,10 @@ function bindCapture() {
 // feels confirming rather than abrupt.
 function closeModal() {
   if (!state.modal) return;
+  // Dismissing the Import dialog without importing must also forget a file
+  // the OS handed us at launch — otherwise a Settings → Import tap hours
+  // later would silently import that old file with no picker shown.
+  if (state.modal === "import") window._reframeLaunchedFile = null;
   // Any in-flight kind-switch request is implicitly cancelled when the
   // modal closes (via Escape, overlay click, or the X button). The
   // explicit Cancel button already clears this; doing it here too
@@ -6672,6 +6703,14 @@ function bindModal() {
       action: {
         label: "Undo",
         onClick: () => {
+          // The entry may already be back: an editor still open on it saved
+          // (the save path re-inserts a vanished entry), or an import / peer
+          // merge restored it while the toast was up. A second splice would
+          // leave two cards sharing one id, and deleting either removes both.
+          if (state.entries.some(e => e.id === removed.id)) {
+            toast("That entry is already back in the journal");
+            return;
+          }
           // Restore at the chronologically-correct slot rather than the
           // pre-delete index. Entries are newest-first by createdAt, so
           // find the first entry older than `removed` and splice before
@@ -6885,10 +6924,25 @@ document.querySelectorAll('[data-action="open-settings"]').forEach(b =>
   b.addEventListener("click", () => setState({ modal: "settings" })));
 
 document.addEventListener("keydown", e => {
+  // The lock screen owns the keyboard: no modal is rendered behind it, and
+  // closeModal() on a stray state.modal would re-render the lock form and
+  // wipe a half-typed PIN.
+  if (state.locked) return;
   if (e.key === "Escape") {
     if (state.modal) closeModal();
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    // A modal owns the shortcut while it's open. The capture view's Next /
+    // Save buttons are still in the DOM underneath, and firing them from
+    // inside the quick-capture (or a confirm) dialog advanced the step or
+    // saved the edit behind the user's back, then rebuilt the modal.
+    if (state.modal) {
+      if (state.modal === "quick") {
+        const saveQuick = document.querySelector('[data-action="save-quick"]');
+        if (saveQuick) { e.preventDefault(); saveQuick.click(); }
+      }
+      return;
+    }
     if (state.view === "capture") {
       // Structured flow: advance a step. Single-screen kinds (freeform /
       // activity / worry) never render a next-step button — fall through to
@@ -7030,11 +7084,32 @@ render();
 
 // If launched via the manifest's file_handler (?openfile=1), open the
 // Import modal once the first render is done so the user can pick the
-// JSON backup they want to restore.
-if (state.pendingOpenImport) {
+// JSON backup they want to restore. Behind a PIN lock this waits for the
+// unlock (see the lock form's success branch) — setting state.modal while
+// locked left a phantom modal behind the lock screen.
+function _openPendingImport() {
+  if (!state.pendingOpenImport || state.locked) return;
   state.pendingOpenImport = false;
   setState({ modal: "import" });
 }
+_openPendingImport();
+
+// A shortcut or file launch that reaches an ALREADY-OPEN window (manifest
+// launch_handler "focus-existing") arrives via js/pwa.js as this event, not
+// as a navigation — apply it the same way applyLaunchNav() does at boot.
+window.addEventListener("rephrame:launch", (e) => {
+  let params;
+  try { params = new URL(String(e.detail), location.href).searchParams; } catch (_) { return; }
+  const v = params.get("nav");
+  if (v && ["journal", "capture", "patterns", "reference"].includes(v) && !state.locked) {
+    if (state.modal) state.modal = null;
+    setView(v);
+  }
+  if (params.get("openfile") === "1") {
+    state.pendingOpenImport = true;
+    _openPendingImport();
+  }
+});
 
 // Hold the boot fade-in until web fonts (Fraunces + Manrope + JetBrains
 // Mono) have actually loaded. Otherwise the display=swap reflow happens

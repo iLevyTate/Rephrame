@@ -201,14 +201,28 @@
   // browsers deliver the file via launchQueue. Stash it so the import
   // flow can use it without re-prompting via a file picker. The
   // ?openfile=1 URL path in index.html handles surfacing the import modal.
+  //
+  // The manifest's launch_handler is "focus-existing": when the app is already
+  // open, a home-screen shortcut (./?nav=capture) or an OS file launch does NOT
+  // navigate the window — it only arrives here, as params.targetURL. app.js
+  // reads location.search once at boot, so without forwarding the URL those
+  // launches were silently dropped whenever the app was already running.
   if ('launchQueue' in window) {
     try {
-      window.launchQueue.setConsumer(async ({ files }) => {
-        if (!files || !files.length) return;
-        try {
-          const file = await files[0].getFile();
-          window._reframeLaunchedFile = file;
-        } catch (_) { /* permission denied or unreadable */ }
+      window.launchQueue.setConsumer(async (params) => {
+        const files = (params && params.files) || [];
+        if (files.length) {
+          try {
+            const file = await files[0].getFile();
+            window._reframeLaunchedFile = file;
+          } catch (_) { /* permission denied or unreadable */ }
+        }
+        const target = params && params.targetURL;
+        if (target) {
+          try {
+            window.dispatchEvent(new CustomEvent('rephrame:launch', { detail: String(target) }));
+          } catch (_) { /* CustomEvent unavailable */ }
+        }
       });
     } catch (_) { /* unsupported */ }
   }

@@ -533,6 +533,15 @@ async function syncInit() {
         return;
       }
       if (t === "peer-unavailable") {
+        // The broker's EXPIRE arrives ~5s after an undeliverable offer and is
+        // not tied to a DataConnection; PeerJS only gives us the target id in
+        // the message ("Could not connect to peer <id>"). A user who corrected
+        // a typo and re-dialed within those seconds has a NEW dial in _conn —
+        // an unmatched or unparseable id must not tear that one down.
+        const m = /Could not connect to peer (\S+)/.exec(String((err && err.message) || ""));
+        const deadId = m ? m[1] : null;
+        const isCurrentDial = !!(_conn && !_conn.open && (deadId ? _conn.peer === deadId : true));
+        if (!isCurrentDial) return;
         if (_connectTimeoutId) { clearTimeout(_connectTimeoutId); _connectTimeoutId = null; }
         // The dial never opened, so PeerJS will never emit "close" for it and
         // _wireConn's handlers never run. Drop it here, or _conn keeps pointing
@@ -540,7 +549,7 @@ async function syncInit() {
         // treat us as "still dialing" and reject the other device's inbound
         // dial (when its id sorts higher) once it comes online — leaving both
         // sides stuck until a manual Reconnect.
-        if (_conn && !_conn.open) _dropConn();
+        _dropConn();
         _setSyncStatus("error", "Code not found — device is offline or the code is mistyped");
         return;
       }
@@ -556,12 +565,19 @@ async function syncInit() {
       _setSyncStatus("error", _friendlySyncError(err));
     });
 
+    const thisPeer = _peer;
     _peer.on("disconnected", () => {
-      // destroy() (Disable / Regenerate) also emits "disconnected"; a destroyed
-      // peer can't reconnect and must not flip the status back to "waiting".
-      if (!_peer || _peer.destroyed) return;
-      _setSyncStatus("waiting");
-      try { _peer.reconnect(); } catch (e) { console.warn("[sync] reconnect", e); }
+      // destroy() also emits "disconnected" — and does so BEFORE it sets its
+      // own `destroyed` flag, so that flag can't be read synchronously here.
+      // Re-check on a microtask, once destroy() has finished: a peer we
+      // replaced (Disable / Regenerate) or one PeerJS tore down after a fatal
+      // error must neither flip the status back to "waiting" (overwriting the
+      // error just shown) nor be asked to reconnect.
+      queueMicrotask(() => {
+        if (_peer !== thisPeer || thisPeer.destroyed) return;
+        _setSyncStatus("waiting");
+        try { thisPeer.reconnect(); } catch (e) { console.warn("[sync] reconnect", e); }
+      });
     });
     return true;
   })();

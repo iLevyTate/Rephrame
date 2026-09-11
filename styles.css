@@ -73,6 +73,11 @@ html, body { margin: 0; padding: 0; }
 button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; padding: 0; }
 input, textarea, select { font: inherit; }
 :focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; border-radius: var(--r-2); }
+/* Draw the ring inside elements whose ancestor clips it: the card head
+   (.entry-card is overflow:hidden) and chips in horizontally scrolling
+   rows (overflow-x:auto forces overflow-y:auto, which clips the offset). */
+.entry-card-head:focus-visible { outline-offset: -3px; }
+.filter-chip:focus-visible, .view-chip:focus-visible, .capture-mode-chip:focus-visible { outline-offset: -2px; }
 ::selection { background: var(--copper-glow); color: var(--copper-deep); }
 
 html {
@@ -864,6 +869,16 @@ body.kb-open .bottom-nav {
   border-color: var(--rule-paper-2);
 }
 .empty-state .btn-ghost:hover { color: var(--copper-deep); border-color: var(--copper); background: var(--copper-glow); }
+/* .btn-ghost is toned for the ink background. On paper surfaces — the modal
+   (Settings → Sync: Copy / Regenerate / Disable / Reconnect) and the light-
+   theme incoming-sync bar — its ink-soft text and ink rule measured ~1.5:1. */
+.modal .btn-ghost,
+html[data-theme="light"] .sync-incoming-bar .btn-ghost {
+  color: var(--on-paper-mute);
+  border-color: var(--rule-paper-2);
+}
+.modal .btn-ghost:hover,
+html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copper-deep); border-color: var(--copper); background: var(--copper-glow); }
 
 .resume-banner {
   background: linear-gradient(135deg, var(--copper-soft) 0%, var(--paper-2) 100%);
@@ -1201,11 +1216,13 @@ body.kb-open .bottom-nav {
   background-repeat: no-repeat;
   background-size: 100% 100%;
 }
-.intensity-slider--emotion::-webkit-slider-thumb {
+/* Doubled class for specificity: the base .intensity-slider thumb rules
+   come later in the file and would otherwise win at equal specificity. */
+.intensity-slider.intensity-slider--emotion::-webkit-slider-thumb {
   width: 26px; height: 26px;
   border-width: 4px;
 }
-.intensity-slider--emotion::-moz-range-thumb {
+.intensity-slider.intensity-slider--emotion::-moz-range-thumb {
   width: 26px; height: 26px;
   border-width: 4px;
 }
@@ -1974,8 +1991,19 @@ body.kb-open .capture-footer { bottom: 0; }
   flex-direction: column;
   gap: 8px;
   align-items: center;
+  /* Shrink-to-fit against the viewport, not the 50vw left by left:50% —
+     a 400px phone otherwise capped every toast at ~196px and wrapped
+     long error text into a tall column. */
+  width: max-content;
+  max-width: calc(100vw - 32px);
 }
 .toast {
+  /* pointer-events is inherited: the stack's `none` (so it never blocks
+     taps on what's under it) must be re-enabled here, or the Undo and ×
+     buttons inside a toast are unclickable and the tap lands on whatever
+     is behind them. */
+  pointer-events: auto;
+  max-width: 100%;
   background: var(--paper);
   color: var(--on-paper);
   padding: 10px 16px;
@@ -2222,6 +2250,9 @@ html[data-theme="light"] .lock-help-panel strong { color: var(--on-paper); }
   margin-bottom: 4px;
 }
 .accurate-tile.active .accurate-tile-name { color: var(--copper-deep); }
+/* The tile reuses .distortion-tile-check, but the hide rule above is scoped
+   to .distortion-tile — without this the badge showed on the inactive tile. */
+.accurate-tile:not(.active) .distortion-tile-check { display: none; }
 .accurate-tile.active .distortion-tile-check {
   background: var(--copper);
   color: var(--paper);
@@ -2598,6 +2629,10 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--pap
 .nudge-banner-text strong { color: var(--on-ink); font-family: var(--display); font-size: 15px; font-weight: 600; }
 .nudge-banner-text .preview { color: var(--on-ink-mute); font-size: 12px; }
 .nudge-banner-actions { display: flex; gap: 6px; }
+/* .action-btn is toned for paper cards; on the ink banner "Capture" /
+   "Open the list" measured 2.5:1. Same treatment as the resume banner. */
+.nudge-banner .action-btn { color: var(--copper); font-weight: 600; }
+.nudge-banner .action-btn:hover { color: var(--copper-light); background: rgba(255,255,255,0.06); }
 .action-btn.ghost {
   background: transparent;
   color: var(--on-ink-mute);
@@ -2612,7 +2647,16 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
    actual print render. */
 @media print {
   html, body { background: white !important; color: black !important; }
-  body::before { display: none !important; }
+  body::before, body::after { display: none !important; }
+  /* Gradient-filled marks rely on a transparent text fill; with print
+     backgrounds off the glyph vanished entirely. */
+  .brand-mark, .empty-state-mark::before {
+    background: none !important;
+    -webkit-text-fill-color: #1a1715 !important;
+    color: #1a1715 !important;
+  }
+  .brand-sub, .date-group-label .kicker { color: #444 !important; }
+  .date-group-rule { background: #ccc !important; }
   .bottom-nav, .topbar-actions, .install-pill, .resume-banner,
   .nudge-banner, .coping-strip, .view-chips, .filter-chips,
   .journal-toolbar, .entry-card-actions, .entry-fav-btn,
@@ -3660,7 +3704,7 @@ button.entry-flag:focus-visible {
 .empty-safety {
   margin-top: 28px;
   font-size: 13px;
-  color: var(--on-ink-mute);
+  color: var(--on-paper-mute);
   line-height: 1.55;
   max-width: 480px;
   margin-left: auto;
@@ -3693,7 +3737,7 @@ button.entry-flag:focus-visible {
 .modal-body .belief-control { background: var(--paper-2); }
 .btn-modal-primary {
   background: var(--copper);
-  color: var(--on-paper);
+  color: var(--paper);
   border: none;
 }
 .btn-modal-primary:hover { background: var(--copper-light); }
@@ -3762,6 +3806,7 @@ button.entry-flag:focus-visible {
 
 .sync-off-actions { margin-top: 12px; }
 .sync-active { display: flex; flex-direction: column; gap: 16px; }
+.sync-action-row:empty { display: none; }
 
 /* The sync panel mounts inside the Settings modal, which is a paper card in
    BOTH themes (.modal uses --paper / --on-paper unconditionally). So these

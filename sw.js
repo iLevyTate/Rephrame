@@ -98,14 +98,25 @@ self.addEventListener('fetch', e => {
   // code) until the next reload. The pwa.js update banner still surfaces new
   // versions (updatefound → SKIP_WAITING → reload), so this doesn't pin the
   // app to the install-time version.
-  const isNavigation = e.request.mode === 'navigate' || e.request.destination === 'document' ||
-    url.pathname === '/' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('index.html');
-  if(isNavigation){
+  //
+  // Only the app's own document URLs count as a shell navigation: the scope
+  // root (with or without a query string such as ?nav=capture) and
+  // index.html. A navigation to any other same-origin file — someone opening
+  // /app.js or /sw.js in a tab to read it — must be served as that file. It
+  // used to be treated as a shell navigation, and the background refresh then
+  // stored the JS/CSS/Markdown body under the './index.html' key, so the next
+  // launch rendered that file as the document and the install stayed broken
+  // until the user cleared site data.
+  const isNavRequest = e.request.mode === 'navigate' || e.request.destination === 'document';
+  const isShellPath = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+  if(isNavRequest && isShellPath){
     e.respondWith((async () => {
       const c = await caches.open(CACHE_NAME);
       const cached = (await c.match('./index.html')) || (await c.match('./')) || (await c.match(e.request));
       const net = fetch(e.request).then(res => {
-        if(res && res.status === 200 && res.type === 'basic'){
+        // Belt and braces: only an HTML response may become the shell.
+        const ct = (res && res.headers && res.headers.get('content-type')) || '';
+        if(res && res.status === 200 && res.type === 'basic' && /text\/html/i.test(ct)){
           c.put('./index.html', res.clone()).catch(() => {});
         }
         return res;

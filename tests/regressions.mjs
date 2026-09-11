@@ -25,7 +25,22 @@
 //  12. Coping-card / cross-link taps clear a search that would hide the target.
 //  13. Sync connection lifecycle: a dead dial is dropped on peer-unavailable so
 //      the paired device's later inbound dial is accepted; replacing an open
-//      connection doesn't trigger its own auto-reconnect.
+//      connection doesn't trigger its own auto-reconnect; a peer-unavailable
+//      for an OLD dial doesn't tear down a newer one; destroying the peer
+//      doesn't flip the status back to "waiting".
+//  14. Ctrl/Cmd+Enter inside the quick-capture modal saves the quick entry
+//      instead of advancing the capture step underneath.
+//  15. Delete → Undo doesn't splice a second copy when the entry is already
+//      back (re-saved from an open editor). Clicking the toast's Undo with a
+//      real pointer also proves toasts accept clicks (.toast-stack passes
+//      pointer events through; .toast must re-enable them).
+//  16. A shortcut launch delivered to an already-open window (launchQueue
+//      targetURL) switches the view; ?openfile=1 behind a PIN lock waits for
+//      the unlock instead of leaving a phantom modal.
+//  17. A finished quick capture (family-less, estimated mood) still plots on
+//      the sparkline; only the untouched placeholder row is skipped.
+//  18. Service worker: navigating to a non-HTML file (/app.js) never replaces
+//      the cached app shell.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -441,8 +456,167 @@ try {
     assert.equal(r.newDial, true, '_conn now points at the new dial');
     assert.equal(r.noReconnectTimer, true, 'Closing the old link did not schedule an auto-reconnect');
     assert.equal(r.statusConnecting, true, 'Status reads connecting for the new dial');
+
+    const r2 = await page.evaluate(async () => {
+      const h = window.__syncTestHooks;
+      const peer = window.__fakePeers[0];
+      const out = {};
+      // A late EXPIRE for the earlier RFR-ZZZ-ZZZ dial must not kill the live
+      // RFR-YYY-YYY dial.
+      const live = h.connState().conn;
+      peer.emit('error', { type: 'peer-unavailable', message: 'Could not connect to peer rephrame-zzzzzz' });
+      out.liveKept = h.connState().conn === live && !live.closed;
+      // ...but one naming the current dial does drop it.
+      peer.emit('error', { type: 'peer-unavailable', message: 'Could not connect to peer rephrame-yyyyyy' });
+      out.currentDropped = h.connState().conn === null && live.closed;
+      // Peer torn down by PeerJS itself (fatal error → destroy) emits
+      // "disconnected" before its destroyed flag flips; the error shown must
+      // survive and no reconnect may be attempted.
+      peer.emit('error', { type: 'browser-incompatible' });
+      peer.reconnectCalls = 0;
+      const origReconnect = peer.reconnect;
+      peer.reconnect = function () { this.reconnectCalls++; return origReconnect.call(this); };
+      peer.emit('disconnected'); peer.destroyed = true;   // real order: emit, then flag
+      await new Promise(r => setTimeout(r, 0));
+      out.statusStillError = h.connState().status === 'error';
+      out.noReconnect = peer.reconnectCalls === 0;
+      return out;
+    });
+    assert.equal(r2.liveKept, true, 'peer-unavailable for an older dial leaves the current dial alone');
+    assert.equal(r2.currentDropped, true, 'peer-unavailable naming the current dial drops it');
+    assert.equal(r2.statusStillError, true, 'A destroyed peer does not flip the status back to waiting');
+    assert.equal(r2.noReconnect, true, 'A destroyed peer is not asked to reconnect');
     noErrors(errors, 'sync lifecycle');
     log('PASS — sync drops dead dials and replaces links without self-reconnect.');
+    await ctx.close();
+  }
+
+  // ── 14. Ctrl/Cmd+Enter inside the quick modal ─────────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.locator('[data-nav="capture"]').click();
+    await page.locator('textarea[data-field="trigger"]').fill('a trigger');
+    await page.locator('[data-action="open-quick"]').click();
+    await page.waitForSelector('#quickThought', { timeout: 5000 });
+    await page.locator('#quickThought').fill('quick thought');
+    await page.locator('#quickThought').press('Control+Enter');
+    await page.waitForTimeout(150);
+    const r = await page.evaluate(() => ({
+      step: state.captureStep,
+      modal: state.modal,
+      saved: state.entries.some(e => e.isQuick && (e.thoughts[0] || {}).text === 'quick thought'),
+    }));
+    assert.equal(r.step, 1, 'Capture step underneath did not advance');
+    assert.equal(r.modal, null, 'Quick modal closed on Ctrl+Enter');
+    assert.equal(r.saved, true, 'Ctrl+Enter saved the quick capture');
+    noErrors(errors, 'ctrl+enter');
+    log('PASS — Ctrl+Enter in the quick modal saves it, not the capture step behind it.');
+    await ctx.close();
+  }
+
+  // ── 15. Undo after the entry is already back ───────────────────────────
+  {
+    const { ctx, page, errors } = await openApp(() => {
+      localStorage.setItem('reframe-journal-v1', JSON.stringify([
+        { id: 'dup1', kind: 'freeform', createdAt: '2024-06-01T10:00:00.000Z', body: 'edit me' },
+      ]));
+    });
+    await page.locator('[data-nav="journal"]').click();
+    await page.locator('#entry-dup1 .entry-card-head').click();
+    await page.locator('[data-action="edit"][data-id="dup1"]').click();
+    await page.waitForSelector('textarea[data-field="body"]', { timeout: 5000 });
+    // Leave the editor open, go delete the entry from the journal (the card
+    // is still expanded from before, so Delete is already visible).
+    await page.locator('[data-nav="journal"]').click();
+    await page.locator('[data-action="delete"][data-id="dup1"]').click();
+    await page.locator('[data-action="confirm-delete"]').click();
+    await page.waitForSelector('.toast-action', { timeout: 5000 });
+    // Back to the still-open editor and save: the entry is re-inserted.
+    await page.locator('[data-nav="capture"]').click();
+    await page.locator('[data-action="save-entry"]').click();
+    await page.waitForTimeout(100);
+    // Now Undo the delete.
+    await page.locator('.toast-action').first().click();
+    await page.waitForTimeout(150);
+    const copies = await page.evaluate(() => state.entries.filter(e => e.id === 'dup1').length);
+    assert.equal(copies, 1, 'Undo does not create a second entry with the same id');
+    noErrors(errors, 'undo duplicate');
+    log('PASS — undo skips an entry that is already back.');
+    await ctx.close();
+  }
+
+  // ── 16. In-app launch event + openfile behind the lock ─────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('rephrame:launch', { detail: location.origin + '/?nav=patterns' })));
+    assert.equal(await page.evaluate(() => state.view), 'patterns', 'A launch delivered to an open window switches the view');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('rephrame:launch', { detail: location.origin + '/?openfile=1' })));
+    assert.equal(await page.evaluate(() => state.modal), 'import', 'A file launch delivered to an open window opens Import');
+    await ctx.close();
+
+    const ctx2 = await browser.newContext({ viewport: { width: 420, height: 900 } });
+    await ctx2.addInitScript(ONBOARDED);
+    const page2 = await ctx2.newPage();
+    await page2.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page2.waitForSelector('.app', { timeout: 10000 });
+    await page2.evaluate(async () => { await setStoredPin('2468'); sessionStorage.removeItem('reframe-unlocked'); });
+    await page2.goto(URL + '?openfile=1', { waitUntil: 'domcontentloaded' });
+    await page2.waitForSelector('#lockPinInput', { timeout: 10000 });
+    assert.equal(await page2.evaluate(() => state.modal), null, 'No phantom Import modal behind the lock screen');
+    await page2.locator('#lockPinInput').fill('246');
+    await page2.locator('#lockPinInput').press('Escape');
+    assert.equal(await page2.locator('#lockPinInput').inputValue(), '246', 'Escape on the lock screen does not wipe the typed PIN');
+    await page2.locator('#lockPinInput').fill('2468');
+    await page2.locator('#lockForm button[type="submit"]').click();
+    await page2.waitForSelector('[data-action="import-merge"]', { timeout: 10000 });
+    assert.equal(await page2.evaluate(() => state.modal), 'import', 'Import modal opens once unlocked');
+    log('PASS — launch events reach an open window; openfile waits for unlock.');
+    await ctx2.close();
+    noErrors(errors, 'launch');
+  }
+
+  // ── 17. Finished quick capture still plots ─────────────────────────────
+  {
+    const { ctx, page, errors } = await openApp(() => {
+      const rec = (id, hoursAgo, moods) => ({
+        id, kind: 'thought-record', createdAt: new Date(Date.now() - hoursAgo * 3600e3).toISOString(),
+        trigger: 'x', thoughts: [{ id: id + 't', text: 'thought', isHot: true }], moods,
+      });
+      localStorage.setItem('reframe-journal-v1', JSON.stringify([
+        rec('q1', 1, [{ id: 'm1', family: '', variant: '', intensity: 85, estimated: true }]),   // finished quick capture
+        rec('q2', 2, [{ id: 'm2', family: 'Anxiety', variant: '', intensity: 60 }]),
+        rec('q3', 3, [{ id: 'm3', family: '', variant: '', intensity: 40 }]),                    // untouched placeholder
+      ]));
+    });
+    await page.locator('[data-nav="patterns"]').click();
+    await page.waitForSelector('.patterns-grid', { timeout: 5000 });
+    assert.equal(await page.locator('.spark-wrap circle').count(), 2, 'Quick-capture intensity plots; the placeholder row does not');
+    noErrors(errors, 'sparkline quick');
+    log('PASS — finished quick captures still plot on the sparkline.');
+    await ctx.close();
+  }
+
+  // ── 18. Service worker never caches a non-HTML navigation as the shell ──
+  {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+    await ctx.addInitScript(ONBOARDED);
+    const page = await ctx.newPage();
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+    await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller, null, { timeout: 15000 });
+    // Open the script itself as a document, as someone reading the source would.
+    await page.goto(URL.replace(/index\.html$/, 'app.js'), { waitUntil: 'load' });
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(async () => {
+      const keys = (await window.caches.keys()).filter(k => /^reframe-v\d+$/.test(k));
+      const c = await window.caches.open(keys[0]);
+      const res = await c.match('./index.html');
+      const body = res ? await res.text() : '';
+      return { served: document.body.textContent.slice(0, 40), shellOk: /^\s*<!DOCTYPE html>/i.test(body) };
+    });
+    assert.ok(!/<!DOCTYPE/i.test(r.served), 'Navigating to app.js serves the script, not the cached shell');
+    assert.equal(r.shellOk, true, 'Cached index.html is still HTML after navigating to a non-HTML file');
+    log('PASS — service worker keeps the app shell intact.');
     await ctx.close();
   }
 
