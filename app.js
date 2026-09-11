@@ -735,6 +735,9 @@ const REMINDER_MS = {
 // relevant to a kind stay at their default ("" / 0 / null / false) so
 // renderers can simply check kind first and pick the relevant fields.
 const ENTRY_KINDS = ["thought-record", "freeform", "activity", "worry"];
+// Terminal states a parked worry can reach. Anything else normalizes to null
+// ("still parked").
+const WORRY_RESOLUTIONS = ["dissolved", "escalated", "postponed"];
 
 // PR 6: clinical-terminology rename map. Saved entries written before the
 // rename keep their old labels in localStorage; remap on read so dropdowns
@@ -835,7 +838,10 @@ function normalizeEntry(e) {
     urgency: typeof e.urgency === "number" ? e.urgency : null,
     parkedAt: e.parkedAt || "",
     scheduledFor: e.scheduledFor || "",
-    resolution: e.resolution || null,
+    // Whitelisted: the value is interpolated into a class attribute by the
+    // worry card, so an arbitrary string from an imported backup or a synced
+    // peer must not reach the markup.
+    resolution: WORRY_RESOLUTIONS.includes(e.resolution) ? e.resolution : null,
     resolvedAt: e.resolvedAt || "",
     linkedEntryId: e.linkedEntryId || "",
 
@@ -1021,20 +1027,38 @@ function draftedNewThoughtMatchesBuiltInTemplate(d) {
   return applyTemplate(r.template, d).trim() === String(d.newThought).trim();
 }
 
-function loadEntries() {
+// Where an unparseable journal blob is stashed before loadEntries() gives up
+// on it. Returning [] alone isn't safe: the very next persist() (a favorite
+// tap, a quick capture) would write over the still-recoverable raw string.
+const STORAGE_CORRUPT_KEY = STORAGE_KEY + "-unreadable";
+function _stashUnreadableJournal(rawText) {
+  if (!rawText) return;
+  try { localStorage.setItem(STORAGE_CORRUPT_KEY, rawText); } catch (_) { /* best-effort */ }
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    toast("Your saved journal couldn't be read, so it's starting empty. The unreadable copy was " +
+          "kept under \"" + STORAGE_CORRUPT_KEY + "\" in this browser's site data for recovery.",
+          { variant: "error", persist: true });
+  } catch (_) { /* toast stack not mounted yet */ }
+}
+function loadEntries() {
+  let rawText = null;
+  try {
+    rawText = localStorage.getItem(STORAGE_KEY);
+    const raw = JSON.parse(rawText || "[]");
     // Guard each element: a single null / non-object in stored data (a hand-
     // edit, a devtools mishap, an `undefined` serialized to `null`) would make
     // normalizeEntry throw on `e.id` and take the whole array down to [] — and
     // the next persist() would then overwrite the still-recoverable raw data.
     // Mirror processImportFile's per-element filter so one bad record is
     // dropped, not the entire journal.
-    return Array.isArray(raw)
-      ? raw.filter(x => x && typeof x === "object").map(normalizeEntry)
-      : [];
+    if (Array.isArray(raw)) return raw.filter(x => x && typeof x === "object").map(normalizeEntry);
+    _stashUnreadableJournal(rawText);
+    return [];
   }
-  catch { return []; }
+  catch {
+    _stashUnreadableJournal(rawText);
+    return [];
+  }
 }
 function saveEntries(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
 function loadDraft() {
@@ -1080,6 +1104,13 @@ function flushDraft() {
   if (_pendingDraft) { _saveDraftNow(_pendingDraft); _pendingDraft = null; }
 }
 window.addEventListener("beforeunload", flushDraft);
+// Mobile browsers often skip beforeunload when a tab is backgrounded and
+// then discarded; pagehide / visibilitychange→hidden are what actually fire
+// there, and the last ≤300 ms of typing lives only in the debounce timer.
+window.addEventListener("pagehide", flushDraft);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushDraft();
+});
 function clearDraft() {
   // Drop any pending debounced write so it can't resurrect cleared data.
   if (_saveDraftTimer !== null) { clearTimeout(_saveDraftTimer); _saveDraftTimer = null; }
@@ -1434,7 +1465,10 @@ function download(content, filename, mime) {
   const a = document.createElement("a");
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Revoke on a later tick, not synchronously: the click only *queues* the
+  // download, and Safari (and older Firefox) can abort it if the blob URL is
+  // gone before the fetch starts — the user gets a 0-byte or missing backup.
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 function toast(message, opts) {
@@ -1777,8 +1811,15 @@ window.addEventListener("storage", (e) => {
     if (hasDraftContent(state.draft)) {
       toast("Draft edited in another tab — refresh to see the latest.", { ms: 6000 });
     } else {
-      state.draft = loadDraft() || emptyEntry();
-      render();
+      const incoming = loadDraft();
+      if (incoming) state.draft = incoming;
+      // The other tab cleared its draft. If this tab is sitting on a blank
+      // capture form (say, "Park a worry" picked but nothing typed), keep
+      // that form: swapping in emptyEntry() would silently flip it to a
+      // thought record under the user.
+      else if (state.view !== "capture") state.draft = emptyEntry();
+      else return;
+      if (!typing) render();
     }
   }
 });
@@ -1852,6 +1893,13 @@ function render() {
   document.body.classList.remove("is-locked");
   const existingLock = document.getElementById("lockScreen");
   if (existingLock) existingLock.remove();
+
+  // Capture what opened the modal while it's still in the DOM — the view
+  // rebuild below would otherwise destroy an in-view opener (an entry's
+  // Delete button, "Log result", the empty-state Import button) before
+  // renderModal() gets a chance to remember it, and closing the modal would
+  // drop focus to <body>.
+  if (state.modal) _rememberModalOpener();
 
   document.querySelectorAll(".nav-item").forEach(b => {
     const active = b.dataset.nav === state.view;
@@ -1962,8 +2010,13 @@ function renderLockScreen() {
     // doesn't require re-selecting first.
     try { const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
   }, 30);
+  let _verifying = false;
   if (form) form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    // PBKDF2 at 100k iterations takes a noticeable beat on a phone; a second
+    // Enter/tap before it resolves would run verifyPin() again and count two
+    // failures for one wrong PIN, reaching the lockout early.
+    if (_verifying) return;
     const pin = (input.value || "").trim();
     if (!pin) { state.lockError = "Enter your PIN to continue."; render(); return; }
     // Brute-force throttle. After 5 wrong tries the form refuses to
@@ -1976,7 +2029,9 @@ function renderLockScreen() {
       render();
       return;
     }
-    const ok = await verifyPin(pin);
+    _verifying = true;
+    let ok;
+    try { ok = await verifyPin(pin); } finally { _verifying = false; }
     if (ok) {
       markUnlocked();
       state.locked = false;
@@ -2021,6 +2076,39 @@ function applyViewFilter(entries, key) {
   if (key === "activities") return entries.filter(e => e.kind === "activity");
   if (key === "worries")    return entries.filter(e => e.kind === "worry");
   return entries;
+}
+
+// Free-text search predicate shared by the journal list and the "reveal this
+// entry" cross-links, so both agree on what a query matches. `q` is already
+// lower-cased and trimmed.
+function entryMatchesSearch(e, q) {
+  const thoughtText = (e.thoughts || []).map(t => t.text).join(" ");
+  const moodText    = (e.moods    || []).map(m => `${m.family || ""} ${m.variant || ""}`).join(" ");
+  const blob = [
+    e.trigger, thoughtText, moodText, e.newThought, e.pivot,
+    e.pivotReflection, e.distortionNote, e.evidenceFor, e.evidenceAgainst,
+    e.socraticQuestion, e.bodyCheck,
+    e.body, e.worryText, e.activityNotes,
+    (e.distortions || []).join(" ")
+  ].join(" ").toLowerCase();
+  return blob.includes(q);
+}
+
+// Make sure a specific entry will actually be in the rendered journal list:
+// clear whichever of the scope chip, distortion chip, or search box would
+// hide it. Used by the coping-card and worry↔record cross-links, which
+// scroll to the entry — scrolling to a card that isn't rendered lands the
+// user on an empty state with no idea what happened.
+function ensureEntryVisible(entry) {
+  if (!entry) return;
+  if (state.viewFilter !== "all" && !applyViewFilter([entry], state.viewFilter).length) {
+    state.viewFilter = "all";
+  }
+  if (state.filter && !(entry.distortions || []).includes(state.filter)) {
+    state.filter = "";
+  }
+  const q = (state.search || "").toLowerCase().trim();
+  if (q && !entryMatchesSearch(entry, q)) state.search = "";
 }
 
 // Coping cards: horizontal carousel of favorited entries surfaced at the
@@ -2148,20 +2236,7 @@ function renderJournal() {
   const scoped = applyViewFilter(entries, state.viewFilter);
   let filtered = scoped;
   if (state.filter) filtered = filtered.filter(e => (e.distortions || []).includes(state.filter));
-  if (q) {
-    filtered = filtered.filter(e => {
-      const thoughtText = (e.thoughts || []).map(t => t.text).join(" ");
-      const moodText    = (e.moods    || []).map(m => `${m.family || ""} ${m.variant || ""}`).join(" ");
-      const blob = [
-        e.trigger, thoughtText, moodText, e.newThought, e.pivot,
-        e.pivotReflection, e.distortionNote, e.evidenceFor, e.evidenceAgainst,
-        e.socraticQuestion, e.bodyCheck,
-        e.body, e.worryText, e.activityNotes,
-        (e.distortions || []).join(" ")
-      ].join(" ").toLowerCase();
-      return blob.includes(q);
-    });
-  }
+  if (q) filtered = filtered.filter(e => entryMatchesSearch(e, q));
 
   const usedDistortions = Array.from(new Set(scoped.flatMap(e => e.distortions || []))).sort();
   const favorites = entries.filter(e => e.isFavorite);
@@ -2518,7 +2593,10 @@ function renderWorryCard(entry, index) {
                     : r === "escalated" ? "Worked through"
                     : r === "postponed" ? "Postponed"
                     : "Parked";
-  const statusClass = r ? `resolved resolved--${r}` : "parked";
+  // Emits flag-worry--parked / flag-worry--resolved--<r>, which is what
+  // styles.css defines. (The old "resolved resolved--<r>" form produced
+  // classes no rule matched, so every resolved pill rendered unstyled.)
+  const statusClass = r ? `resolved--${r}` : "parked";
   const ago = entry.parkedAt ? humanDuration(Date.now() - new Date(entry.parkedAt).getTime()) : "";
   return `
     <article class="entry-card entry-card--worry ${expanded ? "expanded" : ""}" id="entry-${entry.id}">
@@ -2528,7 +2606,7 @@ function renderWorryCard(entry, index) {
           <span class="entry-meta-dot">·</span>
           <span class="entry-meta-time">${esc(fmtTime(entry.parkedAt || entry.createdAt))}${ago ? ` · ${esc(ago)} ago` : ""}</span>
           <span class="entry-meta-flags">
-            <span class="entry-flag flag-worry flag-worry--${statusClass}">${esc(statusLabel)}</span>
+            <span class="entry-flag flag-worry flag-worry--${esc(statusClass)}">${esc(statusLabel)}</span>
           </span>
         </div>
         <h3 class="entry-card-trigger display">${esc(entry.worryText) || "(parked worry)"}</h3>
@@ -3979,10 +4057,14 @@ function renderPatterns() {
   // in the moment, since multi-mood entries don't fit on a single Y-axis).
   // Skip entries with no moods — activity/worry/freeform entries that don't
   // carry a mood would otherwise plot at peak=0 and tank the line.
+  // Named moods only: every thought record carries an unnamed placeholder
+  // mood row (intensity 40) from emptyEntry(), which is invisible everywhere
+  // else in the app — plotting it drew a flat line at 40 for records whose
+  // author never tagged a mood.
   function peakIntensity(e) {
-    return (e.moods || []).reduce((a, m) => Math.max(a, m.intensity || 0), 0);
+    return (e.moods || []).reduce((a, m) => Math.max(a, m.family ? (m.intensity || 0) : 0), 0);
   }
-  const recent = patternVizEntries.filter(e => (e.moods || []).some(m => typeof m.intensity === "number")).slice(0, 20).reverse();
+  const recent = patternVizEntries.filter(e => (e.moods || []).some(m => m.family && typeof m.intensity === "number")).slice(0, 20).reverse();
   const sparkW = 280, sparkH = 50, pad = 4;
   const sparkPath = recent.length > 1
     ? recent.map((e, i) => {
@@ -4588,7 +4670,46 @@ const _FOCUSABLE_SEL = [
 // it on close. Without this, screen-reader / keyboard users land at the
 // top of the document body after every modal dismissal.
 let _modalOpenerEl = null;
+// render() rebuilds #view via innerHTML before renderModal() runs, so an
+// opener that lived inside the view (an entry's Delete button, the empty-
+// state Import button, "Log result"…) is a detached node by the time focus
+// is returned. Remember a selector too, so the freshly rendered equivalent
+// can be found.
+let _modalOpenerSel = null;
+// Set when the opener is captured; consumed by _trapModalFocus to move focus
+// into the dialog exactly once per open (not on every re-render of it).
+let _modalNeedsInitialFocus = false;
 let _modalKeyHandler = null;
+
+// Must run BEFORE render() rebuilds #view: by the time renderModal() executes,
+// an opener that lived inside the view has already been replaced by innerHTML
+// and document.activeElement has fallen back to <body>.
+function _rememberModalOpener() {
+  if (_modalOpenerEl) return;
+  _modalOpenerEl = document.activeElement || document.body;
+  _modalOpenerSel = _openerSelector(_modalOpenerEl);
+  _modalNeedsInitialFocus = true;
+}
+
+function _openerSelector(el) {
+  if (!el || el === document.body || !el.dataset) return null;
+  const cssEsc = (v) => (window.CSS && window.CSS.escape) ? window.CSS.escape(v) : String(v).replace(/["\\]/g, "\\$&");
+  if (el.id) return "#" + cssEsc(el.id);
+  const a = el.dataset.action;
+  if (!a) return null;
+  let sel = '[data-action="' + cssEsc(a) + '"]';
+  for (const k of ["id", "value", "kind", "step", "nav"]) {
+    if (el.dataset[k] != null) sel += '[data-' + k + '="' + cssEsc(el.dataset[k]) + '"]';
+  }
+  return sel;
+}
+
+function _untrapModalKeys() {
+  if (_modalKeyHandler) {
+    document.removeEventListener('keydown', _modalKeyHandler, true);
+    _modalKeyHandler = null;
+  }
+}
 
 function _focusableIn(root) {
   return Array.from(root.querySelectorAll(_FOCUSABLE_SEL))
@@ -4596,12 +4717,10 @@ function _focusableIn(root) {
 }
 
 function _trapModalFocus(modalEl) {
-  if (_modalKeyHandler) {
-    document.removeEventListener('keydown', _modalKeyHandler, true);
-    _modalKeyHandler = null;
-  }
-  const isFreshOpen = !_modalOpenerEl;
-  if (isFreshOpen) _modalOpenerEl = document.activeElement;
+  _untrapModalKeys();
+  _rememberModalOpener();
+  const isFreshOpen = _modalNeedsInitialFocus;
+  _modalNeedsInitialFocus = false;
   // Defer initial focus by one frame so the modal is laid out and any
   // animation start frame has rendered. Only set initial focus on a
   // fresh open — re-renders of an already-open modal (state changes
@@ -4631,14 +4750,18 @@ function _trapModalFocus(modalEl) {
 }
 
 function _releaseModalFocus() {
-  if (_modalKeyHandler) {
-    document.removeEventListener('keydown', _modalKeyHandler, true);
-    _modalKeyHandler = null;
-  }
+  _untrapModalKeys();
   const opener = _modalOpenerEl;
+  const sel = _modalOpenerSel;
   _modalOpenerEl = null;
-  if (opener && typeof opener.focus === 'function') {
-    try { opener.focus(); } catch(_) {}
+  _modalOpenerSel = null;
+  _modalNeedsInitialFocus = false;
+  // Prefer the original node if it's still in the document; otherwise the
+  // view has been re-rendered under the modal — find its replacement.
+  let target = (opener && opener.isConnected) ? opener : null;
+  if (!target && sel) { try { target = document.querySelector(sel); } catch(_) {} }
+  if (target && typeof target.focus === 'function') {
+    try { target.focus({ preventScroll: true }); } catch(_) { try { target.focus(); } catch(__) {} }
   }
 }
 
@@ -4942,6 +5065,11 @@ function renderSafetyModal() {
 // EVENTS
 // ═══════════════════════════════════════════════════════════════════
 
+// Pre-edit text of an inline pivot reflection, keyed by entry id — see the
+// edit-reflection binding below. Entries only exist while an edit is in
+// flight (set on first keystroke, cleared on blur).
+const _reflectionBaseline = new Map();
+
 function bindJournal() {
   document.querySelectorAll('[data-action="toggle-expand"]').forEach(el => {
     const toggle = () => {
@@ -5038,15 +5166,24 @@ function bindJournal() {
     // discarding it — Chrome doesn't fire `blur` when innerHTML removes the
     // focused node, so blur-only commit would lose the paragraph. The blur
     // handler still owns persistence + the outcomeRecorded transition.
+    //
+    // After such a re-render the fresh binding's `committed` would be the
+    // half-typed text, so blur would read "unchanged" and never record the
+    // outcome. Remember the pre-edit baseline on the FIRST keystroke, keyed
+    // by entry id, so it survives the rebind.
     el.addEventListener("input", () => {
       const entry = state.entries.find(x => x.id === el.dataset.id);
-      if (entry) entry.pivotReflection = el.value;
+      if (!entry) return;
+      if (!_reflectionBaseline.has(entry.id)) _reflectionBaseline.set(entry.id, committed);
+      entry.pivotReflection = el.value;
     });
     el.addEventListener("blur", () => {
       const entry = state.entries.find(x => x.id === el.dataset.id);
       if (!entry) return;
       const v = el.value;
-      const changed = committed !== v;
+      const base = _reflectionBaseline.has(entry.id) ? _reflectionBaseline.get(entry.id) : committed;
+      _reflectionBaseline.delete(entry.id);
+      const changed = base !== v;
       const hasText = !!v.trim();
       const wasRecorded = entry.outcomeRecorded;
       // No edit → no state change. (Step 8 can legitimately record an outcome
@@ -5094,17 +5231,12 @@ function bindJournal() {
       const target = state.entries.find(x => x.id === id);
       if (!target) return;
       state.expandedIds.add(id);
-      // If the linked entry is filtered out by the active view-chip
-      // (e.g., user is on the "Worries" chip and the linked record is a
-      // thought-record), reset the view so the target is reachable.
-      const filterMap = {
-        "thought-record": ["all", "favorites", "unfinished", "week", "pivoted", "pending"],
-        "freeform":       ["all", "freeform", "week"],
-        "activity":       ["all", "activities", "week"],
-        "worry":          ["all", "worries", "week"],
-      };
-      const ok = (filterMap[target.kind] || []).includes(state.viewFilter);
-      if (!ok) state.viewFilter = "all";
+      // The linked entry may be hidden by the active scope chip (e.g. user is
+      // on "Worries" and the target is a thought record — or on "Coping" and
+      // the target isn't pinned), by the distortion chip, or by a search.
+      // Evaluate the real filters against the target instead of guessing
+      // from its kind, and clear whichever would hide it.
+      ensureEntryVisible(target);
       render();
       // Defer the scroll until after the new DOM lands.
       requestAnimationFrame(() => {
@@ -5147,14 +5279,9 @@ function bindJournal() {
     const open = () => {
       const id = el.dataset.id;
       state.expandedIds.add(id);
-      // If the entry is filtered out by the current viewFilter, switch back to
-      // "all" so the user actually sees what they tapped.
-      if (state.viewFilter !== "all") {
-        const entry = state.entries.find(x => x.id === id);
-        if (entry && !applyViewFilter([entry], state.viewFilter).length) {
-          state.viewFilter = "all";
-        }
-      }
+      // If the entry is filtered out by the current scope / distortion chip /
+      // search, clear those so the user actually sees what they tapped.
+      ensureEntryVisible(state.entries.find(x => x.id === id));
       render();
       // Defer scroll until after the re-render so getBoundingClientRect lands
       // on the freshly-rendered card.
@@ -5493,7 +5620,13 @@ function applyCaptureModeSwitch(kind) {
 // content, the action runs immediately; otherwise we stash it and ask first
 // via the confirm-new-draft modal (mirrors the switch-kind confirmation).
 function startFreshDraft(action) {
-  if (state.editingId || !hasDraftContent(state.draft)) { action(); return; }
+  // While editing, state.draft is the edit copy (never autosaved) and an
+  // abandoned edit is meant to evaporate silently — but the user's stashed
+  // unfinished NEW entry still lives in DRAFT_KEY, and every action passed
+  // here goes on to clearDraft() / saveDraft(empty) over it. Check the stash
+  // in that case so a half-written entry can't be wiped without the prompt.
+  const pending = state.editingId ? loadDraft() : state.draft;
+  if (!hasDraftContent(pending)) { action(); return; }
   state.pendingDraftAction = action;
   setState({ modal: "confirm-new-draft" });
 }
@@ -6025,19 +6158,25 @@ function bindCapture() {
     // later session would leave the worry stuck "Parked" while the new record
     // still shows a "From a parked worry" link to it. If the worry was
     // deleted in the meantime, save still succeeds but we flag the broken link.
-    const escalateWorryId = state.pendingEscalateFromWorryId ||
-      (!state.editingId ? state.draft.linkedEntryId : null);
+    //
+    // Trust only the draft that is actually being saved: it carries the
+    // back-link from the moment the escalation started. The transient
+    // pendingEscalateFromWorryId flag survives "Journal → Edit some other
+    // entry → Save" (edit/finish-quick/goto-capture never clear it), and
+    // honoring it there stamped the worry as "worked through" and linked it
+    // to whatever unrelated entry happened to be saved next.
+    const escalateWorryId = (!state.editingId && state.draft.linkedEntryId) || null;
     if (escalateWorryId) {
       const w = state.entries.find(x => x.id === escalateWorryId && x.kind === "worry");
       if (w && !w.resolution) {
         w.resolution = "escalated";
         w.resolvedAt = now;
         w.linkedEntryId = savedId;
-      } else if (!w && state.pendingEscalateFromWorryId) {
+      } else if (!w) {
         toast("Original worry was deleted — thought record saved separately.");
       }
-      state.pendingEscalateFromWorryId = null;
     }
+    state.pendingEscalateFromWorryId = null;
     persist();
     // Saving an EDIT must not clear the stashed new-entry draft (edits are
     // never autosaved to DRAFT_KEY); reload it so its resume banner returns.
@@ -6078,7 +6217,11 @@ function closeModal() {
   // explicit Cancel button already clears this; doing it here too
   // keeps the state clean for every close path.
   state.pendingModeSwitch = null;
-  _releaseModalFocus();
+  // Drop the Tab trap now (the overlay lingers 200ms for its exit animation)
+  // but leave the opener bookkeeping for renderModal(): it returns focus
+  // AFTER render() has rebuilt #view, so an opener inside the view is
+  // re-resolved instead of being focused and then destroyed.
+  _untrapModalKeys();
   const overlay = document.querySelector(".modal-overlay");
   if (!overlay || _prefersReducedMotion()) {
     setState({ modal: null });
@@ -6239,13 +6382,16 @@ function bindModal() {
       state.entries.forEach(e => {
         if (e.kind === "worry" && !e.resolution) {
           e.scheduledFor = computeNextWorryWindow();
+          touchEntry(e);
           rescheduled++;
         }
       });
-      if (rescheduled > 0) {
-        persist();
-        render();
-      }
+      // Persist only — no render(). Chromium fires `change` on a time input
+      // every time a segment edit yields a valid value (typing "1","7" into
+      // the hours is already "17:00"), and a full render rebuilds #modal-root,
+      // destroying the focused input mid-edit. Nothing in Settings displays
+      // the rescheduled values; the journal picks them up on its next render.
+      if (rescheduled > 0) persist();
     });
   });
 
@@ -6255,12 +6401,19 @@ function bindModal() {
   const printBtn = document.querySelector('[data-action="export-print"]');
   if (printBtn) printBtn.addEventListener("click", () => {
     state.printMode = true;
+    // Settings (and so Export) opens from the topbar on every view. The
+    // option promises "every entry expanded", so print the journal itself,
+    // not whichever of Patterns / Reference / Capture happened to be open,
+    // and put the user back where they were afterwards.
+    const prevView = state.view;
+    state.view = "journal";
     setState({ modal: null });
     // Defer to the next frame so the re-render lands before the print dialog
     // captures the document.
     requestAnimationFrame(() => {
       const restore = () => {
         state.printMode = false;
+        state.view = prevView;
         window.removeEventListener("afterprint", restore);
         render();
       };

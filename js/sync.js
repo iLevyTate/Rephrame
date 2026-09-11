@@ -283,10 +283,24 @@ function _mergeState(remote) {
   _applyingRemote = true;
   try {
     if (typeof persist === "function") persist();
-    if (typeof render === "function") render();
+    // Same policy as app.js's cross-tab `storage` listener: render() rebuilds
+    // #view and #modal-root via innerHTML, which drops focus and the caret out
+    // of whatever the user is typing (quick capture, a step textarea, the
+    // search box). A peer's patch isn't urgent enough to interrupt that — the
+    // merged entries are already in state and the next natural render shows
+    // them. Only render now when nothing editable has focus.
+    if (typeof render === "function" && !_userIsTyping()) render();
   } finally {
     _applyingRemote = false;
   }
+}
+
+function _userIsTyping() {
+  const ae = document.activeElement;
+  if (!ae) return false;
+  const tag = ae.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT" || ae.isContentEditable) return true;
+  return tag === "INPUT" && !["checkbox", "radio", "range", "button", "submit", "file"].includes(ae.type);
 }
 
 // ── Incoming-connection consent banner ───────────────────────────────────────
@@ -324,7 +338,7 @@ function syncAcceptInbound() {
   if (!conn) return;
   _pendingInboundConn = null;
   syncHideIncomingBanner();
-  if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
+  _dropConn();
   _wireConn(conn);
 }
 
@@ -336,6 +350,18 @@ function syncRejectInbound() {
 }
 
 // ── Connection handling ──────────────────────────────────────────────────────
+
+// Drop the live connection deliberately (re-dial, accept-inbound, disconnect).
+// Null out _conn BEFORE calling close(): PeerJS emits "close" synchronously
+// from close() on an open channel, and _wireConn's close handler would
+// otherwise see `_conn === conn`, flip the status to "waiting" and schedule an
+// auto-reconnect against _lastConnectCode — redialing the very device we just
+// replaced, and 2s later tearing down whatever connection replaced it.
+function _dropConn() {
+  const old = _conn;
+  _conn = null;
+  if (old) { try { old.close(); } catch { /* noop */ } }
+}
 
 function _wireConn(conn) {
   _conn = conn;
@@ -471,7 +497,11 @@ async function syncInit() {
         // the smaller peer id, so both sides agree and no messages are sent
         // into a channel the other side never wired.
         if (_conn && _conn.open) { try { conn.close(); } catch { /* noop */ } return; }
-        const dialingThisPeer = _conn && !_conn.open && _lastConnectCode === peerCode;
+        // Compare peer ids, not display strings: _lastConnectCode is whatever
+        // the user typed (or the stored room), peerCode is re-derived from the
+        // id, and a formatting difference must not make us mis-resolve glare.
+        const dialingThisPeer = _conn && !_conn.open && _lastConnectCode &&
+          _codeToId(_lastConnectCode) === conn.peer;
         if (dialingThisPeer && !(conn.peer < myId)) {
           // Our outbound dial is the surviving link; reject the inbound.
           try { conn.close(); } catch { /* noop */ }
@@ -479,7 +509,7 @@ async function syncInit() {
         }
         // Inbound is the surviving link (or there's no competing dial): drop
         // our outbound / any pending inbound and accept this one.
-        if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
+        _dropConn();
         if (_pendingInboundConn) { try { _pendingInboundConn.close(); } catch { /* noop */ } _pendingInboundConn = null; }
         syncHideIncomingBanner();
         _wireConn(conn);
@@ -504,6 +534,13 @@ async function syncInit() {
       }
       if (t === "peer-unavailable") {
         if (_connectTimeoutId) { clearTimeout(_connectTimeoutId); _connectTimeoutId = null; }
+        // The dial never opened, so PeerJS will never emit "close" for it and
+        // _wireConn's handlers never run. Drop it here, or _conn keeps pointing
+        // at a dead DataConnection: the known-room glare check above would then
+        // treat us as "still dialing" and reject the other device's inbound
+        // dial (when its id sorts higher) once it comes online — leaving both
+        // sides stuck until a manual Reconnect.
+        if (_conn && !_conn.open) _dropConn();
         _setSyncStatus("error", "Code not found — device is offline or the code is mistyped");
         return;
       }
@@ -520,6 +557,9 @@ async function syncInit() {
     });
 
     _peer.on("disconnected", () => {
+      // destroy() (Disable / Regenerate) also emits "disconnected"; a destroyed
+      // peer can't reconnect and must not flip the status back to "waiting".
+      if (!_peer || _peer.destroyed) return;
       _setSyncStatus("waiting");
       try { _peer.reconnect(); } catch (e) { console.warn("[sync] reconnect", e); }
     });
@@ -579,15 +619,21 @@ function syncConnect(code) {
   _lastConnectCode = code;
   _setSyncStatus("connecting");
 
-  if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
+  _dropConn();
 
   const conn = _peer.connect(targetId, { reliable: true });
 
   if (_connectTimeoutId) clearTimeout(_connectTimeoutId);
   _connectTimeoutId = setTimeout(() => {
     _connectTimeoutId = null;
-    if (conn && !conn.open) {
-      try { conn.close(); } catch { /* noop */ }
+    // Only act on the dial this timer was armed for — a re-dial may have
+    // replaced it in the meantime and be doing fine.
+    if (_conn !== conn) return;
+    if (!conn.open) {
+      // Closing a never-opened DataConnection emits no "close" event, so the
+      // _wireConn handlers won't clear _conn for us. Do it here so the dead
+      // dial can't block a later inbound connection from this peer.
+      _dropConn();
       _setSyncStatus("error",
         "No response — the other device may be on a different network " +
         "(cellular or a restrictive firewall can block peer-to-peer). " +
@@ -613,8 +659,8 @@ async function syncRegenerateCode() {
   if (_reconnectTimerId) { clearTimeout(_reconnectTimerId); _reconnectTimerId = null; }
   _reconnectAttempt = 0;
   _lastConnectCode = null;
-  if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
-  if (_peer) { try { _peer.destroy(); } catch { /* noop */ } _peer = null; }
+  _dropConn();
+  if (_peer) { const p = _peer; _peer = null; try { p.destroy(); } catch { /* noop */ } }
   _setSyncStatus("loading");
   syncInit().then(() => renderSyncPanel()).catch(e => console.warn("[sync] init failed", e));
 }
@@ -624,8 +670,8 @@ function syncDisconnect() {
   if (_reconnectTimerId) { clearTimeout(_reconnectTimerId); _reconnectTimerId = null; }
   _reconnectAttempt = 0;
   _lastConnectCode = null;
-  if (_conn) { try { _conn.close(); } catch { /* noop */ } _conn = null; }
-  if (_peer) { try { _peer.destroy(); } catch { /* noop */ } _peer = null; }
+  _dropConn();
+  if (_peer) { const p = _peer; _peer = null; try { p.destroy(); } catch { /* noop */ } }
   try { localStorage.removeItem(SYNC_ROOM_KEY); } catch { /* noop */ }
   try { localStorage.removeItem(SYNC_ENABLED_KEY); } catch { /* noop */ }
   _setSyncStatus("off");
@@ -863,6 +909,15 @@ if (typeof window !== "undefined") {
     entryTs:        _entryTs,
     SYNC_VERSION,
     MAX_ENTRIES:    _SYNC_MAX_ENTRIES,
+    // Connection-lifecycle hooks for tests/regressions.mjs, which drives
+    // syncConnect against a stubbed window.Peer. Returns a snapshot of the
+    // private connection state (never the live objects' methods).
+    connect:        syncConnect,
+    connState:      () => ({
+      conn: _conn,
+      status: _syncStatus,
+      reconnectScheduled: _reconnectTimerId !== null,
+    }),
   };
 
   // Restore a previously-enabled sync session on boot. syncEnable() sets

@@ -252,7 +252,7 @@ js/pwa.js                  install prompt + SW registration + file:// fallback
 js/sync.js                 optional P2P sync (WebRTC via PeerJS)
 js/vendor/peerjs.min.js    vendored PeerJS — no npm supply chain
 icons/                     SVG app icons
-tests/                     static checks + Playwright smoke/flow/robustness/sync walks
+tests/                     static checks + Playwright smoke/flow/robustness/sync/regression walks
 eslint.config.js           lint config (run via `npm run lint`)
 ```
 

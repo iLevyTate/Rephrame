@@ -47,6 +47,7 @@ jobs:
           SHOTS_DIR=./smoke-shots npm run flows
           SHOTS_DIR=./smoke-shots npm run robustness
           SHOTS_DIR=./smoke-shots npm run sync
+          SHOTS_DIR=./smoke-shots npm run regressions
 
       - name: Upload screenshots on failure
         if: failure()
