@@ -11,7 +11,8 @@
     "test": "node tests/smoke.mjs",
     "flows": "node tests/flows.mjs",
     "robustness": "node tests/robustness.mjs",
-    "sync": "node tests/sync.mjs"
+    "sync": "node tests/sync.mjs",
+    "regressions": "node tests/regressions.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
