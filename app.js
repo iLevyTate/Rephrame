@@ -1896,6 +1896,7 @@ function render() {
     if (view) view.innerHTML = "";
     const mr = document.getElementById("modal-root");
     if (mr) mr.innerHTML = "";
+    _renderedModal = null;
     return;
   }
   document.body.classList.remove("is-locked");
@@ -4473,8 +4474,9 @@ function renderReference() {
 
 function renderModal() {
   const root = document.getElementById("modal-root");
-  root.innerHTML = "";
   if (!state.modal) {
+    root.innerHTML = "";
+    _renderedModal = null;
     // Modal closed — even by an after-action setState({modal:null}) that
     // bypassed closeModal() — so release focus back to whatever opened it.
     _releaseModalFocus();
@@ -4654,7 +4656,36 @@ function renderModal() {
     inner = renderLogActivityModal();
   }
 
+  // Re-render an already-open modal *in place*. Blowing away #modal-root and
+  // rebuilding it — which is what this did for every render(), including the
+  // one behind each tap on a Settings choice — restarts the overlay's fadeIn
+  // and the card's modalIn animations, so the whole dialog flashes on every
+  // click. It also scrolls a long modal (Settings) back to the top and drops
+  // the caret out of whatever field was being edited. Swapping only the
+  // dialog's contents keeps the animated elements mounted, so nothing
+  // re-animates, and lets us put the scroll offset and caret back.
+  const openOverlay = root.querySelector('.modal-overlay');
+  const openModal = openOverlay && openOverlay.querySelector('.modal');
+  if (openModal && _renderedModal === state.modal &&
+      !openOverlay.classList.contains('is-closing')) {
+    const scrollTop = openModal.scrollTop;
+    const field = _captureModalField(openModal);
+    openModal.innerHTML = inner;
+    _labelModal(openModal);
+    // The focus trap's keydown handler closes over this same element, which
+    // is still mounted, and initial focus belongs to the open — not to every
+    // re-render of it — so _trapModalFocus deliberately isn't re-run here.
+    // Scroll and focus are put back after bindModal(), which is what fills in
+    // sub-panels rendered by other modules (the sync panel) — restoring
+    // before that would target elements that don't exist yet.
+    bindModal();
+    openModal.scrollTop = scrollTop;
+    _restoreModalField(openModal, field);
+    return;
+  }
+
   root.innerHTML = `<div class="modal-overlay" data-action="close-modal" role="presentation"><div class="modal" role="dialog" aria-modal="true">${inner}</div></div>`;
+  _renderedModal = state.modal;
   // Stop modal-internal clicks from bubbling to the overlay (which has
   // data-action="close-modal"). Previously this was an inline onclick
   // attribute; moving it to addEventListener keeps a strict CSP
@@ -4663,15 +4694,9 @@ function renderModal() {
     const modalForStop = root.querySelector('.modal');
     if (modalForStop) modalForStop.addEventListener('click', e => e.stopPropagation());
   }
-  // Wire the modal's first heading as the accessible name so screen
-  // readers announce "Dialog: <title>" when focus enters.
   const modalEl = root.querySelector('.modal');
   if (modalEl) {
-    const heading = modalEl.querySelector('h1, h2, h3');
-    if (heading) {
-      if (!heading.id) heading.id = 'reframe-modal-title';
-      modalEl.setAttribute('aria-labelledby', heading.id);
-    }
+    _labelModal(modalEl);
     // Move focus into the dialog and trap Tab cycling so keyboard users
     // don't end up tabbing into the now-inert page underneath. We pick
     // the first natively-focusable input/textarea/select if present
@@ -4679,6 +4704,47 @@ function renderModal() {
     _trapModalFocus(modalEl);
   }
   bindModal();
+}
+
+// Which modal kind is currently mounted in #modal-root. Distinguishes "the
+// same dialog re-rendered" (update in place, no animation) from "a different
+// dialog opened" (full rebuild, animate it in).
+let _renderedModal = null;
+
+// Wire the modal's first heading as the accessible name so screen readers
+// announce "Dialog: <title>" when focus enters.
+function _labelModal(modalEl) {
+  const heading = modalEl.querySelector('h1, h2, h3');
+  if (!heading) return;
+  if (!heading.id) heading.id = 'reframe-modal-title';
+  modalEl.setAttribute('aria-labelledby', heading.id);
+}
+
+// Remember which control inside the dialog had focus (and where the caret
+// sat) so an in-place re-render can hand it back. Without this, changing a
+// setting mid-edit would drop focus to <body> and close the soft keyboard.
+function _captureModalField(modalEl) {
+  const el = document.activeElement;
+  if (!el || el === document.body || !modalEl.contains(el)) return null;
+  const sel = _openerSelector(el);
+  if (!sel) return null;
+  const f = { sel, start: null, end: null };
+  // selectionStart throws on input types that don't support selection
+  // (time, number, checkbox…), so it's guarded rather than type-sniffed.
+  try { f.start = el.selectionStart; f.end = el.selectionEnd; } catch (_) {}
+  return f;
+}
+
+function _restoreModalField(modalEl, f) {
+  if (!f) return;
+  let el = null;
+  try { el = modalEl.querySelector(f.sel); } catch (_) {}
+  if (!el || typeof el.focus !== 'function') return;
+  // preventScroll: the dialog's scroll offset was just restored by the
+  // caller, and focus() would otherwise scroll the field back into view.
+  try { el.focus({ preventScroll: true }); } catch (_) { try { el.focus(); } catch (__) {} }
+  if (f.start == null) return;
+  try { el.setSelectionRange(f.start, f.end); } catch (_) {}
 }
 
 // Focusable-element selector used by both the focus trap and the
@@ -6277,6 +6343,13 @@ function bindModal() {
   // open-import / open-safety buttons inside #view, which bindJournal wires.
   // Document-wide queries here would double-bind those while a modal is open.
   mqa('[data-action="close-modal"]').forEach(el => {
+    // The overlay carries data-action="close-modal" and now outlives an
+    // in-place re-render of the dialog, so binding has to be idempotent —
+    // otherwise every click inside Settings would stack another close
+    // handler on it. Buttons inside the dialog are rebuilt each time and
+    // never carry the flag.
+    if (el.dataset.closeBound === "1") return;
+    el.dataset.closeBound = "1";
     el.addEventListener("click", e => {
       if (e.currentTarget === e.target || el.tagName === "BUTTON") {
         closeModal();
@@ -7007,46 +7080,101 @@ document.addEventListener("keydown", e => {
 // Chromium/Firefox by shrinking the layout viewport when the VK rises;
 // the .kb-open CSS slides bottom-nav off so it can't occlude focused
 // fields; this IIFE handles iOS (which ignores interactive-widget) and
-// re-centers the focused element on every visualViewport resize so the
-// VK animation doesn't strand the field.
+// lifts a focused field clear of the keyboard when the VK opens.
+//
+// The scrolling here is deliberately conservative. An earlier version
+// re-centred the focused field on *every* visualViewport event, including
+// the `scroll` events the user's own panning produces — so scrolling away
+// from a textarea you hadn't blurred yanked the page straight back to it,
+// over and over. Two rules prevent that now:
+//   1. Only a keyboard-height *change* (a resize) may scroll. Panning the
+//      visual viewport updates the CSS bits and nothing else.
+//   2. A hand-driven scroll (touch or wheel) switches auto-scrolling off
+//      until the next focusin, so the app never fights the user for the
+//      scroll position.
+// A field that's already fully visible is never scrolled at all.
 (function initKeyboardAvoidance(){
   const vv = window.visualViewport;
   const FIELD = 'input, textarea, [contenteditable="true"]';
   let lastFocused = null;
+  // Permission to move the page on the user's behalf. Granted on focusin,
+  // revoked the moment they scroll by hand or leave the field.
+  let mayAutoScroll = false;
+  let lastKbH = 0;
+
+  const kbHeight = () =>
+    vv ? Math.max(0, window.innerHeight - vv.height) : 0;
+
+  // The slice of the screen not covered by the keyboard, in client coords.
+  const visibleBand = () => {
+    const top = (vv && vv.offsetTop) || 0;
+    return { top, bottom: top + ((vv && vv.height) || window.innerHeight) };
+  };
+
+  // Only scroll a field that actually needs it. Centring one that's already
+  // comfortably in view is pure motion — and it's what made a tap in a
+  // mid-screen textarea jump the page for no reason.
+  const isObscured = (el) => {
+    let r;
+    try { r = el.getBoundingClientRect(); } catch (_) { return false; }
+    if (!r || (!r.height && !r.width)) return false;
+    const { top, bottom } = visibleBand();
+    const pad = 8;
+    return r.top < top + pad || r.bottom > bottom - pad;
+  };
+
+  const revealField = (el) => {
+    if (!el || !el.isConnected || !isObscured(el)) return;
+    smoothScrollIntoView(el, { block: 'center' });
+  };
 
   document.addEventListener('focusin', e => {
     const t = e.target;
     if (!t || !t.matches || !t.matches(FIELD)) return;
     lastFocused = t;
+    mayAutoScroll = true;
     // Two rAFs: first lets the browser paint the focus state, second
     // gives the VK a moment to start rising so the post-VK viewport
-    // height is what scrollIntoView sees.
+    // height is what the visibility check sees.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      smoothScrollIntoView(lastFocused, { block: 'center' });
+      if (mayAutoScroll && document.activeElement === lastFocused) revealField(lastFocused);
     }));
   });
   document.addEventListener('focusout', e => {
-    if (e.target === lastFocused) lastFocused = null;
+    if (e.target === lastFocused) { lastFocused = null; mayAutoScroll = false; }
   });
 
+  // Hand-driven scrolling wins, permanently, until the next focus. Listening
+  // for touchmove/wheel rather than `scroll` keeps this unambiguous: our own
+  // programmatic scrolls fire `scroll`, but never these.
+  const yieldToUser = () => { mayAutoScroll = false; };
+  window.addEventListener('touchmove', yieldToUser, { passive: true });
+  window.addEventListener('wheel', yieldToUser, { passive: true });
+
   if (vv) {
-    const onVV = () => {
+    const syncKbCss = () => {
       // 150px threshold to ignore URL-bar chrome shifts on iOS. A real
       // keyboard is always at least ~250px tall.
-      const kbUp = (window.innerHeight - vv.height) > 150;
+      const h = kbHeight();
+      const kbUp = h > 150;
       document.body.classList.toggle('kb-open', kbUp);
-      document.documentElement.style.setProperty(
-        '--keyboard-h',
-        kbUp ? (window.innerHeight - vv.height) + 'px' : '0px'
-      );
-      // Re-center if the user is still in the same field — VK animation
-      // can drift the field off-center after the initial scroll.
-      if (kbUp && lastFocused && document.activeElement === lastFocused) {
-        smoothScrollIntoView(lastFocused, { block: 'center' });
-      }
+      document.documentElement.style.setProperty('--keyboard-h', kbUp ? h + 'px' : '0px');
+      return { h, kbUp };
     };
-    vv.addEventListener('resize', onVV);
-    vv.addEventListener('scroll', onVV);
+    // resize = the keyboard opened, closed, or changed height (a predictive
+    // bar appearing, say). That's the only event that can strand a field
+    // behind the VK, so it's the only one allowed to scroll.
+    vv.addEventListener('resize', () => {
+      const { h, kbUp } = syncKbCss();
+      const changed = Math.abs(h - lastKbH) > 24;
+      lastKbH = h;
+      if (!changed || !kbUp) return;
+      if (mayAutoScroll && lastFocused && document.activeElement === lastFocused) {
+        revealField(lastFocused);
+      }
+    });
+    // scroll = the viewport was panned. Keep the CSS in sync; never scroll.
+    vv.addEventListener('scroll', syncKbCss);
   }
 })();
 

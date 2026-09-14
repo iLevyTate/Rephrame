@@ -41,6 +41,15 @@
 //      the sparkline; only the untouched placeholder row is skipped.
 //  18. Service worker: navigating to a non-HTML file (/app.js) never replaces
 //      the cached app shell.
+//  19. Tapping a choice inside an open modal re-renders it in place: the
+//      overlay and dialog elements survive (so their fadeIn / modalIn
+//      entrance animations don't replay as a flash), the dialog keeps its
+//      scroll offset, and the overlay doesn't collect a second close handler.
+//  20. The capture shell carries no always-on entrance animation, so an
+//      intra-step tap (picking a distortion) doesn't re-animate the card.
+//  21. Keyboard avoidance never fights the user for the scroll position: once
+//      they scroll by hand, a focused-but-unblurred field is not pulled back
+//      into view by later visualViewport events.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -617,6 +626,152 @@ try {
     assert.ok(!/<!DOCTYPE/i.test(r.served), 'Navigating to app.js serves the script, not the cached shell');
     assert.equal(r.shellOk, true, 'Cached index.html is still HTML after navigating to a non-HTML file');
     log('PASS — service worker keeps the app shell intact.');
+    await ctx.close();
+  }
+
+  // ── 19. An open modal re-renders in place (no flash, no scroll reset) ───
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.locator('[data-action="open-settings"]').first().click();
+    await page.waitForSelector('.modal-overlay [data-action="set-reminder"]', { timeout: 5000 });
+    // Tag the live nodes, scroll the long dialog down, and put the caret in a
+    // field. If the re-render rebuilds #modal-root, the tags vanish with the
+    // old elements — and with them go the entrance animations that made the
+    // dialog flash — while the scroll offset and the caret reset too. The tap
+    // is dispatched in-page so Playwright's own scroll-into-view can't move
+    // the dialog behind our back.
+    const before = await page.evaluate(() => {
+      document.querySelector('.modal-overlay').dataset.tag = 'overlay-1';
+      document.querySelector('.modal').dataset.tag = 'modal-1';
+      const modal = document.querySelector('.modal');
+      modal.scrollTop = 200;
+      document.querySelector('[data-action="set-worry-window-time"]').focus();
+      return modal.scrollTop;
+    });
+    assert.ok(before > 0, 'Settings is long enough to scroll (precondition)');
+    await page.evaluate(() =>
+      document.querySelector('[data-action="set-reminder"][data-value="weekly"]').click());
+    await page.waitForTimeout(120);
+    const r = await page.evaluate(() => {
+      const overlay = document.querySelector('.modal-overlay');
+      const modal = document.querySelector('.modal');
+      return {
+        overlayTag: overlay && overlay.dataset.tag,
+        modalTag: modal && modal.dataset.tag,
+        scrollTop: modal ? modal.scrollTop : -1,
+        focused: document.activeElement && document.activeElement.dataset.action,
+        active: !!document.querySelector('[data-action="set-reminder"][data-value="weekly"].active'),
+        setting: state.settings.reminderInterval,
+      };
+    });
+    assert.equal(r.overlayTag, 'overlay-1', 'Overlay element survives the re-render (fadeIn does not replay)');
+    assert.equal(r.modalTag, 'modal-1', 'Dialog element survives the re-render (modalIn does not replay)');
+    assert.equal(r.setting, 'weekly', 'The tapped choice was applied');
+    assert.equal(r.active, true, 'The tapped choice is re-rendered as active');
+    assert.equal(r.focused, 'set-worry-window-time', 'The field being edited keeps focus across the re-render');
+    assert.ok(Math.abs(r.scrollTop - before) <= 2, `Dialog keeps its scroll offset (${before} → ${r.scrollTop})`);
+    // The overlay outlives the re-render, so its close handler must not stack:
+    // one click on it closes the dialog exactly once, with no error from a
+    // second handler running against an already-closed modal.
+    await page.evaluate(() => { window.__closes = 0; const o = document.querySelector('.modal-overlay'); o.addEventListener('click', () => window.__closes++, true); });
+    await page.mouse.click(10, 10);
+    await page.waitForFunction(() => !document.querySelector('.modal-overlay'), null, { timeout: 5000 });
+    assert.equal(await page.evaluate(() => state.modal), null, 'Overlay click still closes the modal');
+    noErrors(errors, 'modal in-place re-render');
+    log('PASS — an open modal re-renders in place, keeping scroll and skipping the entrance animation.');
+    await ctx.close();
+  }
+
+  // ── 20. Capture shell has no always-on entrance animation ──────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.locator('[data-nav="capture"]').first().click();
+    await page.waitForSelector('.capture-shell', { timeout: 5000 });
+    // Let the view-entering animation (which is correct — the view really did
+    // change) finish, then tap inside the step.
+    await page.waitForTimeout(500);
+    const shellAnim = await page.evaluate(() =>
+      getComputedStyle(document.querySelector('.capture-shell')).animationName);
+    assert.equal(shellAnim, 'none', 'The capture shell carries no always-on entrance animation');
+    // Step 2 has an "add another mood" control: tapping it re-renders the
+    // view without changing step, which is the case that used to flash.
+    await page.locator('.capture-screen textarea').first().fill('a trigger happened today');
+    await page.locator('[data-action="next-step"]').first().click();
+    await page.waitForSelector('[data-action="add-mood"]', { timeout: 5000 });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { document.querySelector('.capture-shell').dataset.tag = 'shell-1'; });
+    await page.locator('[data-action="add-mood"]').first().click();
+    await page.waitForTimeout(60);
+    const r = await page.evaluate(() => {
+      const shell = document.querySelector('.capture-shell');
+      return {
+        rebuilt: shell.dataset.tag !== 'shell-1',
+        running: shell.getAnimations().length,
+        step: state.captureStep,
+      };
+    });
+    assert.equal(r.rebuilt, true, 'The tap really re-rendered the view (precondition)');
+    assert.equal(r.step, 2, 'The tap did not change step, so nothing should animate');
+    // An entrance animation restarted by the re-render would still be running.
+    assert.equal(r.running, 0, 'Tapping inside a step re-animates nothing on the capture shell');
+    noErrors(errors, 'capture shell animation');
+    log('PASS — an intra-step tap does not re-animate the capture shell.');
+    await ctx.close();
+  }
+
+  // ── 21. Keyboard avoidance yields the scroll position to the user ──────
+  {
+    const { ctx, page, errors } = await openApp(() => {
+      localStorage.setItem('reframe-journal-v1', JSON.stringify(
+        Array.from({ length: 14 }, (_, i) => ({
+          id: 'e' + i, kind: 'free',
+          createdAt: '2024-06-0' + ((i % 9) + 1) + 'T1' + (i % 10) + ':00:00.000Z',
+          freeText: 'entry body ' + i + ' ' + 'padding '.repeat(20),
+        }))
+      ));
+    });
+    await page.locator('[data-nav="journal"]').first().click();
+    await page.waitForSelector('.journal-search', { timeout: 5000 }).catch(() => {});
+    const setup = await page.evaluate(() => {
+      const field = document.querySelector('input, textarea');
+      if (!field) return { ok: false };
+      field.focus();
+      // Pretend the soft keyboard is up: the handler reads its height from
+      // visualViewport, and only a *height change* may move the page.
+      Object.defineProperty(window.visualViewport, 'height', {
+        configurable: true, get: () => window.innerHeight - 320,
+      });
+      window.visualViewport.dispatchEvent(new Event('resize'));
+      return { ok: true, scrollable: document.documentElement.scrollHeight > window.innerHeight + 500 };
+    });
+    assert.equal(setup.ok, true, 'Found a field to focus (precondition)');
+    assert.equal(setup.scrollable, true, 'Journal is taller than the viewport (precondition)');
+    // Let the initial reveal-the-field scroll settle before measuring.
+    await page.waitForTimeout(700);
+    // The user scrolls away without blurring the field — the exact case that
+    // used to snap the page straight back to it. Read the position back
+    // synchronously: the yank arrived on a later task, off the scroll the
+    // browser itself reports to visualViewport.
+    const parked = await page.evaluate(() => {
+      window.dispatchEvent(new Event('touchmove'));
+      window.scrollTo({ top: 400, behavior: 'auto' });
+      return window.scrollY;
+    });
+    assert.ok(parked > 300, `The page really scrolled away from the field (at ${parked})`);
+    // Every event the keyboard code listens to, short of a fresh focus.
+    await page.evaluate(() => {
+      window.visualViewport.dispatchEvent(new Event('scroll'));
+      window.visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await page.waitForTimeout(500);
+    const after = await page.evaluate(() => ({
+      y: window.scrollY,
+      stillFocused: document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName),
+    }));
+    assert.equal(after.stillFocused, true, 'The field is still focused (precondition for the bug)');
+    assert.ok(Math.abs(after.y - parked) <= 4, `Page stays where the user scrolled it (${parked} → ${after.y})`);
+    noErrors(errors, 'keyboard avoidance');
+    log('PASS — a hand-scrolled page is not pulled back to a still-focused field.');
     await ctx.close();
   }
 
