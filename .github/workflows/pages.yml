@@ -28,7 +28,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Stamp a unique SW cache version into the deployed sw.js. Doing this at
       # deploy time (instead of a bot commit that bumps the file in-repo) means
