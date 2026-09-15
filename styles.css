@@ -925,11 +925,13 @@ html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copp
   border-radius: var(--r-2);
   overflow: hidden;
   box-shadow: var(--shadow-2);
-  animation: fadeUp 0.35s var(--ease-out);
-}
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  /* No always-on entrance animation here. render() rebuilds #view's innerHTML
+     on every state change, so an animation on this rule replayed on each tap
+     inside the capture flow (picking a chip, dragging the intensity slider)
+     and read as a flash. Entering the view is already animated by
+     #view.view-entering, and moving between steps by .capture-screen
+     .step-entering — both applied by render() only when they actually
+     changed. */
 }
 
 .capture-progress {
