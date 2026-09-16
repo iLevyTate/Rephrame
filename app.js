@@ -3017,7 +3017,7 @@ function renderFreeformCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">Title (optional)</label>
-          <input class="input" data-field="trigger" placeholder="A line that names this moment, if it has a name" value="${esc(d.trigger)}">
+          <input class="input" data-field="trigger" placeholder="A line that names this moment" value="${esc(d.trigger)}">
         </div>
 
         <div class="field-group">
@@ -3097,7 +3097,7 @@ function renderActivityCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">What will you do?</label>
-          <input class="input" data-field="body" placeholder="Call my sister · Walk to the park · Cook dinner from scratch" value="${esc(d.body)}" data-autofocus>
+          <input class="input" data-field="body" placeholder="Call my sister" value="${esc(d.body)}" data-autofocus>
         </div>
 
         <div class="field-group">
@@ -3266,7 +3266,7 @@ function renderCaptureStep(step, d) {
   switch (step) {
     case 1: return `
       <div class="field-group">
-        <textarea class="textarea input-large" data-field="trigger" rows="3" data-autofocus placeholder="Texted a friend and they still haven't replied… · Stumbled over a number in a meeting… · Saw something online I wasn't invited to…">${esc(d.trigger)}</textarea>
+        <textarea class="textarea input-large" data-field="trigger" rows="3" data-autofocus placeholder="Texted a friend and they still haven't replied…">${esc(d.trigger)}</textarea>
         <div class="field-help-paper" style="margin-top: 8px;">An event, a thought, or a feeling — any of those can be the starting point. You don't need to know yet which one this is.</div>
         <div class="quick-prompts" role="group" aria-label="Starter lines for trigger">
           <span class="quick-prompts-label">Or tap a starter:</span>
