@@ -54,6 +54,10 @@
 //      text paints only inside the element's background box, and the glyph's
 //      ball terminal leans past its advance width, so the mark used to render
 //      with the terminal sliced clean off.
+//  23. A long scrolling dialog opens at its top. Settings' first form field is
+//      the worry-window time picker ~550px down, and initial focus both
+//      preferred it over anything on screen and scrolled it into view, so
+//      Settings opened past its own heading with a time picker focused.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -880,6 +884,44 @@ try {
     }
     noErrors(errors, 'gradient mark');
     log('PASS — both gradient brand marks paint their full glyph.');
+    await ctx.close();
+  }
+
+  // ── 23. A long dialog opens at its top ────────────────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    const open = async (sel) => {
+      await page.locator(sel).first().click();
+      await page.waitForTimeout(500);
+      return page.evaluate(() => {
+        const m = document.querySelector('.modal');
+        const a = document.activeElement;
+        return {
+          scrollTop: Math.round(m.scrollTop),
+          overflows: m.scrollHeight > m.clientHeight + 2,
+          focusInModal: m.contains(a),
+          focusTag: a ? a.tagName.toLowerCase() : null,
+          focusAction: a && a.dataset ? (a.dataset.action || null) : null,
+        };
+      });
+    };
+
+    const settings = await open('[data-action="open-settings"]');
+    assert.equal(settings.overflows, true, 'Settings is long enough to scroll (precondition)');
+    assert.equal(settings.scrollTop, 0, 'Settings opens at its top, not scrolled to the time picker');
+    assert.equal(settings.focusInModal, true, 'Initial focus stays inside the dialog');
+    assert.equal(settings.focusAction, 'set-theme',
+      'Focus lands on the first control that is actually on screen, not the buried time input');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+
+    // The quick-capture modal's first field IS at the top, and focusing it is
+    // the whole point — the in-view rule must not take that away.
+    const quick = await open('[data-action="open-quick"]');
+    assert.equal(quick.scrollTop, 0, 'Quick capture opens at its top');
+    assert.equal(quick.focusTag, 'textarea', 'Quick capture still focuses its textarea');
+    noErrors(errors, 'modal initial focus');
+    log('PASS — a long dialog opens at its top with focus on something visible.');
     await ctx.close();
   }
 
