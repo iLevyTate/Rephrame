@@ -58,6 +58,11 @@
 //      the worry-window time picker ~550px down, and initial focus both
 //      preferred it over anything on screen and scrolled it into view, so
 //      Settings opened past its own heading with a time picker focused.
+//  24. The capture footer actually sticks. overflow:hidden on .capture-shell
+//      made it a clipping containing block, which silently cancels
+//      position:sticky on its .capture-footer child, so Continue / Back /
+//      Save scrolled away with the form — 1123px below the fold on Step 2 of
+//      a 390x844 phone.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -922,6 +927,66 @@ try {
     assert.equal(quick.focusTag, 'textarea', 'Quick capture still focuses its textarea');
     noErrors(errors, 'modal initial focus');
     log('PASS — a long dialog opens at its top with focus on something visible.');
+    await ctx.close();
+  }
+
+  // ── 24. The capture footer actually sticks ────────────────────────────
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await ctx.addInitScript(ONBOARDED);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+
+    // Where the primary action sits WITHOUT scrolling — the whole point of the
+    // footer's sticky is that you never have to.
+    const primary = () => page.evaluate(() => {
+      const b = document.querySelector('[data-action="next-step"], [data-action="save-entry"]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { mid: r.top + r.height / 2, vh: window.innerHeight, scrollY: window.scrollY };
+    });
+
+    await page.locator('.nav-item[data-nav="capture"]').click();
+    await page.waitForTimeout(400);
+    await page.locator('textarea[data-field="trigger"]').fill('Sent a long, honest text three days ago. Still no reply.');
+    await page.waitForTimeout(150);
+
+    const s1 = await primary();
+    assert.ok(s1, 'Step 1 renders a primary footer action');
+    assert.equal(s1.scrollY, 0, 'Step 1 starts unscrolled (precondition)');
+    assert.ok(s1.mid > 0 && s1.mid < s1.vh,
+      `Step 1 Continue is on screen without scrolling (mid ${Math.round(s1.mid)} of ${s1.vh})`);
+
+    await page.locator('[data-action="next-step"]').click();
+    await page.waitForTimeout(400);
+    await page.locator('[data-action="edit-thought-text"]').first().fill("I overshared. They're pulling away.");
+    await page.locator('[data-action="edit-mood-family"]').first().selectOption('Anxiety');
+    await page.waitForTimeout(150);
+    await page.locator('[data-action="edit-mood-variant"]').first().selectOption('worried');
+    await page.waitForTimeout(350);
+
+    const s2 = await primary();
+    // Step 2 is the long one — it is why the footer is sticky at all.
+    const scrollable = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+    assert.ok(scrollable > 400, `Step 2 is long enough to need a sticky footer (${scrollable}px of scroll)`);
+    assert.equal(s2.scrollY, 0, 'Step 2 starts unscrolled (precondition)');
+    assert.ok(s2.mid > 0 && s2.mid < s2.vh,
+      `Step 2 Continue is on screen without scrolling (mid ${Math.round(s2.mid)} of ${s2.vh})`);
+
+    // And the shell must not re-acquire a clip, which is what broke it.
+    const clips = await page.evaluate(() => {
+      const shell = document.querySelector('.capture-shell');
+      const cs = getComputedStyle(shell);
+      return cs.overflowX !== 'visible' || cs.overflowY !== 'visible';
+    });
+    assert.equal(clips, false,
+      '.capture-shell does not clip — a clipping containing block cancels the footer\'s sticky');
+
+    noErrors(errors, 'sticky capture footer');
+    log('PASS — the capture footer stays on screen on a phone, Step 1 and Step 2.');
     await ctx.close();
   }
 

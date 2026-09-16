@@ -942,7 +942,14 @@ html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copp
   background: var(--paper);
   color: var(--on-paper);
   border-radius: var(--r-2);
-  overflow: hidden;
+  /* No overflow: hidden here. It used to clip the children to the card's
+     radius, but a clipping containing block silently cancels position:
+     sticky on .capture-footer — the Continue / Back / Save buttons then
+     scrolled away with the form, which is the exact thing that footer's
+     sticky was added to prevent. On a 390x844 phone the Step 2 Continue
+     button sat 1123px below the fold. The shell's own background is already
+     rounded; only .capture-footer paints a background over a corner, so it
+     carries the radius itself now. */
   box-shadow: var(--shadow-2);
   /* No always-on entrance animation here. render() rebuilds #view's innerHTML
      on every state change, so an animation on this rule replayed on each tap
@@ -1480,6 +1487,8 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 .capture-footer {
   padding: 16px 24px;
   background: var(--paper-2);
+  /* Carries the shell's bottom corners now that the shell no longer clips. */
+  border-radius: 0 0 var(--r-2) var(--r-2);
   border-top: 1px solid var(--rule-paper);
   display: flex;
   align-items: center;
