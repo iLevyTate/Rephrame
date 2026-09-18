@@ -3017,7 +3017,7 @@ function renderFreeformCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">Title (optional)</label>
-          <input class="input" data-field="trigger" placeholder="A line that names this moment, if it has a name" value="${esc(d.trigger)}">
+          <input class="input" data-field="trigger" placeholder="A line that names this moment" value="${esc(d.trigger)}">
         </div>
 
         <div class="field-group">
@@ -3097,7 +3097,7 @@ function renderActivityCapture(d) {
 
         <div class="field-group">
           <label class="field-label-paper">What will you do?</label>
-          <input class="input" data-field="body" placeholder="Call my sister · Walk to the park · Cook dinner from scratch" value="${esc(d.body)}" data-autofocus>
+          <input class="input" data-field="body" placeholder="Call my sister" value="${esc(d.body)}" data-autofocus>
         </div>
 
         <div class="field-group">
@@ -3266,7 +3266,7 @@ function renderCaptureStep(step, d) {
   switch (step) {
     case 1: return `
       <div class="field-group">
-        <textarea class="textarea input-large" data-field="trigger" rows="3" data-autofocus placeholder="Texted a friend and they still haven't replied… · Stumbled over a number in a meeting… · Saw something online I wasn't invited to…">${esc(d.trigger)}</textarea>
+        <textarea class="textarea input-large" data-field="trigger" rows="3" data-autofocus placeholder="Texted a friend and they still haven't replied…">${esc(d.trigger)}</textarea>
         <div class="field-help-paper" style="margin-top: 8px;">An event, a thought, or a feeling — any of those can be the starting point. You don't need to know yet which one this is.</div>
         <div class="quick-prompts" role="group" aria-label="Starter lines for trigger">
           <span class="quick-prompts-label">Or tap a starter:</span>
@@ -4805,6 +4805,15 @@ function _focusableIn(root) {
     .filter(el => el.offsetParent !== null || el === document.activeElement);
 }
 
+// Is `el` inside the part of the scrolling dialog the user can currently see?
+// Used to decide whether focusing it would drag the dialog somewhere the user
+// did not ask to go.
+function _isWithinModalView(el, modalEl) {
+  const e = el.getBoundingClientRect();
+  const m = modalEl.getBoundingClientRect();
+  return e.height > 0 && e.top >= m.top - 1 && e.bottom <= m.bottom + 1;
+}
+
 function _trapModalFocus(modalEl) {
   _untrapModalKeys();
   _rememberModalOpener();
@@ -4818,8 +4827,16 @@ function _trapModalFocus(modalEl) {
   if (isFreshOpen) {
     requestAnimationFrame(() => {
       const focusables = _focusableIn(modalEl);
-      const initial = modalEl.querySelector('input, textarea, select') || focusables[0];
-      if (initial) try { initial.focus(); } catch(_) {}
+      // Prefer the first form field — but only when it is already on screen.
+      // Settings' first input is the worry-window time picker, ~550px down a
+      // 2000px panel, so preferring it unconditionally opened Settings
+      // scrolled past its own heading with a time picker focused. Fall back
+      // to the first focusable, which is at the top of the dialog.
+      const field = modalEl.querySelector('input, textarea, select');
+      const initial = (field && _isWithinModalView(field, modalEl) ? field : focusables[0]) || field;
+      // preventScroll, like every other focus() in this file: the dialog opens
+      // at its top and taking focus must not move it.
+      if (initial) try { initial.focus({ preventScroll: true }); } catch(_) { try { initial.focus(); } catch(__) {} }
     });
   }
   _modalKeyHandler = (e) => {

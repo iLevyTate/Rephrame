@@ -50,6 +50,19 @@
 //  21. Keyboard avoidance never fights the user for the scroll position: once
 //      they scroll by hand, a focused-but-unblurred field is not pulled back
 //      into view by later visualViewport events.
+//  22. The gradient-filled italic r keeps all of its ink. background-clip:
+//      text paints only inside the element's background box, and the glyph's
+//      ball terminal leans past its advance width, so the mark used to render
+//      with the terminal sliced clean off.
+//  23. A long scrolling dialog opens at its top. Settings' first form field is
+//      the worry-window time picker ~550px down, and initial focus both
+//      preferred it over anything on screen and scrolled it into view, so
+//      Settings opened past its own heading with a time picker focused.
+//  24. The capture footer actually sticks. overflow:hidden on .capture-shell
+//      made it a clipping containing block, which silently cancels
+//      position:sticky on its .capture-footer child, so Continue / Back /
+//      Save scrolled away with the form — 1123px below the fold on Step 2 of
+//      a 390x844 phone.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -58,6 +71,7 @@
 //   SMOKE_URL  default http://localhost:8765/index.html
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+import zlib from 'node:zlib';
 
 const URL = process.env.SMOKE_URL ?? 'http://localhost:8765/index.html';
 const log = (m) => console.log('[regressions] ' + m);
@@ -82,6 +96,54 @@ async function openApp(seed, arg) {
 }
 const noErrors = (errors, label) =>
   assert.equal(errors.length, 0, 'No uncaught page errors (' + label + '): ' + JSON.stringify(errors));
+
+// Minimal PNG reader for block 22 — enough for what page.screenshot() emits
+// (8-bit, non-interlaced, RGB or RGBA) and nothing more, so the suite keeps
+// its zero-runtime-dependency footprint.
+function decodePng(buf) {
+  let p = 8, w = 0, h = 0, depth = 0, colorType = 0, interlace = 0;
+  const idat = [];
+  while (p < buf.length) {
+    const len = buf.readUInt32BE(p);
+    const type = buf.toString('ascii', p + 4, p + 8);
+    const data = buf.subarray(p + 8, p + 8 + len);
+    if (type === 'IHDR') {
+      w = data.readUInt32BE(0); h = data.readUInt32BE(4);
+      depth = data[8]; colorType = data[9]; interlace = data[12];
+    }
+    if (type === 'IDAT') idat.push(data);
+    p += 12 + len;
+  }
+  assert.ok(depth === 8 && interlace === 0 && (colorType === 2 || colorType === 6),
+    `Screenshot PNG is 8-bit non-interlaced RGB/RGBA (got depth=${depth} colorType=${colorType} interlace=${interlace})`);
+  const bpp = colorType === 6 ? 4 : 3;
+  const stride = w * bpp;
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const px = Buffer.alloc(h * stride);
+  let o = 0;
+  for (let y = 0; y < h; y++) {
+    const filter = raw[o++];
+    for (let x = 0; x < stride; x++) {
+      const cur = raw[o + x];
+      const a = x >= bpp ? px[y * stride + x - bpp] : 0;
+      const b = y > 0 ? px[(y - 1) * stride + x] : 0;
+      const c = x >= bpp && y > 0 ? px[(y - 1) * stride + x - bpp] : 0;
+      let v;
+      if (filter === 0) v = cur;
+      else if (filter === 1) v = cur + a;
+      else if (filter === 2) v = cur + b;
+      else if (filter === 3) v = cur + ((a + b) >> 1);
+      else {
+        const pp = a + b - c;
+        const pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c);
+        v = cur + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
+      }
+      px[y * stride + x] = v & 255;
+    }
+    o += stride;
+  }
+  return { w, h, bpp, px };
+}
 
 try {
   // ── 1. Worry resolution whitelist + pill class ─────────────────────────
@@ -772,6 +834,159 @@ try {
     assert.ok(Math.abs(after.y - parked) <= 4, `Page stays where the user scrolled it (${parked} → ${after.y})`);
     noErrors(errors, 'keyboard avoidance');
     log('PASS — a hand-scrolled page is not pulled back to a still-focused field.');
+    await ctx.close();
+  }
+
+  // ── 22. The gradient mark keeps its ball terminal ──────────────────────
+  // Shoot each mark as shipped, then again with the gradient swapped for a
+  // flat opaque fill, and compare the two ink masks. Anything inked in the
+  // solid pass but bare in the gradient pass fell outside the background box
+  // and never got painted — which is exactly how the r lost its terminal.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 900 }, deviceScaleFactor: 4 });
+    await ctx.addInitScript(ONBOARDED);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.empty-state-mark', { timeout: 10000 });
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(400);
+
+    // Copper against the warm paper/ink backgrounds: red and blue diverge
+    // hard on the glyph and barely at all on either background, so the red
+    // minus blue gap is a reliable "is this pixel inked" test in both themes.
+    const isInk = (img, i) => Math.abs(img.px[i] - img.px[i + 2]) > 26;
+
+    for (const sel of ['.brand-mark', '.empty-state-mark']) {
+      const mark = page.locator(sel).first();
+      const shipped = decodePng(await mark.screenshot());
+      const flat = await page.addStyleTag({ content: `
+        .brand-mark, .empty-state-mark::before {
+          background-image: none !important;
+          -webkit-text-fill-color: #b8552c !important;
+          color: #b8552c !important;
+          text-shadow: none !important;
+        }` });
+      await page.waitForTimeout(150);
+      const solid = decodePng(await mark.screenshot());
+      await flat.evaluate((node) => node.remove());
+      await page.waitForTimeout(150);
+
+      assert.equal(`${shipped.w}x${shipped.h}`, `${solid.w}x${solid.h}`,
+        `${sel} keeps its box size when the gradient is swapped out`);
+      let inked = 0, unpainted = 0;
+      for (let i = 0; i < solid.w * solid.h * solid.bpp; i += solid.bpp) {
+        if (!isInk(solid, i)) continue;
+        inked++;
+        if (!isInk(shipped, i)) unpainted++;
+      }
+      assert.ok(inked > 200, `${sel} actually rendered a glyph to measure (${inked} ink px)`);
+      // 1% absorbs the antialiasing that shifts when the glow comes off; the
+      // clipped terminal cost ~12% of the hero mark.
+      const lost = (100 * unpainted) / inked;
+      assert.ok(lost < 1, `${sel} paints its whole glyph (${lost.toFixed(2)}% of ink unpainted)`);
+    }
+    noErrors(errors, 'gradient mark');
+    log('PASS — both gradient brand marks paint their full glyph.');
+    await ctx.close();
+  }
+
+  // ── 23. A long dialog opens at its top ────────────────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    const open = async (sel) => {
+      await page.locator(sel).first().click();
+      await page.waitForTimeout(500);
+      return page.evaluate(() => {
+        const m = document.querySelector('.modal');
+        const a = document.activeElement;
+        return {
+          scrollTop: Math.round(m.scrollTop),
+          overflows: m.scrollHeight > m.clientHeight + 2,
+          focusInModal: m.contains(a),
+          focusTag: a ? a.tagName.toLowerCase() : null,
+          focusAction: a && a.dataset ? (a.dataset.action || null) : null,
+        };
+      });
+    };
+
+    const settings = await open('[data-action="open-settings"]');
+    assert.equal(settings.overflows, true, 'Settings is long enough to scroll (precondition)');
+    assert.equal(settings.scrollTop, 0, 'Settings opens at its top, not scrolled to the time picker');
+    assert.equal(settings.focusInModal, true, 'Initial focus stays inside the dialog');
+    assert.equal(settings.focusAction, 'set-theme',
+      'Focus lands on the first control that is actually on screen, not the buried time input');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+
+    // The quick-capture modal's first field IS at the top, and focusing it is
+    // the whole point — the in-view rule must not take that away.
+    const quick = await open('[data-action="open-quick"]');
+    assert.equal(quick.scrollTop, 0, 'Quick capture opens at its top');
+    assert.equal(quick.focusTag, 'textarea', 'Quick capture still focuses its textarea');
+    noErrors(errors, 'modal initial focus');
+    log('PASS — a long dialog opens at its top with focus on something visible.');
+    await ctx.close();
+  }
+
+  // ── 24. The capture footer actually sticks ────────────────────────────
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await ctx.addInitScript(ONBOARDED);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+
+    // Where the primary action sits WITHOUT scrolling — the whole point of the
+    // footer's sticky is that you never have to.
+    const primary = () => page.evaluate(() => {
+      const b = document.querySelector('[data-action="next-step"], [data-action="save-entry"]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { mid: r.top + r.height / 2, vh: window.innerHeight, scrollY: window.scrollY };
+    });
+
+    await page.locator('.nav-item[data-nav="capture"]').click();
+    await page.waitForTimeout(400);
+    await page.locator('textarea[data-field="trigger"]').fill('Sent a long, honest text three days ago. Still no reply.');
+    await page.waitForTimeout(150);
+
+    const s1 = await primary();
+    assert.ok(s1, 'Step 1 renders a primary footer action');
+    assert.equal(s1.scrollY, 0, 'Step 1 starts unscrolled (precondition)');
+    assert.ok(s1.mid > 0 && s1.mid < s1.vh,
+      `Step 1 Continue is on screen without scrolling (mid ${Math.round(s1.mid)} of ${s1.vh})`);
+
+    await page.locator('[data-action="next-step"]').click();
+    await page.waitForTimeout(400);
+    await page.locator('[data-action="edit-thought-text"]').first().fill("I overshared. They're pulling away.");
+    await page.locator('[data-action="edit-mood-family"]').first().selectOption('Anxiety');
+    await page.waitForTimeout(150);
+    await page.locator('[data-action="edit-mood-variant"]').first().selectOption('worried');
+    await page.waitForTimeout(350);
+
+    const s2 = await primary();
+    // Step 2 is the long one — it is why the footer is sticky at all.
+    const scrollable = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+    assert.ok(scrollable > 400, `Step 2 is long enough to need a sticky footer (${scrollable}px of scroll)`);
+    assert.equal(s2.scrollY, 0, 'Step 2 starts unscrolled (precondition)');
+    assert.ok(s2.mid > 0 && s2.mid < s2.vh,
+      `Step 2 Continue is on screen without scrolling (mid ${Math.round(s2.mid)} of ${s2.vh})`);
+
+    // And the shell must not re-acquire a clip, which is what broke it.
+    const clips = await page.evaluate(() => {
+      const shell = document.querySelector('.capture-shell');
+      const cs = getComputedStyle(shell);
+      return cs.overflowX !== 'visible' || cs.overflowY !== 'visible';
+    });
+    assert.equal(clips, false,
+      '.capture-shell does not clip — a clipping containing block cancels the footer\'s sticky');
+
+    noErrors(errors, 'sticky capture footer');
+    log('PASS — the capture footer stays on screen on a phone, Step 1 and Step 2.');
     await ctx.close();
   }
 

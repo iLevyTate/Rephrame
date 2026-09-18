@@ -200,16 +200,25 @@ main {
   -webkit-text-fill-color: transparent;
   color: var(--copper);
   line-height: 1;
-  letter-spacing: -0.02em;
+  /* The italic r's terminal overhangs its advance width, and
+     background-clip:text paints the gradient only inside the element's
+     background box — anything past that edge came out unpainted, so the
+     flag rendered sliced off. Padding widens the paint box and the equal
+     negative margin cancels the layout effect, so the 10px gap to
+     "Rephrame" is unchanged. letter-spacing is left at normal for the same
+     reason: a negative value on a one-glyph element only pulls the right
+     edge further in. */
+  letter-spacing: normal;
   position: relative;
-  padding-right: 2px;
+  padding-right: 0.24em;
+  margin-right: -0.24em;
 }
 /* Tiny framing rule beneath the mark, scaled-down version of the icon's
    underline. Two ball-terminal pseudo-dots echo the icon's caps. */
 .brand-mark::after {
   content: '';
   position: absolute;
-  left: 2px; right: 4px; bottom: -4px;
+  left: 2px; right: calc(0.24em + 4px); bottom: -4px;
   height: 1.5px;
   background: linear-gradient(to right, transparent, var(--copper) 18%, var(--copper) 82%, transparent);
   border-radius: 2px;
@@ -816,7 +825,17 @@ body.kb-open .bottom-nav {
   -webkit-text-fill-color: transparent;
   color: var(--copper);
   line-height: 0.85;
-  letter-spacing: -0.04em;
+  /* Same background-clip:text overhang fix as .brand-mark, at hero scale
+     where the clipped flag was impossible to miss: the gradient only
+     covers the background box, so the terminal that leans past the
+     advance width lost its fill. Padding widens the paint box, the equal
+     negative margin keeps the glyph optically centred over the rule
+     below, and the vertical pair buys headroom for the fallback serifs
+     (Iowan Old Style, Baskerville, Georgia) whose italic r sits taller
+     in the em box than Fraunces does. */
+  letter-spacing: normal;
+  padding: 0.1em 0.24em 0.08em 0.06em;
+  margin: -0.1em -0.24em -0.08em -0.06em;
   /* Faint warm glow behind the mark — same trick as the icon's radial
      bloom but achieved via text-shadow at small render cost. */
   text-shadow: 0 0 32px rgba(184, 85, 44, 0.25);
@@ -923,7 +942,14 @@ html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copp
   background: var(--paper);
   color: var(--on-paper);
   border-radius: var(--r-2);
-  overflow: hidden;
+  /* No overflow: hidden here. It used to clip the children to the card's
+     radius, but a clipping containing block silently cancels position:
+     sticky on .capture-footer — the Continue / Back / Save buttons then
+     scrolled away with the form, which is the exact thing that footer's
+     sticky was added to prevent. On a 390x844 phone the Step 2 Continue
+     button sat 1123px below the fold. The shell's own background is already
+     rounded; only .capture-footer paints a background over a corner, so it
+     carries the radius itself now. */
   box-shadow: var(--shadow-2);
   /* No always-on entrance animation here. render() rebuilds #view's innerHTML
      on every state change, so an animation on this rule replayed on each tap
@@ -972,6 +998,17 @@ html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copp
   position: relative;
   cursor: pointer;
   transition: background 0.25s var(--ease);
+}
+/* These bars are goto-step buttons, and a 3px-tall button is not something
+   you can hit with a thumb. The pseudo-element carries the touch target —
+   25px tall, clearing the 24px WCAG 2.5.8 floor — while the painted bar
+   stays 3px. Doing it here rather than with padding keeps the bar's pill
+   radius and its layout box untouched, and leaves .completed / .active free
+   to keep using the `background` shorthand. */
+.progress-dot::before {
+  content: '';
+  position: absolute;
+  inset: -11px 0;
 }
 .progress-dot.completed { background: var(--copper); }
 .progress-dot.active { background: var(--copper); }
@@ -1450,6 +1487,8 @@ details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 .capture-footer {
   padding: 16px 24px;
   background: var(--paper-2);
+  /* Carries the shell's bottom corners now that the shell no longer clips. */
+  border-radius: 0 0 var(--r-2) var(--r-2);
   border-top: 1px solid var(--rule-paper);
   display: flex;
   align-items: center;
