@@ -63,6 +63,10 @@
 //      position:sticky on its .capture-footer child, so Continue / Back /
 //      Save scrolled away with the form — 1123px below the fold on Step 2 of
 //      a 390x844 phone.
+//  25. A toast never lands on the sticky footer. The stack sits a fixed gap
+//      above the bottom nav, which is where the (now sticky) capture footer
+//      lives: picking a distortion fired a toast straight onto Continue, and
+//      for its 2.4s lifespan a tap on Continue hit the toast.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -987,6 +991,55 @@ try {
 
     noErrors(errors, 'sticky capture footer');
     log('PASS — the capture footer stays on screen on a phone, Step 1 and Step 2.');
+    await ctx.close();
+  }
+
+  // ── 25. A toast never lands on the sticky footer ───────────────────────
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(ONBOARDED);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+
+    // Off the capture view there is no footer, and the stack must keep its
+    // stylesheet position rather than an inline override.
+    await page.locator('[data-action="load-sample"]').first().click();
+    await page.waitForSelector('.toast', { timeout: 3000 });
+    const journalBottom = await page.evaluate(() => document.getElementById('toasts').style.bottom);
+    assert.equal(journalBottom, '', 'Without a capture footer the toast stack keeps its stylesheet position');
+
+    await page.locator('.nav-item[data-nav="capture"]').click();
+    await page.waitForTimeout(300);
+    await page.locator('textarea[data-field="trigger"]').fill('Sent a long, honest text three days ago.');
+    await page.locator('[data-action="next-step"]').click();
+    await page.waitForTimeout(300);
+    await page.locator('[data-action="edit-thought-text"]').first().fill("I overshared. They're pulling away.");
+    await page.locator('[data-action="next-step"]').click();
+    await page.waitForTimeout(400);
+    await page.locator('[data-action="toggle-distortion"][data-name="Mind Reading"]').click();
+    await page.waitForTimeout(250);
+
+    const r = await page.evaluate(() => {
+      const t = document.querySelector('.toast');
+      const f = document.querySelector('.capture-footer').getBoundingClientRect();
+      const b = document.querySelector('[data-action="next-step"]').getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return {
+        toastUp: !!t,
+        toastBottom: t ? t.getBoundingClientRect().bottom : null,
+        footerTop: f.top,
+        continueReachable: !!hit && !!hit.closest('[data-action="next-step"]'),
+      };
+    });
+    assert.equal(r.toastUp, true, 'Picking a distortion shows the starters toast (precondition)');
+    assert.ok(r.toastBottom <= r.footerTop,
+      `The toast sits above the capture footer (toast bottom ${Math.round(r.toastBottom)}, footer top ${Math.round(r.footerTop)})`);
+    assert.equal(r.continueReachable, true, 'Continue is tappable while the toast is up');
+    noErrors(errors, 'toast vs sticky footer');
+    log('PASS — a toast mid-capture sits above the footer and never blocks Continue.');
     await ctx.close();
   }
 

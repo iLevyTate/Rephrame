@@ -1471,6 +1471,23 @@ function download(content, filename, mime) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// The toast stack sits a fixed distance above the bottom nav, which is exactly
+// where the sticky capture footer lives — so a toast fired mid-capture (picking
+// a distortion fires one) landed on top of Continue, and for its 2.4s lifespan
+// a tap on Continue hit the toast instead. Lift the stack clear of the footer
+// whenever one is on screen, measuring the real footer rather than hardcoding
+// its height: body.kb-open slides the footer down to bottom:0, and the footer
+// grows when the Back button is present.
+function _clearStickyFooter(stack) {
+  const footer = document.querySelector(".capture-footer");
+  const r = footer ? footer.getBoundingClientRect() : null;
+  if (r && r.height > 0 && r.top < window.innerHeight) {
+    stack.style.bottom = Math.round(window.innerHeight - r.top + 12) + "px";
+  } else {
+    stack.style.bottom = "";
+  }
+}
+
 function toast(message, opts) {
   opts = opts || {};
   const isError = opts.variant === "error";
@@ -1482,6 +1499,7 @@ function toast(message, opts) {
   // the attribute on the container before each toast ensures the most
   // recent toast's urgency is what the AT picks up.
   if (stack) stack.setAttribute("aria-live", isError ? "assertive" : "polite");
+  if (stack) _clearStickyFooter(stack);
   const el = document.createElement("div");
   el.setAttribute("role", isError ? "alert" : "status");
   el.className = "toast"
