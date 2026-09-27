@@ -23,11 +23,12 @@
 //  10. An unreadable journal blob is stashed under a side key, not lost.
 //  11. A P2P merge that arrives mid-typing doesn't yank focus.
 //  12. Coping-card / cross-link taps clear a search that would hide the target.
-//  13. Sync connection lifecycle: a dead dial is dropped on peer-unavailable so
-//      the paired device's later inbound dial is accepted; replacing an open
-//      connection doesn't trigger its own auto-reconnect; a peer-unavailable
-//      for an OLD dial doesn't tear down a newer one; destroying the peer
-//      doesn't flip the status back to "waiting".
+//  13. Sync connection lifecycle + handshake: a dead dial is dropped on
+//      peer-unavailable; an inbound link from the paired device is wired but
+//      stays silent until it proves the pairing secret; only ciphertext follows
+//      the handshake; plaintext after it closes the link with no auto-redial; a
+//      6-character legacy code is refused; a peer-unavailable for an OLD dial
+//      doesn't tear down a newer one; destroying the peer doesn't reconnect.
 //  14. Ctrl/Cmd+Enter inside the quick-capture modal saves the quick entry
 //      instead of advancing the capture step underneath.
 //  15. Delete → Undo doesn't splice a second copy when the entry is already
@@ -63,6 +64,13 @@
 //      position:sticky on its .capture-footer child, so Continue / Back /
 //      Save scrolled away with the form — 1123px below the fold on Step 2 of
 //      a 390x844 phone.
+//  25. A pre-v2 sync pairing (room, no secret) is never dialled or accepted;
+//      Settings shows the re-pairing notice and "generate" mints a new code.
+//  26. With a PIN set, no peer registers and nothing dials while locked; a
+//      good PIN starts sync, "Lock now" stops it.
+//  27. Loaded inside another site's frame, the page shows an escape notice
+//      and never boots the app (clickjacking guard; the meta CSP cannot carry
+//      frame-ancestors).
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -466,14 +474,19 @@ try {
     await ctx.close();
   }
 
-  // ── 13. Sync connection lifecycle (fake PeerJS) ────────────────────────
+  // ── 13. Sync connection lifecycle + handshake (fake PeerJS) ─────────────
   {
-    const { ctx, page, errors } = await openApp(() => {
+    const SECRET = '0123456789AB';
+    const { ctx, page, errors } = await openApp((secret) => {
       localStorage.setItem('rephrame_sync_enabled', '1');
+      // This device is the guest of room ZZZZZZ, already verified once.
+      localStorage.setItem('rephrame_peer_id_v1', 'rephrame-aaaaaa');
+      localStorage.setItem('rephrame_sync_pair_v2', JSON.stringify({ room: 'ZZZZZZ', secret, peer: 'rephrame-zzzzzz', verified: true }));
       window.__fakePeers = [];
       window.__mkConn = (peer, open) => ({
         peer, open, closed: false, sent: [], _h: {},
         on(ev, fn) { (this._h[ev] = this._h[ev] || []).push(fn); return this; },
+        off(ev, fn) { this._h[ev] = (this._h[ev] || []).filter(f => f !== fn); return this; },
         emit(ev, ...a) { (this._h[ev] || []).forEach(fn => fn(...a)); },
         send(m) { this.sent.push(m); },
         // Mirrors PeerJS: close() only emits "close" if the channel had opened.
@@ -487,53 +500,92 @@ try {
         destroy() { this.destroyed = true; this.emit('disconnected'); }
         reconnect() { if (this.destroyed) throw new Error('destroyed'); }
       };
-    });
+    }, SECRET);
     await page.waitForFunction(() => window.__fakePeers.length === 1, null, { timeout: 5000 });
-    const r = await page.evaluate(() => {
+    const r = await page.evaluate(async (secret) => {
       const h = window.__syncTestHooks;
       const peer = window.__fakePeers[0];
       const out = {};
+      const wait = (fn, ms = 4000) => new Promise((res, rej) => {
+        const t0 = Date.now();
+        (function tick() { if (fn()) return res(); if (Date.now() - t0 > ms) return rej(new Error('timeout')); setTimeout(tick, 10); })();
+      });
       peer.emit('open');
-      // Dial a peer that turns out to be offline.
-      h.connect('RFR-ZZZ-ZZZ');
-      out.dialing = h.connState().conn === window.__lastDial;
-      peer.emit('error', { type: 'peer-unavailable' });
+      // Boot auto-dials the paired device…
+      out.autoDialed = h.connState().conn === window.__lastDial && window.__lastDial.peer === 'rephrame-zzzzzz';
+      // …which turns out to be offline.
+      peer.emit('error', { type: 'peer-unavailable', message: 'Could not connect to peer rephrame-zzzzzz' });
       out.droppedAfterUnavailable = h.connState().conn === null;
       out.dialClosed = window.__lastDial.closed;
-      // That device comes online and dials us (already paired, so no banner).
-      localStorage.setItem('rephrame_sync_room', 'RFR-ZZZ-ZZZ');
+      // That device comes online and dials us (known peer, so no banner) —
+      // but nothing is sent until it proves the secret.
       const inbound = window.__mkConn('rephrame-zzzzzz', true);
       peer.emit('connection', inbound);
-      out.inboundAccepted = h.connState().conn === inbound && !inbound.closed;
-      out.stateSent = inbound.sent.some(m => m && m.type === 'state');
+      out.inboundWired = h.connState().conn === inbound && !inbound.closed;
+      out.silentBeforeHello = inbound.sent.length === 0;
+      // Play the dialler's side of the handshake with the real keys.
+      const keys = await h.deriveKeys(secret, 'ZZZZZZ');
+      const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+      inbound.emit('data', { type: 'hello', v: 2, nonce });
+      await wait(() => inbound.sent.length >= 1);
+      const ack = inbound.sent[0];
+      out.ackType = ack.type;
+      out.ackProofValid = await h.verifyProof(keys.mac, 'ack', nonce, ack.proof);
+      out.notReadyYet = inbound.sent.length === 1 && !h.connState().ready;
+      inbound.emit('data', { type: 'hello-ok', v: 2, proof: await h.makeProof(keys.mac, 'ok', ack.nonce) });
+      await wait(() => h.connState().ready && inbound.sent.length >= 2);
       out.statusConnected = h.connState().status === 'connected';
-      // Now re-pair with a different device: the open link is replaced
-      // without its own close handler scheduling a reconnect to it.
-      h.connect('RFR-YYY-YYY');
-      const after = h.connState();
-      out.oldClosed = inbound.closed;
-      out.newDial = after.conn === window.__lastDial && after.conn !== inbound;
-      out.noReconnectTimer = after.reconnectScheduled === false;
-      out.statusConnecting = after.status === 'connecting';
+      const after = inbound.sent.slice(1);
+      out.onlyCiphertextAfter = after.every(m => m.type === 'enc' && m.v === 2);
+      out.noPlaintextState = !JSON.stringify(inbound.sent).includes('entries');
+      const inner = await h.decrypt(keys, h.aadFor(nonce, ack.nonce, 'responder'), after[0]);
+      out.firstIsState = inner.type === 'state' && Array.isArray(inner.payload.entries);
+      // Plaintext after the handshake closes the link, with no auto-redial.
+      inbound.emit('data', { type: 'patch', payload: { entries: [] } });
+      await wait(() => h.connState().conn === null);
+      out.closedOnPlaintext = inbound.closed;
+      out.statusError = h.connState().status === 'error';
+      out.noReconnectTimer = h.connState().reconnectScheduled === false;
+      // An old-format code is refused outright…
+      h.connect('RFR-ZZZ-ZZZ');
+      out.legacyRefused = h.connState().conn === null && /older version/.test(h.connState().statusMsg);
+      // …while a full code re-pairs: the new dial replaces everything, no
+      // reconnect timer, status connecting, and the pairing record follows.
+      h.connect('YYY-YYY-' + secret.slice(0, 4) + '-' + secret.slice(4, 8) + '-' + secret.slice(8));
+      const st = h.connState();
+      out.newDial = st.conn === window.__lastDial && window.__lastDial.peer === 'rephrame-yyyyyy';
+      out.noReconnectTimer2 = st.reconnectScheduled === false;
+      out.statusConnecting = st.status === 'connecting';
+      out.pairingFollows = !!st.pairing && st.pairing.room === 'YYYYYY' && st.pairing.peer === 'rephrame-yyyyyy' && st.pairing.verified === false;
       return out;
-    });
-    assert.equal(r.dialing, true, 'syncConnect wires the outbound dial');
+    }, SECRET);
+    assert.equal(r.autoDialed, true, 'Boot auto-dials the paired device');
     assert.equal(r.droppedAfterUnavailable, true, 'peer-unavailable drops the dead dial from _conn');
     assert.equal(r.dialClosed, true, 'The dead dial is closed');
-    assert.equal(r.inboundAccepted, true, 'A later inbound dial from the paired device is accepted, not rejected as glare');
-    assert.equal(r.stateSent, true, 'Our state is sent on the accepted inbound link');
-    assert.equal(r.statusConnected, true, 'Status reads connected');
-    assert.equal(r.oldClosed, true, 'Re-pairing closes the previous link');
+    assert.equal(r.inboundWired, true, 'A later inbound dial from the paired device is wired, not rejected as glare');
+    assert.equal(r.silentBeforeHello, true, 'Nothing is sent on an inbound link before its hello');
+    assert.equal(r.ackType, 'hello-ack', 'A valid hello is answered with hello-ack');
+    assert.equal(r.ackProofValid, true, 'The hello-ack carries a valid HMAC proof over the dialler nonce');
+    assert.equal(r.notReadyYet, true, 'The link is not ready until the dialler proves the secret too');
+    assert.equal(r.statusConnected, true, 'Status reads connected after both proofs');
+    assert.equal(r.onlyCiphertextAfter, true, 'Only enc messages follow the handshake');
+    assert.equal(r.noPlaintextState, true, 'The journal never appears in plaintext');
+    assert.equal(r.firstIsState, true, 'The first ciphertext decrypts to the state snapshot');
+    assert.equal(r.closedOnPlaintext, true, 'A plaintext message after the handshake closes the link');
+    assert.equal(r.statusError, true, 'Status reads error after a protocol violation');
+    assert.equal(r.noReconnectTimer, true, 'No auto-reconnect after a protocol violation');
+    assert.equal(r.legacyRefused, true, 'A 6-character legacy code is refused with an explanation');
     assert.equal(r.newDial, true, '_conn now points at the new dial');
-    assert.equal(r.noReconnectTimer, true, 'Closing the old link did not schedule an auto-reconnect');
+    assert.equal(r.noReconnectTimer2, true, 'Re-pairing did not schedule an auto-reconnect');
     assert.equal(r.statusConnecting, true, 'Status reads connecting for the new dial');
+    assert.equal(r.pairingFollows, true, 'The pairing record follows the code that was entered');
 
     const r2 = await page.evaluate(async () => {
       const h = window.__syncTestHooks;
       const peer = window.__fakePeers[0];
       const out = {};
-      // A late EXPIRE for the earlier RFR-ZZZ-ZZZ dial must not kill the live
-      // RFR-YYY-YYY dial.
+      // A late EXPIRE for the earlier rephrame-zzzzzz dial must not kill the
+      // live rephrame-yyyyyy dial.
       const live = h.connState().conn;
       peer.emit('error', { type: 'peer-unavailable', message: 'Could not connect to peer rephrame-zzzzzz' });
       out.liveKept = h.connState().conn === live && !live.closed;
@@ -558,7 +610,7 @@ try {
     assert.equal(r2.statusStillError, true, 'A destroyed peer does not flip the status back to waiting');
     assert.equal(r2.noReconnect, true, 'A destroyed peer is not asked to reconnect');
     noErrors(errors, 'sync lifecycle');
-    log('PASS — sync drops dead dials and replaces links without self-reconnect.');
+    log('PASS — sync proves the pairing secret before any data and drops dead or unproven links.');
     await ctx.close();
   }
 
@@ -987,6 +1039,135 @@ try {
 
     noErrors(errors, 'sticky capture footer');
     log('PASS — the capture footer stays on screen on a phone, Step 1 and Step 2.');
+    await ctx.close();
+  }
+
+  // ── 25. A pre-v2 sync pairing is retired, not dialled ──────────────────
+  {
+    const { ctx, page, errors } = await openApp(() => {
+      localStorage.setItem('rephrame_sync_enabled', '1');
+      localStorage.setItem('rephrame_peer_id_v1', 'rephrame-abcdef');
+      localStorage.setItem('rephrame_sync_room', 'RFR-ZZZ-ZZZ');
+      window.__fakePeers = [];
+      window.Peer = class {
+        constructor(id) { this.id = id; window.__fakePeers.push(this); }
+        on() { return this; }
+        connect() { throw new Error('a legacy pairing must never be dialled'); }
+        destroy() {}
+      };
+    });
+    await page.waitForTimeout(300);
+    const st = await page.evaluate(() => ({ peers: window.__fakePeers.length, legacy: window.__syncTestHooks.connState().legacy }));
+    assert.equal(st.peers, 0, 'No peer is registered for a secret-less pairing');
+    assert.equal(st.legacy, true, 'The pairing is recognised as legacy');
+    await page.locator('[data-action="open-settings"]').first().click();
+    await page.waitForSelector('#syncPanel #syncRegenBtn', { timeout: 5000 });
+    const text = await page.locator('#syncPanel').innerText();
+    assert.match(text, /re-pairing needed/i, 'Settings shows the re-pairing notice');
+    assert.match(text, /Security update/i, 'The notice explains why');
+    // Generating a new code mints a room + secret, retires the legacy record
+    // and registers the new id.
+    await page.locator('#syncRegenBtn').click();
+    await page.waitForSelector('#syncMyCode', { timeout: 5000 });
+    await page.waitForFunction(() => window.__fakePeers.length === 1, null, { timeout: 5000 });
+    const after = await page.evaluate(() => {
+      const p = JSON.parse(localStorage.getItem('rephrame_sync_pair_v2'));
+      return {
+        room: p.room, secretLen: p.secret.length, peer: p.peer,
+        legacyGone: localStorage.getItem('rephrame_sync_room') === null,
+        code: document.getElementById('syncMyCode').textContent.trim(),
+        id: localStorage.getItem('rephrame_peer_id_v1'),
+        registered: window.__fakePeers[0].id,
+      };
+    });
+    assert.equal(after.secretLen, 12, 'A 12-character secret was minted');
+    assert.equal(after.peer, null, 'The new pairing has no partner yet');
+    assert.equal(after.legacyGone, true, 'The legacy room record is removed');
+    assert.equal(after.id, 'rephrame-' + after.room.toLowerCase(), 'The new room id is the device id');
+    assert.equal(after.registered, after.id, 'The peer registers under the new id');
+    assert.match(after.code, /^[0-9A-Z]{3}-[0-9A-Z]{3}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/, 'The panel shows the full pairing code');
+    assert.ok(after.code.startsWith(after.room.slice(0, 3) + '-' + after.room.slice(3)), 'The code starts with the room id');
+    noErrors(errors, 'legacy pairing');
+    log('PASS — a legacy pairing is retired until a new code is generated.');
+    await ctx.close();
+  }
+
+  // ── 26. Sync stays down behind the PIN lock and starts on unlock ───────
+  {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+    await ctx.addInitScript(ONBOARDED);
+    await ctx.addInitScript(() => {
+      localStorage.setItem('rephrame_sync_enabled', '1');
+      localStorage.setItem('rephrame_peer_id_v1', 'rephrame-abcdef');
+      localStorage.setItem('rephrame_sync_pair_v2', JSON.stringify({ room: 'ABCDEF', secret: '0123456789AB', peer: 'rephrame-zzzzzz', verified: true }));
+      window.__fakePeers = [];
+      window.__dials = [];
+      window.Peer = class {
+        constructor(id) {
+          this.id = id; this.destroyed = false; this._h = {};
+          window.__fakePeers.push(this);
+          setTimeout(() => (this._h.open || []).forEach(fn => fn()), 0);
+        }
+        on(ev, fn) { (this._h[ev] = this._h[ev] || []).push(fn); return this; }
+        connect(peerId) { window.__dials.push(peerId); return { peer: peerId, open: false, on() { return this; }, send() {}, close() {} }; }
+        destroy() { this.destroyed = true; }
+        reconnect() {}
+      };
+    });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+    await page.evaluate(async () => { await setStoredPin('2468'); sessionStorage.removeItem('reframe-unlocked'); });
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#lockPinInput', { timeout: 10000 });
+    await page.waitForTimeout(400);
+    const locked = await page.evaluate(() => ({ peers: window.__fakePeers.length, dials: window.__dials.length }));
+    assert.equal(locked.peers, 0, 'Locked: no peer registered on the broker');
+    assert.equal(locked.dials, 0, 'Locked: no auto-dial of the paired device');
+    await page.locator('#lockPinInput').fill('2468');
+    await page.locator('#lockForm button[type="submit"]').click();
+    await page.waitForFunction(() => window.__fakePeers.length === 1 && window.__dials.length === 1, null, { timeout: 10000 });
+    assert.equal(await page.evaluate(() => window.__dials[0]), 'rephrame-zzzzzz', 'Unlock starts sync and dials the paired device');
+    // Lock now takes it down again.
+    await page.locator('[data-action="open-settings"]').first().click();
+    await page.locator('[data-action="lock-now"]').first().click();
+    await page.waitForSelector('#lockPinInput', { timeout: 5000 });
+    assert.equal(await page.evaluate(() => window.__fakePeers[0].destroyed), true, 'Lock now destroys the peer');
+    noErrors(errors, 'pin gate');
+    log('PASS — sync waits behind the PIN lock, starts on unlock and stops on lock.');
+    await ctx.close();
+  }
+
+  // ── 27. The app refuses to render inside another site's frame ──────────
+  {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+    const page = await ctx.newPage();
+    await page.setContent('<!doctype html><html><body><iframe id="f" src="' + URL + '" width="400" height="800"></iframe></body></html>');
+    let frame = null;
+    for (let i = 0; i < 100 && !frame; i++) {
+      frame = page.frames().find(f => f !== page.mainFrame() && f.url().includes('index.html')) || null;
+      if (!frame) await page.waitForTimeout(50);
+    }
+    assert.ok(frame, 'The frame loaded');
+    await frame.waitForSelector('a[target="_top"]', { timeout: 10000 });
+    await page.waitForTimeout(500);
+    const inFrame = await frame.evaluate(() => ({
+      app: !!document.querySelector('.app'),
+      view: !!document.getElementById('view'),
+      booted: typeof window.__syncTestHooks !== 'undefined' || typeof window.renderSyncPanel === 'function',
+      text: document.body.textContent,
+      link: document.querySelector('a[target="_top"]').getAttribute('href'),
+      bodies: document.querySelectorAll('body').length,
+    }));
+    assert.equal(inFrame.app, false, 'No app shell rendered in the frame');
+    assert.equal(inFrame.view, false, 'No #view in the frame');
+    assert.equal(inFrame.booted, false, 'app.js / sync.js did not boot in the frame');
+    assert.equal(inFrame.bodies, 1, 'Only the notice document remains');
+    assert.match(inFrame.text, /inside another website/, 'The notice explains');
+    assert.equal(inFrame.link, URL, 'The escape link opens the app directly');
+    log('PASS — framed loads show the escape notice instead of the app.');
     await ctx.close();
   }
 

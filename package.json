@@ -8,6 +8,7 @@
     "serve": "python3 -m http.server 8765",
     "lint": "eslint .",
     "check": "node tests/check-static.mjs",
+    "crypto": "node --test tests/sync-crypto.test.mjs",
     "test": "node tests/smoke.mjs",
     "flows": "node tests/flows.mjs",
     "robustness": "node tests/robustness.mjs",

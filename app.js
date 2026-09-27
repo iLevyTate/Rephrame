@@ -1,3 +1,9 @@
+// Clickjacking guard, second line of defence behind the one in js/pwa.js
+// (which aborts the page before this script is even fetched). A classic
+// script cannot return early, so refuse to boot inside any frame by throwing
+// before a single byte of journal state is read.
+if (window.top !== window.self) throw new Error("Rephrame does not run inside a frame");
+
 // ═══════════════════════════════════════════════════════════════════
 // REFERENCE DATA
 // ═══════════════════════════════════════════════════════════════════
@@ -2047,6 +2053,9 @@ function renderLockScreen() {
       state.lockError = "";
       render();
       _openPendingImport();
+      // Sync (js/sync.js) stays completely down while the journal is locked —
+      // no peer registration, no auto-dial — and starts on this signal.
+      try { window.dispatchEvent(new CustomEvent("rephrame:unlocked")); } catch (_) {}
     } else {
       // verifyPin() already recorded the failure + advanced the lockout.
       const wait = pinLockoutMsLeft();
@@ -6407,6 +6416,9 @@ function bindModal() {
       state.modal = null;
       state.lockError = "";
       render();
+      // Take sync down with the lock: nothing is sent or accepted while the
+      // lock screen is up. js/sync.js restarts it on "rephrame:unlocked".
+      try { window.dispatchEvent(new CustomEvent("rephrame:locked")); } catch (_) {}
     });
   });
 

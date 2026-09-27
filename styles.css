@@ -3873,6 +3873,9 @@ button.entry-flag:focus-visible {
   color: var(--copper-deep); padding: 10px 14px; background: var(--paper-2);
   border-radius: var(--r-3); border: 1px solid var(--rule-paper-2);
 }
+/* The v2 pairing code (room + secret, 22 chars with dashes) needs a smaller
+   size and tighter tracking than the old 11-char one to fit the modal. */
+.sync-code--long { font-size: 15px; letter-spacing: 0.08em; word-break: break-all; }
 .sync-code-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .sync-input-row { display: flex; gap: 8px; }
 .sync-input-row input {
