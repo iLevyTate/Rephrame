@@ -6,7 +6,10 @@
 // PeerJS broker — the full hello / hello-ack / hello-ok handshake, the
 // encrypted state exchange, rejection of wrong secrets, plaintext, wrong
 // versions and pre-v2 peers, the inbound back-off, the legacy-pairing lockout,
-// code rotation and the PIN gate.
+// code rotation and the PIN gate. A fake IndexedDB (below) stands in for the
+// key store, so the storage layout is covered too: the secret is never
+// written anywhere, the derived keys survive a "reload" (a second sandbox
+// over the same storage), and a record without keys reads as unpaired.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run crypto`
 // (node --test). No server needed.
@@ -37,6 +40,82 @@ function makeStorage(seed = {}) {
     getItem: (k) => (m.has(k) ? m.get(k) : null),
     setItem: (k, v) => { m.set(k, String(v)); },
     removeItem: (k) => { m.delete(k); },
+    dump: () => JSON.stringify([...m.entries()]),
+  };
+}
+
+// Minimal IndexedDB stand-in: enough of open() / onupgradeneeded /
+// createObjectStore / transaction / objectStore / get / put / delete /
+// oncomplete for js/sync.js's key store, backed by Maps so a second sandbox
+// given the same instance sees what the first one stored. `broken` makes
+// every open() fail, like a browser that refuses persistent storage.
+function makeFakeIDB({ broken = false } = {}) {
+  const dbs = new Map(); // name -> { stores: Map<name, Map<key, value>> }
+  const later = (fn) => setTimeout(fn, 0);
+  const mkRequest = () => ({ result: undefined, error: null, onsuccess: null, onerror: null });
+  const makeDb = (rec, name) => ({
+    name,
+    objectStoreNames: { contains: (st) => rec.stores.has(st) },
+    createObjectStore(st) { if (!rec.stores.has(st)) rec.stores.set(st, new Map()); return {}; },
+    transaction(st, mode) {
+      const names = Array.isArray(st) ? st : [st];
+      for (const n of names) if (!rec.stores.has(n)) throw new Error('NotFoundError: no object store ' + n);
+      const tx = { mode, error: null, oncomplete: null, onerror: null, onabort: null, _pending: 0, _done: false };
+      const finish = () => later(() => {
+        if (tx._pending === 0 && !tx._done) { tx._done = true; if (tx.oncomplete) tx.oncomplete({ target: tx }); }
+      });
+      tx.objectStore = (n) => {
+        const store = rec.stores.get(n);
+        const run = (fn, write) => {
+          if (write && mode !== 'readwrite') throw new Error('ReadOnlyError');
+          const req = mkRequest();
+          tx._pending++;
+          later(() => {
+            try { req.result = fn(); }
+            catch (e) {
+              req.error = e; tx.error = e; tx._pending--; tx._done = true;
+              if (req.onerror) req.onerror({ target: req });
+              if (tx.onabort) tx.onabort({ target: tx });
+              return;
+            }
+            tx._pending--;
+            if (req.onsuccess) req.onsuccess({ target: req });
+            finish();
+          });
+          return req;
+        };
+        return {
+          get: (k) => run(() => store.get(k)),
+          put: (v, k) => run(() => { store.set(k, v); return k; }, true),
+          delete: (k) => run(() => { store.delete(k); }, true),
+        };
+      };
+      later(() => { if (tx._pending === 0) finish(); });
+      return tx;
+    },
+    close() {},
+  });
+  return {
+    dbs,
+    // Synchronous peek for assertions.
+    read: (name, st, key) => { const rec = dbs.get(name); const store = rec && rec.stores.get(st); return store ? store.get(key) : undefined; },
+    open(name, version) {
+      const req = mkRequest();
+      req.onupgradeneeded = null; req.onblocked = null;
+      if (broken) {
+        later(() => { req.error = new Error('IndexedDB unavailable'); if (req.onerror) req.onerror({ target: req }); });
+        return req;
+      }
+      later(() => {
+        let rec = dbs.get(name);
+        const fresh = !rec;
+        if (fresh) { rec = { stores: new Map(), version: version || 1 }; dbs.set(name, rec); }
+        req.result = makeDb(rec, name);
+        if (fresh && req.onupgradeneeded) req.onupgradeneeded({ target: req });
+        if (req.onsuccess) req.onsuccess({ target: req });
+      });
+      return req;
+    },
   };
 }
 
@@ -106,7 +185,9 @@ function makeBroker() {
 }
 
 // Load js/sync.js into a fresh sandbox standing in for one device.
-function loadSync({ storage = makeStorage(), Peer, state = { entries: [] }, globals = {} } = {}) {
+// `idb` is the fake IndexedDB instance (shared between sandboxes to simulate
+// a reload); null leaves the sandbox without an indexedDB global at all.
+function loadSync({ storage = makeStorage(), Peer, state = { entries: [] }, globals = {}, idb = makeFakeIDB() } = {}) {
   const log = [];
   const toasts = [];
   const listeners = {};
@@ -130,13 +211,15 @@ function loadSync({ storage = makeStorage(), Peer, state = { entries: [] }, glob
   sandbox.top = sandbox;
   sandbox.addEventListener = (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); };
   if (Peer) sandbox.Peer = Peer;
+  if (idb) sandbox.indexedDB = idb;
   vm.createContext(sandbox);
   vm.runInContext(SRC, sandbox, { filename: 'js/sync.js' });
   const dispatch = (ev) => { for (const fn of listeners[ev] || []) fn(); };
-  return { sb: sandbox, hooks: sandbox.__syncTestHooks, storage, state, toasts, log, dispatch };
+  return { sb: sandbox, hooks: sandbox.__syncTestHooks, storage, idb, state, toasts, log, dispatch };
 }
 
 const pairingOf = (dev) => JSON.parse(dev.storage.getItem('rephrame_sync_pair_v2'));
+const keysOf = (dev) => (dev.idb ? dev.idb.read('rephrame-sync', 'keys', 'pairing') : undefined);
 const peerOf = (dev) => dev.hooks.connState().peer;
 const entry = (id, body, updatedAt) => ({ id, kind: 'freeform', createdAt: '2024-01-01T00:00:00.000Z', updatedAt, body });
 // Boot a sandbox as a sync-enabled device on the shared broker.
@@ -145,7 +228,15 @@ const bootDevice = (broker, opts = {}) => loadSync({
   Peer: broker.FakePeer,
   state: { entries: opts.entries || [] },
   globals: opts.globals,
+  idb: opts.idb,
 });
+// Seed a device the way a typed code would (secret → keys only), then enable.
+async function bootPaired(broker, pairing, opts = {}) {
+  const dev = bootDevice(broker, { ...opts, storage: opts.storage || makeStorage({}) });
+  await dev.hooks.installPairing(pairing);
+  dev.hooks.enable();
+  return dev;
+}
 
 test('pairing codes: parse, normalise and format', () => {
   const { hooks } = loadSync();
@@ -232,19 +323,23 @@ test('two devices pair, prove the secret both ways and exchange only ciphertext'
   const A = bootDevice(broker, { entries: [entry('a1', 'from A', 100)] });
   await until(() => peerOf(A), 'A peer');
   const pairA = pairingOf(A);
-  assert.equal(pairA.secret.length, 12);
+  assert.equal('secret' in pairA, false, 'the stored record carries no secret');
   assert.equal(pairA.peer, null, 'a freshly minted pairing knows no partner yet');
   assert.equal(peerOf(A).id, 'rephrame-' + pairA.room.toLowerCase(), 'the room id is the host device id');
-  const code = A.hooks.formatCode(pairA.room, pairA.secret);
+  const code = A.hooks.offerCode();
+  assert.match(code, /^[0-9A-Z]{3}-[0-9A-Z]{3}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/, 'the offered code is room + 12-char secret');
+  assert.ok(code.startsWith(pairA.room.slice(0, 3) + '-' + pairA.room.slice(3)), 'the code starts with the room id');
 
   const B = bootDevice(broker, { entries: [entry('b1', 'from B', 100)] });
   await until(() => peerOf(B), 'B peer');
   assert.notEqual(peerOf(B).id, peerOf(A).id);
 
-  // B enters A's code: it stores the same room + secret and dials A.
-  B.hooks.connect(code);
+  // B enters A's code: it stores the same room, keys derived from the secret
+  // (never the secret itself) and dials A.
+  await B.hooks.connect(code);
   assert.equal(pairingOf(B).room, pairA.room);
-  assert.equal(pairingOf(B).secret, pairA.secret);
+  assert.equal('secret' in pairingOf(B), false);
+  assert.equal(keysOf(B).room, pairA.room, 'the guest keeps keys for the room in IndexedDB');
   assert.equal(pairingOf(B).peer, peerOf(A).id);
   // A shows the consent banner for the unknown device; nothing is wired yet
   // and the hello that arrived meanwhile is held, not lost.
@@ -266,6 +361,7 @@ test('two devices pair, prove the secret both ways and exchange only ciphertext'
   assert.equal(pairingOf(A).peer, peerOf(B).id, 'A learned B\'s id from the verified handshake');
   assert.equal(pairingOf(A).verified, true);
   assert.equal(pairingOf(B).verified, true);
+  assert.equal(A.hooks.offerCode(), null, 'the host forgets the secret once a device has paired');
 
   // A later save broadcasts an encrypted patch that B merges.
   const before = broker.wire.length;
@@ -281,11 +377,11 @@ test('a device holding the wrong secret is closed by the dialler and receives no
   const broker = makeBroker();
   const A = bootDevice(broker, { entries: [entry('a1', 'from A', 100)] });
   await until(() => peerOf(A), 'A peer');
-  const pairA = pairingOf(A);
-  const wrongSecret = pairA.secret.slice(0, 11) + (pairA.secret.endsWith('A') ? 'B' : 'A');
+  const offer = A.hooks.parseCode(A.hooks.offerCode());
+  const wrongSecret = offer.secret.slice(0, 11) + (offer.secret.endsWith('A') ? 'B' : 'A');
   const C = bootDevice(broker);
   await until(() => peerOf(C), 'C peer');
-  C.hooks.connect(A.hooks.formatCode(pairA.room, wrongSecret));
+  await C.hooks.connect(A.hooks.formatCode(offer.room, wrongSecret));
   await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'hello');
   await sleep(20);
   A.hooks.acceptInbound();
@@ -314,13 +410,9 @@ test('a squatter on the host id cannot get past hello; a responder refuses bad p
       if (m.type === 'hello') c.send({ type: 'hello-ack', v: 2, nonce: m.nonce, proof: b64(new Uint8Array(32)) });
     });
   });
-  const G = bootDevice(broker, {
+  const G = await bootPaired(broker, { room, secret, peer: 'rephrame-ab3c9d', verified: true }, {
     entries: [entry('g1', 'guest secret entry', 100)],
-    storage: makeStorage({
-      rephrame_sync_enabled: '1',
-      rephrame_peer_id_v1: 'rephrame-guest1',
-      rephrame_sync_pair_v2: JSON.stringify({ room, secret, peer: 'rephrame-ab3c9d', verified: true }),
-    }),
+    storage: makeStorage({ rephrame_peer_id_v1: 'rephrame-guest1' }),
   });
   await until(() => G.hooks.connState().status === 'error', 'guest rejects the squatter');
   assert.match(G.hooks.connState().statusMsg, /codes do not match/);
@@ -380,8 +472,8 @@ test('a valid hello followed by a bad hello-ok proof is closed after the ack, ne
   const broker = makeBroker();
   const H = bootDevice(broker, { entries: [entry('h1', 'host secret entry', 100)] });
   await until(() => peerOf(H), 'H peer');
-  const pairH = pairingOf(H);
-  const keys = await H.hooks.deriveKeys(pairH.secret, pairH.room);
+  const offer = H.hooks.parseCode(H.hooks.offerCode());
+  const keys = await H.hooks.deriveKeys(offer.secret, offer.room);
   const raw = new broker.FakePeer('rephrame-rawdial');
   await until(() => broker.peers.has('rephrame-rawdial'), 'raw registered');
   const got = [];
@@ -419,6 +511,7 @@ test('a valid hello followed by a bad hello-ok proof is closed after the ack, ne
   assert.equal(inner.payload.entries[0].body, 'host secret entry', 'the journal only travels inside the ciphertext');
   assert.equal(pairingOf(H).peer, 'rephrame-rawdial', 'the host adopts the peer that proved the secret');
   assert.equal(pairingOf(H).verified, true);
+  assert.equal(H.hooks.offerCode(), null, 'the offered code is withdrawn once a device has paired');
 });
 
 test('a pre-v2 pairing (room without secret) is neither dialled nor accepted until a new code is generated', async () => {
@@ -439,7 +532,9 @@ test('a pre-v2 pairing (room without secret) is neither dialled nor accepted unt
   L.hooks.regenerateCode();
   await until(() => peerOf(L), 'peer after regenerate');
   const p = pairingOf(L);
-  assert.equal(p.secret.length, 12);
+  assert.equal('secret' in p, false, 'the record has no secret');
+  assert.equal(L.hooks.offerCode().replace(/-/g, '').length, 18, 'a full code (room + 12-char secret) is offered');
+  assert.equal(keysOf(L).room, p.room, 'keys for the new room are stored');
   assert.equal(p.peer, null);
   assert.equal(peerOf(L).id, 'rephrame-' + p.room.toLowerCase());
   assert.equal(L.storage.getItem('rephrame_peer_id_v1'), peerOf(L).id, 'the old device id is replaced');
@@ -452,12 +547,14 @@ test('generating a new pairing code rotates the room id and secret and forgets t
   const A = bootDevice(broker);
   await until(() => peerOf(A), 'A peer');
   const before = pairingOf(A);
+  const beforeCode = A.hooks.offerCode();
   const oldPeer = peerOf(A);
   A.hooks.regenerateCode();
   await until(() => peerOf(A) && peerOf(A) !== oldPeer, 'new peer');
   const after = pairingOf(A);
   assert.notEqual(after.room, before.room);
-  assert.notEqual(after.secret, before.secret);
+  assert.notEqual(A.hooks.offerCode(), beforeCode);
+  assert.equal(keysOf(A).room, after.room, 'the stored keys follow the new room');
   assert.equal(after.peer, null);
   assert.equal(after.verified, false);
   assert.equal(oldPeer.destroyed, true, 'the old id is released');
@@ -468,12 +565,8 @@ test('with a PIN set and the journal locked, no peer is registered until unlock;
   const broker = makeBroker();
   new broker.FakePeer('rephrame-other1'); // the paired device, online but silent
   let unlocked = false;
-  const P = bootDevice(broker, {
-    storage: makeStorage({
-      rephrame_sync_enabled: '1',
-      rephrame_peer_id_v1: 'rephrame-ab3c9d',
-      rephrame_sync_pair_v2: JSON.stringify({ room: 'AB3C9D', secret: '0123456789AB', peer: 'rephrame-other1', verified: true }),
-    }),
+  const P = await bootPaired(broker, { room: 'AB3C9D', secret: '0123456789AB', peer: 'rephrame-other1', verified: true }, {
+    storage: makeStorage({ rephrame_peer_id_v1: 'rephrame-ab3c9d' }),
     globals: { hasPin: () => true, isUnlocked: () => unlocked },
   });
   await sleep(30);
@@ -490,4 +583,133 @@ test('with a PIN set and the journal locked, no peer is registered until unlock;
   assert.equal(peerOf(P), null, 'locked again: peer destroyed');
   assert.equal(P.hooks.connState().conn, null);
   assert.equal(broker.peers.has('rephrame-ab3c9d'), false);
+});
+
+test('storage layout: localStorage holds {room, peer, verified}, IndexedDB holds non-extractable keys, the secret is nowhere', async () => {
+  const broker = makeBroker();
+  const A = bootDevice(broker);
+  await until(() => peerOf(A), 'A peer');
+  const code = A.hooks.offerCode();
+  const secret = A.hooks.parseCode(code).secret;
+  const rec = pairingOf(A);
+  assert.deepEqual(Object.keys(rec).sort(), ['peer', 'room', 'verified']);
+  assert.ok(!A.storage.dump().includes(secret), 'the secret appears in no localStorage value');
+  const keys = keysOf(A);
+  assert.equal(keys.room, rec.room);
+  assert.equal(keys.aes.extractable, false, 'AES key is non-extractable');
+  assert.equal(keys.mac.extractable, false, 'HMAC key is non-extractable');
+  assert.equal(keys.aes.algorithm.name, 'AES-GCM');
+  assert.equal(keys.mac.algorithm.name, 'HMAC');
+  assert.deepEqual(Object.keys(keys).sort(), ['aes', 'mac', 'room'], 'the key record is {room, aes, mac}');
+  assert.equal(A.hooks.connState().keysVolatile, false);
+
+  const B = bootDevice(broker);
+  await until(() => peerOf(B), 'B peer');
+  await B.hooks.connect(code);
+  assert.deepEqual(Object.keys(pairingOf(B)).sort(), ['peer', 'room', 'verified']);
+  assert.ok(!B.storage.dump().includes(secret), 'the guest does not store the secret either');
+  assert.equal(keysOf(B).room, rec.room);
+  assert.equal(B.hooks.offerCode(), null, 'a guest offers no code');
+  // Finish the pairing so no handshake timer outlives the test.
+  await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'hello');
+  await sleep(20);
+  A.hooks.acceptInbound();
+  await until(() => A.hooks.connState().ready && B.hooks.connState().ready, 'paired with stored keys');
+});
+
+test('keys survive a reload: a second boot over the same storage comes up paired, without the code, and reconnects', async () => {
+  const broker = makeBroker();
+  const storageA = makeStorage({ rephrame_sync_enabled: '1' });
+  const idbA = makeFakeIDB();
+  const A = bootDevice(broker, { storage: storageA, idb: idbA, entries: [entry('a1', 'from A', 100)] });
+  await until(() => peerOf(A), 'A peer');
+  const code = A.hooks.offerCode();
+  const B = bootDevice(broker, { entries: [entry('b1', 'from B', 100)] });
+  await until(() => peerOf(B), 'B peer');
+  await B.hooks.connect(code);
+  await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'hello');
+  await sleep(20);
+  A.hooks.acceptInbound();
+  await until(() => A.hooks.connState().ready && B.hooks.connState().ready, 'paired');
+  const bId = peerOf(B).id;
+
+  // "Reload" A: the page goes away (beforeunload tears the peer down) and a
+  // fresh sandbox boots over the same localStorage + IndexedDB.
+  A.dispatch('beforeunload');
+  await sleep(20);
+  const A2 = bootDevice(broker, { storage: storageA, idb: idbA, entries: [entry('a1', 'from A', 100), entry('a2', 'after reload', 200)] });
+  await until(() => peerOf(A2), 'A2 peer');
+  const st = A2.hooks.connState();
+  assert.equal(st.pairing.room, pairingOf(A).room);
+  assert.equal(st.pairing.peer, bId, 'the partner id came back from storage');
+  assert.equal(st.pairing.verified, true);
+  assert.equal(A2.hooks.offerCode(), null, 'the code did not survive the page (the secret was never stored)');
+  assert.equal(st.keysVolatile, false);
+  assert.ok(!storageA.dump().includes(A.hooks.parseCode(code).secret));
+  // A2 auto-dials B, proves the secret with the stored keys, and the two
+  // exchange ciphertext again.
+  await until(() => A2.hooks.connState().ready && B.hooks.connState().ready, 'reconnected after reload');
+  await until(() => B.state.entries.some((e) => e.id === 'a2'), 'B received the post-reload entry');
+  assert.ok(broker.wire.every((m) => ['hello', 'hello-ack', 'hello-ok', 'enc'].includes(m.msg.type)), 'only handshake and enc messages ever crossed the wire');
+  assert.ok(!JSON.stringify(broker.wire).includes('after reload'));
+});
+
+test('a pairing record whose keys are missing is retired: unpaired, explained, nothing registered', async () => {
+  const broker = makeBroker();
+  const D = bootDevice(broker, {
+    storage: makeStorage({
+      rephrame_sync_enabled: '1',
+      rephrame_peer_id_v1: 'rephrame-ab3c9d',
+      rephrame_sync_pair_v2: JSON.stringify({ room: 'AB3C9D', peer: 'rephrame-other1', verified: true }),
+    }),
+  });
+  await until(() => D.hooks.connState().status === 'unpaired', 'unpaired');
+  await sleep(20);
+  assert.equal(peerOf(D), null, 'no peer is registered without keys');
+  assert.equal(broker.peers.size, 0);
+  assert.match(D.hooks.connState().statusMsg, /sync keys are gone/);
+  assert.equal(pairingOf(D), null, 'the useless record is removed');
+  assert.equal(D.hooks.connState().pairing, null);
+});
+
+test('a pre-release record that carries a secret is ignored and replaced by a fresh pairing', async () => {
+  const broker = makeBroker();
+  const D = bootDevice(broker, {
+    storage: makeStorage({
+      rephrame_sync_enabled: '1',
+      rephrame_sync_pair_v2: JSON.stringify({ room: 'AB3C9D', secret: '0123456789AB', peer: 'rephrame-other1', verified: true }),
+    }),
+  });
+  await until(() => peerOf(D), 'D peer');
+  const rec = pairingOf(D);
+  assert.equal('secret' in rec, false, 'the replacement record has no secret');
+  assert.equal(rec.peer, null, 'the old partner is not carried over');
+  assert.ok(D.hooks.offerCode(), 'a fresh code is offered');
+  assert.ok(!D.storage.dump().includes('0123456789AB'), 'the old secret is gone from storage');
+});
+
+test('without IndexedDB the pairing works for the session, is flagged as not surviving a reload, and is gone after one', async () => {
+  for (const [label, mkIdb] of [['no indexedDB API', () => null], ['indexedDB that refuses to open', () => makeFakeIDB({ broken: true })]]) {
+    const broker = makeBroker();
+    const idbA = mkIdb();
+    const A = bootDevice(broker, { idb: idbA });
+    await until(() => peerOf(A), 'A peer (' + label + ')');
+    await until(() => A.hooks.connState().keysVolatile === true, 'volatile flag (' + label + ')');
+    const code = A.hooks.offerCode();
+    assert.ok(code, 'a code is still offered (' + label + ')');
+    const B = bootDevice(broker, { idb: mkIdb() });
+    await until(() => peerOf(B), 'B peer');
+    await B.hooks.connect(code);
+    await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'hello');
+    await sleep(20);
+    A.hooks.acceptInbound();
+    await until(() => A.hooks.connState().ready && B.hooks.connState().ready, 'pairs in-session (' + label + ')');
+    assert.equal(B.hooks.connState().keysVolatile, true, 'the guest is flagged too (' + label + ')');
+    A.dispatch('beforeunload');
+    await sleep(20);
+    const A2 = bootDevice(broker, { storage: A.storage, idb: idbA });
+    await until(() => A2.hooks.connState().status === 'unpaired', 'unpaired after reload (' + label + ')');
+    assert.match(A2.hooks.connState().statusMsg, /keys are gone/);
+    assert.equal(peerOf(A2), null);
+  }
 });

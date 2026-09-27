@@ -477,11 +477,10 @@ try {
   // ── 13. Sync connection lifecycle + handshake (fake PeerJS) ─────────────
   {
     const SECRET = '0123456789AB';
-    const { ctx, page, errors } = await openApp((secret) => {
-      localStorage.setItem('rephrame_sync_enabled', '1');
-      // This device is the guest of room ZZZZZZ, already verified once.
+    const { ctx, page, errors } = await openApp(() => {
+      // This device becomes the guest of room ZZZZZZ below, through the test
+      // hook that turns the secret into keys (nothing seeds it in the clear).
       localStorage.setItem('rephrame_peer_id_v1', 'rephrame-aaaaaa');
-      localStorage.setItem('rephrame_sync_pair_v2', JSON.stringify({ room: 'ZZZZZZ', secret, peer: 'rephrame-zzzzzz', verified: true }));
       window.__fakePeers = [];
       window.__mkConn = (peer, open) => ({
         peer, open, closed: false, sent: [], _h: {},
@@ -500,6 +499,11 @@ try {
         destroy() { this.destroyed = true; this.emit('disconnected'); }
         reconnect() { if (this.destroyed) throw new Error('destroyed'); }
       };
+    });
+    await page.evaluate(async (secret) => {
+      const h = window.__syncTestHooks;
+      await h.installPairing({ room: 'ZZZZZZ', secret, peer: 'rephrame-zzzzzz', verified: true });
+      h.enable();
     }, SECRET);
     await page.waitForFunction(() => window.__fakePeers.length === 1, null, { timeout: 5000 });
     const r = await page.evaluate(async (secret) => {
@@ -547,12 +551,16 @@ try {
       out.statusError = h.connState().status === 'error';
       out.noReconnectTimer = h.connState().reconnectScheduled === false;
       // An old-format code is refused outright…
-      h.connect('RFR-ZZZ-ZZZ');
+      await h.connect('RFR-ZZZ-ZZZ');
       out.legacyRefused = h.connState().conn === null && /older version/.test(h.connState().statusMsg);
       // …while a full code re-pairs: the new dial replaces everything, no
-      // reconnect timer, status connecting, and the pairing record follows.
-      h.connect('YYY-YYY-' + secret.slice(0, 4) + '-' + secret.slice(4, 8) + '-' + secret.slice(8));
+      // reconnect timer, status connecting, and the pairing record follows —
+      // holding the room and partner id but never the secret.
+      await h.connect('YYY-YYY-' + secret.slice(0, 4) + '-' + secret.slice(4, 8) + '-' + secret.slice(8));
       const st = h.connState();
+      const rec = JSON.parse(localStorage.getItem('rephrame_sync_pair_v2'));
+      out.recordHasNoSecret = !!rec && rec.room === 'YYYYYY' && !('secret' in rec) &&
+        Object.keys(localStorage).every(k => !String(localStorage.getItem(k)).includes(secret));
       out.newDial = st.conn === window.__lastDial && window.__lastDial.peer === 'rephrame-yyyyyy';
       out.noReconnectTimer2 = st.reconnectScheduled === false;
       out.statusConnecting = st.status === 'connecting';
@@ -579,6 +587,7 @@ try {
     assert.equal(r.noReconnectTimer2, true, 'Re-pairing did not schedule an auto-reconnect');
     assert.equal(r.statusConnecting, true, 'Status reads connecting for the new dial');
     assert.equal(r.pairingFollows, true, 'The pairing record follows the code that was entered');
+    assert.equal(r.recordHasNoSecret, true, 'The localStorage record never carries the secret');
 
     const r2 = await page.evaluate(async () => {
       const h = window.__syncTestHooks;
@@ -1045,9 +1054,14 @@ try {
   // ── 25. A pre-v2 sync pairing is retired, not dialled ──────────────────
   {
     const { ctx, page, errors } = await openApp(() => {
-      localStorage.setItem('rephrame_sync_enabled', '1');
-      localStorage.setItem('rephrame_peer_id_v1', 'rephrame-abcdef');
-      localStorage.setItem('rephrame_sync_room', 'RFR-ZZZ-ZZZ');
+      // Seed the pre-v2 state only until the app has replaced it: this init
+      // script also runs on the reload further down, which must see the
+      // freshly generated pairing, not the legacy one again.
+      if (!localStorage.getItem('rephrame_sync_pair_v2')) {
+        localStorage.setItem('rephrame_sync_enabled', '1');
+        localStorage.setItem('rephrame_peer_id_v1', 'rephrame-abcdef');
+        localStorage.setItem('rephrame_sync_room', 'RFR-ZZZ-ZZZ');
+      }
       window.__fakePeers = [];
       window.Peer = class {
         constructor(id) { this.id = id; window.__fakePeers.push(this); }
@@ -1070,17 +1084,60 @@ try {
     await page.locator('#syncRegenBtn').click();
     await page.waitForSelector('#syncMyCode', { timeout: 5000 });
     await page.waitForFunction(() => window.__fakePeers.length === 1, null, { timeout: 5000 });
-    const after = await page.evaluate(() => {
+    const after = await page.evaluate(async () => {
       const p = JSON.parse(localStorage.getItem('rephrame_sync_pair_v2'));
+      const code = document.getElementById('syncMyCode').textContent.trim();
+      const secretPart = code.replace(/-/g, '').slice(6);
+      // The derived keys live in real IndexedDB here.
+      const keys = await new Promise((res, rej) => {
+        const r = indexedDB.open('rephrame-sync');
+        r.onerror = () => rej(r.error);
+        r.onsuccess = () => {
+          const db = r.result;
+          let g;
+          try { g = db.transaction('keys', 'readonly').objectStore('keys').get('pairing'); } catch (e) { db.close(); rej(e); return; }
+          g.onsuccess = () => { db.close(); res(g.result); };
+          g.onerror = () => { db.close(); rej(g.error); };
+        };
+      });
       return {
-        room: p.room, secretLen: p.secret.length, peer: p.peer,
+        room: p.room, peer: p.peer, recordKeys: Object.keys(p).sort(),
+        secretLen: secretPart.length,
+        secretInStorage: Object.keys(localStorage).some(k => String(localStorage.getItem(k)).includes(secretPart)),
         legacyGone: localStorage.getItem('rephrame_sync_room') === null,
-        code: document.getElementById('syncMyCode').textContent.trim(),
+        code,
         id: localStorage.getItem('rephrame_peer_id_v1'),
         registered: window.__fakePeers[0].id,
+        keysRoom: keys ? keys.room : null,
+        keysNonExtractable: !!keys && keys.aes instanceof CryptoKey && keys.aes.extractable === false &&
+          keys.mac instanceof CryptoKey && keys.mac.extractable === false,
+        keysAlgo: keys ? keys.aes.algorithm.name + '+' + keys.mac.algorithm.name : '',
       };
     });
-    assert.equal(after.secretLen, 12, 'A 12-character secret was minted');
+    assert.equal(after.secretLen, 12, 'The panel shows a 12-character secret');
+    assert.deepEqual(after.recordKeys, ['peer', 'room', 'verified'], 'The localStorage record holds room, peer and verified only');
+    assert.equal(after.secretInStorage, false, 'The secret appears in no localStorage value');
+    assert.equal(after.keysRoom, after.room, 'IndexedDB holds the keys for the new room');
+    assert.equal(after.keysNonExtractable, true, 'The stored keys are non-extractable CryptoKeys');
+    assert.equal(after.keysAlgo, 'AES-GCM+HMAC', 'An AES-GCM key and an HMAC key are stored');
+    // After a reload the code is gone with the page (the secret was never
+    // stored), but the keys come back from IndexedDB: the device registers
+    // under the same id and the panel explains where the code went.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+    await page.waitForFunction(() => window.__fakePeers.length === 1, null, { timeout: 5000 });
+    await page.locator('[data-action="open-settings"]').first().click();
+    await page.waitForSelector('#syncPanel #syncRegenBtn', { timeout: 5000 });
+    const reloaded = await page.evaluate(() => ({
+      id: window.__fakePeers[0].id,
+      codeShown: !!document.getElementById('syncMyCode'),
+      text: document.getElementById('syncPanel').innerText,
+      pairing: window.__syncTestHooks.connState().pairing,
+    }));
+    assert.equal(reloaded.id, after.id, 'After a reload the device registers under the same id (keys read back from IndexedDB)');
+    assert.equal(reloaded.codeShown, false, 'The pairing code is not shown again after a reload');
+    assert.match(reloaded.text, /only shown right after it is generated/, 'The panel explains that the code is shown once');
+    assert.equal(reloaded.pairing && reloaded.pairing.room, after.room, 'The pairing record survived the reload');
     assert.equal(after.peer, null, 'The new pairing has no partner yet');
     assert.equal(after.legacyGone, true, 'The legacy room record is removed');
     assert.equal(after.id, 'rephrame-' + after.room.toLowerCase(), 'The new room id is the device id');
@@ -1097,9 +1154,7 @@ try {
     const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
     await ctx.addInitScript(ONBOARDED);
     await ctx.addInitScript(() => {
-      localStorage.setItem('rephrame_sync_enabled', '1');
       localStorage.setItem('rephrame_peer_id_v1', 'rephrame-abcdef');
-      localStorage.setItem('rephrame_sync_pair_v2', JSON.stringify({ room: 'ABCDEF', secret: '0123456789AB', peer: 'rephrame-zzzzzz', verified: true }));
       window.__fakePeers = [];
       window.__dials = [];
       window.Peer = class {
@@ -1119,7 +1174,15 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(URL, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.app', { timeout: 10000 });
-    await page.evaluate(async () => { await setStoredPin('2468'); sessionStorage.removeItem('reframe-unlocked'); });
+    // Pair through the hook (the secret only ever becomes keys, kept in real
+    // IndexedDB here so the reload below reads them back), enable sync, set
+    // a PIN and lock.
+    await page.evaluate(async () => {
+      await window.__syncTestHooks.installPairing({ room: 'ABCDEF', secret: '0123456789AB', peer: 'rephrame-zzzzzz', verified: true });
+      localStorage.setItem('rephrame_sync_enabled', '1');
+      await setStoredPin('2468');
+      sessionStorage.removeItem('reframe-unlocked');
+    });
     await page.goto(URL, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#lockPinInput', { timeout: 10000 });
     await page.waitForTimeout(400);
@@ -1129,7 +1192,7 @@ try {
     await page.locator('#lockPinInput').fill('2468');
     await page.locator('#lockForm button[type="submit"]').click();
     await page.waitForFunction(() => window.__fakePeers.length === 1 && window.__dials.length === 1, null, { timeout: 10000 });
-    assert.equal(await page.evaluate(() => window.__dials[0]), 'rephrame-zzzzzz', 'Unlock starts sync and dials the paired device');
+    assert.equal(await page.evaluate(() => window.__dials[0]), 'rephrame-zzzzzz', 'Unlock starts sync (keys read back from IndexedDB) and dials the paired device');
     // Lock now takes it down again.
     await page.locator('[data-action="open-settings"]').first().click();
     await page.locator('[data-action="lock-now"]').first().click();

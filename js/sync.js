@@ -23,7 +23,14 @@
 //                   the two devices.
 //   keys          = PBKDF2-SHA256(secret, salt "rephrame-sync-v2:" + ROOM,
 //                   100 000 iterations, 512 bits) → AES-256-GCM key ‖
-//                   HMAC-SHA256 key. Derived once per session and cached.
+//                   HMAC-SHA256 key, imported as NON-extractable WebCrypto
+//                   keys the moment a code is generated or typed and kept in
+//                   IndexedDB (database "rephrame-sync", store "keys", record
+//                   "pairing" = {room, aes, mac}). The secret itself is never
+//                   written anywhere: the device that generated it holds it
+//                   in memory only until a device pairs (or the page reloads),
+//                   the device that typed it drops it right after derivation,
+//                   and localStorage keeps just {room, peer, verified}.
 //   handshake     = dialer sends   {type:"hello",     v:2, nonce:Ni}
 //                   listener sends {type:"hello-ack", v:2, nonce:Nr,
 //                                   proof:HMAC("ack|"+Ni)}
@@ -43,7 +50,10 @@
 // code. While the journal is PIN-locked no peer is registered at all.
 
 const SYNC_PEER_KEY        = "rephrame_peer_id_v1";    // this device's PeerJS id
-const SYNC_PAIR_KEY        = "rephrame_sync_pair_v2";  // {room, secret, peer, verified}
+const SYNC_PAIR_KEY        = "rephrame_sync_pair_v2";  // {room, peer, verified} — never the secret
+const SYNC_DB_NAME         = "rephrame-sync";           // IndexedDB: derived keys live here …
+const SYNC_DB_STORE        = "keys";
+const SYNC_DB_RECORD       = "pairing";                 // … as {room, aes, mac} (non-extractable CryptoKeys)
 const SYNC_LEGACY_ROOM_KEY = "rephrame_sync_room";     // pre-v2 paired room (read only to detect it)
 const SYNC_DELS_KEY        = "rephrame_entry_dels";
 const SYNC_ENABLED_KEY     = "rephrame_sync_enabled";
@@ -67,9 +77,12 @@ let _readyConn   = null;   // _conn once its handshake has completed
 let _activeSend  = null;   // encrypting sender bound to _readyConn
 let _syncEnabled = false;
 let _syncStatus  = "off";  // 'off' | 'unpaired' | 'loading' | 'waiting' | 'connecting' | 'connected' | 'error'
-let _pairing     = null;   // in-memory copy of SYNC_PAIR_KEY
+let _pairing     = null;   // in-memory copy of SYNC_PAIR_KEY: {room, peer, verified}
 let _pairingGen  = 0;      // bumps whenever _pairing changes, invalidates _keys
-let _keys        = null;   // {gen, aes, mac}
+let _keys        = null;   // {gen, room, aes, mac} — memory cache of the IndexedDB record
+let _keysVolatile = false; // keys exist in memory only (IndexedDB refused them)
+let _offerSecret = null;   // the secret of a code this device generated, until a device pairs
+let _mintPromise = null;   // in-flight _mintPairing()
 let _connectTimeoutId   = null;
 let _pendingInboundConn = null;
 // Suppress re-broadcast while we're applying a peer's state, so an incoming
@@ -226,14 +239,14 @@ function _setSyncStatus(status, msg) {
   _syncStatus = status;
   // Remember the detail message so re-rendering the panel (closing and
   // reopening Settings) doesn't degrade a specific error to a generic one.
-  _syncStatusMsg = msg || (status === "error" ? _syncStatusMsg : "");
+  _syncStatusMsg = msg || ((status === "error" || status === "unpaired") ? _syncStatusMsg : "");
   const el  = document.getElementById("syncStatus");
   const dot = document.getElementById("syncDot");
   if (!el) return;
   const peerCode = (status === "connected" && _conn && _conn.peer) ? _idToCode(_conn.peer) : null;
   const labels = {
     off:        "Sync off",
-    unpaired:   _hasLegacyPairing() ? "Sync paused — re-pairing needed" : "Not paired — generate a pairing code",
+    unpaired:   _syncStatusMsg || (_hasLegacyPairing() ? "Sync paused — re-pairing needed" : "Not paired — generate a pairing code"),
     loading:    "Loading…",
     waiting:    "Waiting for the other device…",
     connecting: "Connecting…",
@@ -247,11 +260,12 @@ function _setSyncStatus(status, msg) {
 }
 
 // ── Pairing record ───────────────────────────────────────────────────────────
-// {room, secret, peer, verified}: `room` + `secret` are what the pairing code
-// carries (identical on both devices); `peer` is the OTHER device's PeerJS id
-// — known up front on the device that typed the code, learned from the first
-// verified connection on the device that showed it; `verified` flips once a
-// handshake has succeeded.
+// {room, peer, verified}: `room` is what the pairing code starts with (the
+// same on both devices; it salts the key derivation); `peer` is the OTHER
+// device's PeerJS id — known up front on the device that typed the code,
+// learned from the first verified connection on the device that showed it;
+// `verified` flips once a handshake has succeeded. The secret is NOT part of
+// the record: only the keys derived from it are kept, in IndexedDB.
 
 function _validRoom(s)   { return typeof s === "string" && s.length === ROOM_LEN   && [...s].every(c => CODE_ALPHABET.includes(c)); }
 function _validSecret(s) { return typeof s === "string" && s.length === SECRET_LEN && [...s].every(c => CODE_ALPHABET.includes(c)); }
@@ -262,23 +276,36 @@ function _loadPairing() {
   if (!raw) return null;
   try {
     const p = JSON.parse(raw);
-    if (!p || typeof p !== "object" || !_validRoom(p.room) || !_validSecret(p.secret)) return null;
+    if (!p || typeof p !== "object" || !_validRoom(p.room)) return null;
+    // A record carrying a secret is from a pre-release build that stored it
+    // in the clear; refuse it outright rather than migrate (a fresh code is
+    // one tap away).
+    if ("secret" in p) return null;
     return {
-      room: p.room, secret: p.secret,
+      room: p.room,
       peer: (typeof p.peer === "string" && /^rephrame-[a-z0-9]{1,32}$/.test(p.peer)) ? p.peer : null,
       verified: p.verified === true,
     };
   } catch { return null; }
 }
 
-function _setPairing(p) {
-  _pairing = p ? { room: p.room, secret: p.secret, peer: p.peer || null, verified: !!p.verified } : null;
-  _pairingGen += 1;
-  _keys = null;
+function _savePairingRecord() {
   try {
-    if (_pairing) localStorage.setItem(SYNC_PAIR_KEY, JSON.stringify(_pairing));
+    if (_pairing) localStorage.setItem(SYNC_PAIR_KEY, JSON.stringify({ room: _pairing.room, peer: _pairing.peer, verified: _pairing.verified }));
     else localStorage.removeItem(SYNC_PAIR_KEY);
   } catch { /* noop */ }
+}
+
+// Replace the pairing record. Keys for the new room are installed separately
+// (_storeKeys) right after; clearing the pairing also deletes the stored keys.
+function _setPairing(p) {
+  _pairing = p ? { room: p.room, peer: p.peer || null, verified: !!p.verified } : null;
+  _pairingGen += 1;
+  _keys = null;
+  _keysVolatile = false;
+  _offerSecret = null;
+  _savePairingRecord();
+  if (!_pairing) _deleteStoredKeys();
 }
 
 function _hasLegacyPairing() {
@@ -304,13 +331,26 @@ function _isPairingHost() { return !!(_pairing && _pairing.room === _myRoom()); 
 
 // Mint a fresh room id (= a fresh peer id for this device) and secret. Any
 // earlier pairing, v2 or legacy, is gone: the other device must be re-paired
-// with the new code.
+// with the new code. The secret is turned into keys immediately and then
+// lives only in _offerSecret, for the panel and the Copy button, until a
+// device pairs or the page is closed — it is never stored.
 function _mintPairing() {
-  const room = _randomCode(ROOM_LEN);
-  const secret = _randomCode(SECRET_LEN);
-  try { localStorage.setItem(SYNC_PEER_KEY, _roomToId(room)); } catch { /* noop */ }
-  _clearLegacyPairing();
-  _setPairing({ room, secret, peer: null, verified: false });
+  if (_mintPromise) return _mintPromise;
+  _mintPromise = (async () => {
+    const room = _randomCode(ROOM_LEN);
+    const secret = _randomCode(SECRET_LEN);
+    const k = await _deriveKeys(secret, room);
+    try { localStorage.setItem(SYNC_PEER_KEY, _roomToId(room)); } catch { /* noop */ }
+    _clearLegacyPairing();
+    _setPairing({ room, peer: null, verified: false });
+    await _storeKeys(room, k.aes, k.mac);
+    _offerSecret = secret;
+    return room;
+  })();
+  const p = _mintPromise;
+  p.then(() => { if (_mintPromise === p) _mintPromise = null; },
+         () => { if (_mintPromise === p) _mintPromise = null; });
+  return p;
 }
 
 // ── Key derivation + message crypto ──────────────────────────────────────────
@@ -331,15 +371,93 @@ async function _deriveKeys(secret, room) {
   return { aes, mac };
 }
 
-// Derive once per pairing per session; PBKDF2 at 100k iterations is a
-// noticeable beat on a phone and the result never changes for a pairing.
+// ── Key storage (IndexedDB) ──────────────────────────────────────────────────
+// The derived keys are what a device keeps; the secret never is. CryptoKeys
+// are structured-cloneable, so the non-extractable objects go straight into
+// IndexedDB and come back unusable to anything but SubtleCrypto. Every
+// operation opens the database, runs one request in its own transaction and
+// closes again; they are serialised so a delete can't overtake a later put.
+
+function _idbOpen() {
+  return new Promise((res, rej) => {
+    let req;
+    try {
+      if (typeof indexedDB === "undefined" || !indexedDB) throw new Error("IndexedDB unavailable");
+      req = indexedDB.open(SYNC_DB_NAME, 1);
+    } catch (e) { rej(e); return; }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(SYNC_DB_STORE)) db.createObjectStore(SYNC_DB_STORE);
+    };
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error || new Error("IndexedDB open failed"));
+    req.onblocked = () => rej(new Error("IndexedDB open blocked"));
+  });
+}
+
+function _idbRun(mode, fn) {
+  return _idbOpen().then(db => new Promise((res, rej) => {
+    let result;
+    let tx;
+    try { tx = db.transaction(SYNC_DB_STORE, mode); } catch (e) { try { db.close(); } catch { /* noop */ } rej(e); return; }
+    const done = (err) => { try { db.close(); } catch { /* noop */ } if (err) rej(err); else res(result); };
+    tx.oncomplete = () => done(null);
+    tx.onerror    = () => done(tx.error || new Error("IndexedDB transaction failed"));
+    tx.onabort    = () => done(tx.error || new Error("IndexedDB transaction aborted"));
+    let req;
+    try { req = fn(tx.objectStore(SYNC_DB_STORE)); } catch (e) { done(e); return; }
+    req.onsuccess = () => { result = req.result; };
+  }));
+}
+
+let _idbQueue = Promise.resolve();
+function _idbSerial(fn) {
+  const p = _idbQueue.then(fn, fn);
+  _idbQueue = p.catch(() => { /* the caller handles it */ });
+  return p;
+}
+const _idbGet    = (key)        => _idbSerial(() => _idbRun("readonly",  s => s.get(key)));
+const _idbPut    = (key, value) => _idbSerial(() => _idbRun("readwrite", s => s.put(value, key)));
+const _idbDelete = (key)        => _idbSerial(() => _idbRun("readwrite", s => s.delete(key)));
+
+// Cache the keys for this session and persist them. When IndexedDB refuses
+// (private mode, quota, no API) the pairing still works until the page is
+// closed; the panel says so.
+async function _storeKeys(room, aes, mac) {
+  const gen = _pairingGen;
+  _keys = { gen, room, aes, mac };
+  _keysVolatile = false;
+  try { await _idbPut(SYNC_DB_RECORD, { room, aes, mac }); }
+  catch (e) {
+    console.warn("[sync] sync keys could not be persisted; this pairing will not survive a reload", e);
+    if (_pairingGen === gen) { _keysVolatile = true; renderSyncPanel(); }
+  }
+}
+
+async function _loadStoredKeys() {
+  try {
+    const rec = await _idbGet(SYNC_DB_RECORD);
+    if (rec && typeof rec === "object" && _validRoom(rec.room) && rec.aes && rec.mac) return rec;
+    return null;
+  } catch { return null; }
+}
+
+function _deleteStoredKeys() {
+  return _idbDelete(SYNC_DB_RECORD).catch(() => { /* nothing stored, or storage unavailable */ });
+}
+
+// Keys for the current pairing: the session cache, else the IndexedDB record
+// for this room. Throws "not paired" when neither exists — the record in
+// localStorage alone is useless.
 async function _getKeys() {
-  if (!_pairing || !_pairing.secret) throw new Error("not paired");
+  if (!_pairing) throw new Error("not paired");
   if (_keys && _keys.gen === _pairingGen) return _keys;
   const gen = _pairingGen;
-  const k = await _deriveKeys(_pairing.secret, _pairing.room);
+  const room = _pairing.room;
+  const rec = await _loadStoredKeys();
   if (gen !== _pairingGen) throw new Error("pairing changed");
-  _keys = { gen, aes: k.aes, mac: k.mac };
+  if (!rec || rec.room !== room) throw new Error("not paired");
+  _keys = { gen, room, aes: rec.aes, mac: rec.mac };
   return _keys;
 }
 
@@ -928,8 +1046,10 @@ function _onPeerVerified(peerId) {
   let changed = false;
   if (_pairing.peer !== peerId) { _pairing.peer = peerId; changed = true; }
   if (!_pairing.verified)       { _pairing.verified = true; changed = true; }
+  // The code has done its job: forget the secret this device was showing.
+  if (_offerSecret)             { _offerSecret = null; changed = true; }
   if (!changed) return;
-  try { localStorage.setItem(SYNC_PAIR_KEY, JSON.stringify(_pairing)); } catch { /* noop */ }
+  _savePairingRecord();
   renderSyncPanel();
 }
 
@@ -965,9 +1085,22 @@ async function syncInit() {
   if (_isLocked()) return false;
   // Nothing to register without a v2 pairing — a legacy (secret-less) room
   // or a never-paired device waits for the user to generate a code.
-  if (!_pairing || !_pairing.secret) { _setSyncStatus("unpaired"); return false; }
+  if (!_pairing) { _setSyncStatus("unpaired"); return false; }
   _syncInitPromise = (async () => {
     _setSyncStatus("loading");
+
+    // The keys must exist before this device answers to anyone. A record
+    // without keys (site data partly cleared, storage blocked at pairing
+    // time) is retired: without the keys it can neither prove nor verify.
+    try { await _getKeys(); }
+    catch (e) {
+      if (String(e && e.message) === "pairing changed") return false;
+      _setPairing(null);
+      _setSyncStatus("unpaired", "This device's sync keys are gone (site data was cleared or the browser blocked storage). Generate a new pairing code, or enter the code from your other device.");
+      renderSyncPanel();
+      return false;
+    }
+    if (_isLocked() || !_pairing) return false;
 
     let Peer;
     try { Peer = await _loadPeerJS(); }
@@ -1000,7 +1133,7 @@ async function syncInit() {
       // overlay, and its Accept button would ship the whole journal to the
       // connecting peer without a PIN ever being entered.
       if (_isLocked())                { try { conn.close(); } catch { /* noop */ } return; }
-      if (!_pairing || !_pairing.secret) { try { conn.close(); } catch { /* noop */ } return; }
+      if (!_pairing)                  { try { conn.close(); } catch { /* noop */ } return; }
       // Back-off after failed handshakes: close without answering.
       if (_inboundBlocked())          { try { conn.close(); } catch { /* noop */ } return; }
       const known = !!(_pairing.peer && conn.peer === _pairing.peer);
@@ -1149,7 +1282,7 @@ function _dialPeer(peerId) {
       .catch(e => console.warn("[sync] init failed", e));
     return;
   }
-  if (!_pairing || !_pairing.secret) { _setSyncStatus("unpaired"); return; }
+  if (!_pairing) { _setSyncStatus("unpaired"); return; }
   if (peerId === _peer.id) {
     _setSyncStatus("error", "That's this device's own code");
     return;
@@ -1185,10 +1318,10 @@ function _dialPeer(peerId) {
   _wireConn(conn, "initiator");
 }
 
-// The user typed a pairing code shown on another device: adopt its room +
-// secret as this device's pairing (replacing whatever it had, v2 or legacy)
-// and dial it.
-function syncConnect(code) {
+// The user typed a pairing code shown on another device: derive the keys
+// from it, adopt its room as this device's pairing (replacing whatever it
+// had, v2 or legacy) and dial it. The secret is dropped once the keys exist.
+async function syncConnect(code) {
   const parsed = _parseCode(code);
   if (!parsed.ok) {
     _setSyncStatus("error", parsed.message);
@@ -1199,8 +1332,13 @@ function syncConnect(code) {
     return;
   }
   const peerId = _roomToId(parsed.room);
+  _setSyncStatus("loading");
+  let k;
+  try { k = await _deriveKeys(parsed.secret, parsed.room); }
+  catch (e) { console.warn("[sync] key derivation failed", e); _setSyncStatus("error", "Could not derive sync keys — try again."); return; }
   _clearLegacyPairing();
-  _setPairing({ room: parsed.room, secret: parsed.secret, peer: peerId, verified: false });
+  _setPairing({ room: parsed.room, peer: peerId, verified: false });
+  await _storeKeys(parsed.room, k.aes, k.mac);
   if (_reconnectTimerId) { clearTimeout(_reconnectTimerId); _reconnectTimerId = null; }
   _reconnectAttempt = 0;
   renderSyncPanel();
@@ -1225,10 +1363,13 @@ function syncRegenerateCode(opts) {
   syncHideIncomingBanner();
   _dropConn();
   _destroyPeer();
-  _mintPairing();
+  _setPairing(null);
   _setSyncStatus("loading");
   renderSyncPanel();
-  syncInit().then(() => renderSyncPanel()).catch(e => console.warn("[sync] init failed", e));
+  return _mintPairing()
+    .then(() => { renderSyncPanel(); return syncInit(); })
+    .then(() => renderSyncPanel())
+    .catch(e => { console.warn("[sync] could not generate a pairing code", e); _setSyncStatus("error", "Could not generate a pairing code — try again."); });
 }
 
 function syncDisconnect() {
@@ -1380,17 +1521,34 @@ function renderSyncPanel() {
 
   const host = _isPairingHost();
   const paired = !!(_pairing && _pairing.peer);
+  const volatileHint = _keysVolatile
+    ? '<div class="sync-input-hint sync-input-hint--err">Your browser refused persistent storage, so this pairing will not survive a reload — you will need a new code next time.</div>'
+    : '';
   let pairingBlock;
-  if (_pairing && host && !paired) {
-    // The secret is shown here and only here, until a device has paired.
+  if (_pairing && host && !paired && _offerSecret) {
+    // The secret is shown here and only here: it lives in memory until a
+    // device pairs or the page is closed, and is never written to storage.
     pairingBlock =
       '<div class="sync-my-code-block">' +
         '<label>Your pairing code</label>' +
-        '<div class="sync-code sync-code--long" id="syncMyCode">' + _escHtml(_formatCode(_pairing.room, _pairing.secret)) + '</div>' +
-        '<div class="sync-input-hint">Enter this code on your other device. It contains a secret: share it only with your own devices, and never over a channel someone else can read. It disappears from here once a device has paired.</div>' +
+        '<div class="sync-code sync-code--long" id="syncMyCode">' + _escHtml(_formatCode(_pairing.room, _offerSecret)) + '</div>' +
+        '<div class="sync-input-hint">Enter this code on your other device. It contains a secret: share it only with your own devices, and never over a channel someone else can read. It is shown only now — it disappears once a device has paired or this page is closed.</div>' +
+        volatileHint +
         '<div class="sync-code-actions">' +
           '<button class="btn btn-ghost sync-btn-sm" id="syncCopyBtn">Copy</button>' +
           '<button class="btn btn-ghost sync-btn-sm" id="syncRegenBtn" title="Mint a new pairing code (the old one stops working)">Generate new code</button>' +
+        '</div>' +
+      '</div>';
+  } else if (_pairing && host && !paired) {
+    // Generated in an earlier session: the keys are still here (a device
+    // that already typed the code can still pair) but the code is not.
+    pairingBlock =
+      '<div class="sync-my-code-block">' +
+        '<label>Your pairing code</label>' +
+        '<div class="sync-input-hint">The pairing code is only shown right after it is generated, and this device no longer holds it. It is still listening for a device that already entered it; to pair another device, generate a new code.</div>' +
+        volatileHint +
+        '<div class="sync-code-actions">' +
+          '<button class="btn btn-primary sync-btn-sm" id="syncRegenBtn" title="Mint a new pairing code (the old one stops working)">Generate new pairing code</button>' +
         '</div>' +
       '</div>';
   } else if (_pairing) {
@@ -1401,12 +1559,19 @@ function renderSyncPanel() {
         '<label>' + (verified ? "Paired with device" : "Pairing with device") + '</label>' +
         '<div class="sync-code" id="syncMyCode">' + _escHtml(label) + '</div>' +
         '<div class="sync-input-hint">' + (verified
-          ? "Both devices hold the pairing secret; sync messages are end-to-end encrypted with it."
+          ? "Both devices hold keys derived from the pairing secret; sync messages are end-to-end encrypted with them."
           : "Waiting for the first connection to verify the pairing code.") +
           ' To pair a different device, generate a new pairing code — that unpairs this one.</div>' +
+        volatileHint +
         '<div class="sync-code-actions">' +
           '<button class="btn btn-ghost sync-btn-sm" id="syncRegenBtn" title="Mint a new pairing code (unpairs the current device)">Generate new pairing code</button>' +
         '</div>' +
+      '</div>';
+  } else if (_mintPromise) {
+    pairingBlock =
+      '<div class="sync-my-code-block">' +
+        '<label>Your pairing code</label>' +
+        '<div class="sync-input-hint">Generating your pairing code…</div>' +
       '</div>';
   } else {
     pairingBlock =
@@ -1436,7 +1601,7 @@ function renderSyncPanel() {
 
   const copyBtn = document.getElementById("syncCopyBtn");
   if (copyBtn) copyBtn.onclick = () => {
-    const code = (_pairing && host && !paired) ? _formatCode(_pairing.room, _pairing.secret) : "";
+    const code = (_pairing && host && !paired && _offerSecret) ? _formatCode(_pairing.room, _offerSecret) : "";
     if (navigator.clipboard && code) {
       navigator.clipboard.writeText(code)
         .then(() => { if (typeof toast === "function") toast("Pairing code copied"); })
@@ -1525,7 +1690,15 @@ function syncEnable() {
   try { localStorage.setItem(SYNC_ENABLED_KEY, "1"); } catch { /* noop */ }
   // A device with neither a v2 pairing nor a legacy one gets its code now.
   // A legacy pairing waits for the user to read the notice and generate one.
-  if (!_pairing && !_hasLegacyPairing()) _mintPairing();
+  if (!_pairing && !_hasLegacyPairing()) {
+    _setSyncStatus("loading");
+    renderSyncPanel();
+    _mintPairing()
+      .then(() => { renderSyncPanel(); return syncInit(); })
+      .then(() => renderSyncPanel())
+      .catch(e => { console.warn("[sync] could not generate a pairing code", e); _setSyncStatus("error", "Could not generate a pairing code — try again."); });
+    return;
+  }
   if (!_pairing) _setSyncStatus("unpaired");
   renderSyncPanel();
   if (_pairing) syncInit().then(() => renderSyncPanel()).catch(e => console.warn("[sync] init failed", e));
@@ -1554,7 +1727,7 @@ if (typeof window !== "undefined") {
   // derivation and handshake paths are the highest-risk part of P2P sync but
   // normally only reachable through a live two-peer WebRTC session, which
   // can't run in CI. No production code reads this object; it's inert unless
-  // a test calls in. It never exposes the stored pairing secret.
+  // a test calls in. Nothing here reads a stored secret — none is stored.
   window.__syncTestHooks = {
     mergeState:     _mergeState,
     payloadInvalid: _payloadInvalid,
@@ -1579,10 +1752,23 @@ if (typeof window !== "undefined") {
     // window.Peer. Returns a snapshot of the private connection state (never
     // the live objects' methods, never the secret).
     connect:        syncConnect,
+    enable:         syncEnable,
     acceptInbound:  syncAcceptInbound,
     rejectInbound:  syncRejectInbound,
     regenerateCode: () => syncRegenerateCode({ skipConfirm: true }),
     resetHandshakeThrottle: () => { _hsFailTimes = []; _hsBlockedUntil = 0; },
+    // Install a pairing exactly the way a typed or generated code would: the
+    // secret only ever becomes keys. Lets a test seed a device without
+    // writing a secret anywhere.
+    installPairing: async ({ room, secret, peer, verified }) => {
+      const k = await _deriveKeys(secret, room);
+      _clearLegacyPairing();
+      _setPairing({ room, peer: peer || null, verified: !!verified });
+      await _storeKeys(room, k.aes, k.mac);
+    },
+    // The code this device is currently offering (what the panel shows), or
+    // null once a device has paired / after a reload.
+    offerCode:      () => (_pairing && _offerSecret) ? _formatCode(_pairing.room, _offerSecret) : null,
     connState:      () => ({
       conn: _conn,
       status: _syncStatus,
@@ -1591,6 +1777,8 @@ if (typeof window !== "undefined") {
       reconnectScheduled: _reconnectTimerId !== null,
       pairing: _pairing ? { room: _pairing.room, peer: _pairing.peer, verified: _pairing.verified } : null,
       legacy: _hasLegacyPairing(),
+      keysVolatile: _keysVolatile,
+      hasOffer: !!_offerSecret,
       peer: _peer,
     }),
   };

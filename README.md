@@ -99,9 +99,12 @@ peer-to-peer link so two of your devices hold the same journal.
 Pairing: enable Sync on both devices; the first shows an 18-character
 pairing code (formatted `XXX-XXX-YYYY-YYYY-YYYY`), which you enter on
 the second. The first six characters are the device's room id; the
-remaining twelve are a random secret that never leaves the two devices
-and disappears from the screen once a device has paired. Dashes and
-letter case don't matter when typing it. Once the connection opens,
+remaining twelve are a random secret that never leaves the two devices.
+The code is shown only right after it is generated (it disappears once a
+device has paired or the page is closed), and neither device stores the
+secret itself — each keeps only the encryption and authentication keys
+derived from it. Dashes and letter case don't matter when typing it.
+Once the connection opens,
 both ends prove they hold the secret (an HMAC challenge–response in each
 direction) before a single entry is sent, then exchange a full snapshot
 encrypted with AES-GCM under a key derived from the secret; after that
@@ -247,12 +250,16 @@ crisis**, and reachable from a link in every empty-state and capture modal.
   (theme, nudge interval, worry-window time), and `reframe-pin-hash-v1`
   (PBKDF2-SHA256 hash + salt of your PIN, if set). Never sent anywhere
   except, if you've enabled Sync, to the device you paired with — and
-  only directly, over WebRTC, encrypted with a key derived from the
+  only directly, over WebRTC, encrypted with keys derived from the
   pairing secret.
-- Sync keeps its own keys: `rephrame_sync_pair_v2` (the room id, the
-  pairing secret and the paired device's id), `rephrame_peer_id_v1` (this
-  device's id), `rephrame_entry_dels` (deletion tombstones) and
-  `rephrame_sync_enabled`. Disabling sync removes the pairing.
+- Sync keeps its own records: `rephrame_sync_pair_v2` in `localStorage`
+  holds the room id, the paired device's id and a verified flag — never
+  the pairing secret, which is not stored anywhere. The AES-GCM and HMAC
+  keys derived from it live in IndexedDB (database `rephrame-sync`, store
+  `keys`) as non-extractable WebCrypto keys, so nothing can read them
+  back as bytes. Alongside: `rephrame_peer_id_v1` (this device's id),
+  `rephrame_entry_dels` (deletion tombstones) and `rephrame_sync_enabled`.
+  Disabling sync removes the pairing record and the keys.
 - A one-time onboarding flag lives under `reframe-onboarded-v1`.
 - The unlock token (`reframe-unlocked`) lives in `sessionStorage` and clears
   when the tab closes, so the PIN gate re-arms on each new session.
