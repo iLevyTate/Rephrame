@@ -83,6 +83,10 @@
 //      responsibility pie for All-or-Nothing), the old "Zoom out (pie
 //      chart)" / "Perspective broadening" names migrate, and the intensity
 //      cues describe felt experience rather than how someone sounds.
+//      Picking a distortion never writes a stock reframe into the entry, and
+//      "Historical test" / "Minimization" migrate; 0 reads as None.
+//  31. Crisis resources list the US Lifeline and Canada's 9-8-8 separately,
+//      use each country's text-line keyword, and carry no dead links.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -1271,7 +1275,7 @@ try {
   // Blocks 28–30 read app.js's reference tables and draft helpers from inside
   // page.evaluate; they aren't in eslint's shared appProvides list.
   /* global emptyEntry, seedDraftFromPrimaryDistortion, SOCRATIC_TYPES, REFRAME_METHODS,
-     DISTORTIONS, DISTORTION_DEFAULTS, INTENSITY_BANDS */
+     DISTORTIONS, DISTORTION_DEFAULTS, INTENSITY_BANDS, band */
   // ── 28. A tapped field clears the Android keyboard and the sticky chrome ──
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -1360,6 +1364,7 @@ try {
       localStorage.setItem('reframe-journal-v1', JSON.stringify([
         { id: 'legacy-pie', kind: 'thought-record', createdAt: '2026-05-01T10:00:00.000Z', trigger: 'x', socraticType: 'Zoom out (pie chart)' },
         { id: 'legacy-pb',  kind: 'thought-record', createdAt: '2026-05-02T10:00:00.000Z', trigger: 'y', socraticType: 'Perspective broadening' },
+        { id: 'legacy-ht',  kind: 'thought-record', createdAt: '2026-05-03T10:00:00.000Z', trigger: 'z', socraticType: 'Historical test', distortions: ['Minimization'] },
       ]));
     });
     const r = await page.evaluate(() => {
@@ -1369,17 +1374,20 @@ try {
       const dangling = Object.entries(DISTORTION_DEFAULTS)
         .filter(([, v]) => !types.has(v.socratic) || !methods.has(v.reframe)).map(([k]) => k);
       const seeded = {};
-      for (const name of ['All-or-Nothing Thinking', 'Mental Filter', 'Minimization', 'Personalization', 'Labeling', 'Should Statements']) {
+      for (const name of ['All-or-Nothing Thinking', 'Mental Filter', 'Magnification and Minimization', 'Personalization', 'Labeling', 'Should Statements', 'Blame']) {
         const d = emptyEntry();
         d.thoughts = [{ id: 't', text: 'I ruined the whole thing', isHot: true }];
         d.distortions = [name];
         seedDraftFromPrimaryDistortion(d);
-        seeded[name] = { type: d.socraticType, q: d.socraticQuestion, method: d.reframeMethod };
+        seeded[name] = { type: d.socraticType, q: d.socraticQuestion, method: d.reframeMethod, newThought: d.newThought };
       }
       return {
         unmapped, dangling, seeded,
         legacy: state.entries.map(e => [e.id, e.socraticType]),
+        legacyDistortions: state.entries.find(e => e.id === 'legacy-ht').distortions,
         cues: INTENSITY_BANDS.map(b => b.signals).join(' | '),
+        zeroBand: band(0).label,
+        severeFrom: INTENSITY_BANDS.find(b => b.label === 'Severe') && band(80).label,
       };
     });
     assert.deepEqual(r.unmapped, [], 'Every distortion has pre-set defaults');
@@ -1388,18 +1396,48 @@ try {
     assert.equal(aon.type, 'Shades of gray', 'All-or-Nothing is challenged on a continuum');
     assert.doesNotMatch(aon.q, /pie chart|slice/i, 'All-or-Nothing is not handed the responsibility pie');
     assert.match(aon.q, /0 to 100/, 'All-or-Nothing question asks where it sits between the extremes');
-    for (const name of ['Mental Filter', 'Minimization']) {
+    for (const name of ['Mental Filter', 'Magnification and Minimization']) {
       assert.doesNotMatch(r.seeded[name].q, /pie chart|slice/i, `${name} is not handed the responsibility pie`);
     }
     assert.equal(r.seeded['Personalization'].type, 'Responsibility pie', 'Self-blame gets the responsibility pie');
     assert.equal(r.seeded['Labeling'].method, 'Behavior, not identity', 'A label is reframed as a behavior');
     assert.equal(r.seeded['Should Statements'].method, 'Flexible preference', 'A should is reframed as a preference');
-    assert.deepEqual(Object.fromEntries(r.legacy), { 'legacy-pie': 'Responsibility pie', 'legacy-pb': 'Full picture' },
+    assert.equal(r.seeded['Blame'].type, 'Responsibility pie', 'Blame gets the responsibility pie, self included');
+    for (const [name, v] of Object.entries(r.seeded)) {
+      assert.equal(v.newThought, '', `${name}: picking a distortion never writes a stock reframe into the entry`);
+    }
+    assert.deepEqual(Object.fromEntries(r.legacy),
+      { 'legacy-pie': 'Responsibility pie', 'legacy-pb': 'Full picture', 'legacy-ht': 'Track record' },
       'Stored legacy question-type names migrate to the current ones');
+    assert.deepEqual(r.legacyDistortions, ['Magnification and Minimization'],
+      'A stored "Minimization" tag migrates to Burns\'s two-way item');
+    assert.equal(r.zeroBand, 'None', 'A rating of 0 reads as None, not Mild');
+    assert.equal(r.severeFrom, 'Severe', 'The Severe band starts at 80, where the grounding note appears');
     assert.doesNotMatch(r.cues, /voice|vocal|tone|yelling|crying|speech/i,
       'Intensity cues describe how it feels, not how it sounds: ' + r.cues);
     noErrors(errors, 'distortion pairings');
     log('PASS — distortion pairings fit, legacy names migrate, intensity cues are felt-sense.');
+    await ctx.close();
+  }
+
+  // ── 31. Crisis resources name the right service for each country ──────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.locator('[data-nav="reference"]').click();
+    await page.waitForSelector('.ref-section--safety', { timeout: 5000 });
+    const ref = await page.locator('.ref-section--safety').innerText();
+    await page.evaluate(() => setState({ modal: 'safety' }));
+    await page.waitForSelector('.safety-list', { timeout: 5000 });
+    const modal = await page.locator('.safety-list').innerText();
+    for (const [where, text] of [['Reference', ref], ['Safety dialog', modal]]) {
+      assert.doesNotMatch(text, /US \/ Canada/, `${where}: the US Lifeline and Canada's 9-8-8 are listed separately`);
+      assert.match(text, /9-8-8: Suicide Crisis Helpline/, `${where}: Canada's own service is named`);
+      assert.match(text, /SHOUT[\s\S]{0,8}85258/, `${where}: the UK text line uses Shout's keyword`);
+      assert.match(text, /CONNECT[\s\S]{0,8}686868/, `${where}: Kids Help Phone uses its own keyword`);
+      assert.doesNotMatch(text, /iasp\.info|988lifeline\.org\/chat/, `${where}: no dead or redirected links`);
+    }
+    noErrors(errors, 'crisis resources');
+    log('PASS — crisis resources name the right service, keyword and link per country.');
     await ctx.close();
   }
 

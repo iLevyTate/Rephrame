@@ -95,6 +95,8 @@ try {
   assert.ok(socQ.trim().length > 0, 'Socratic question pre-fills from the seeded type');
   await page.locator('[data-field="evidenceFor"]').fill('They said "we should talk." That is what they said.');
   await page.locator('[data-field="evidenceAgainst"]').fill('No complaint named. Last 1:1 was positive. On time on every deliverable this month.');
+  assert.equal(await page.locator('[data-field="socraticAnswer"]').count(), 1, 'Step 4 has a field to answer the Socratic question');
+  await page.locator('[data-field="socraticAnswer"]').fill('Maybe 15%. Nothing specific points to a bad outcome.');
   await snap(page, 'challenge');
   await nextStep();
 
@@ -105,10 +107,18 @@ try {
     'Realism',
     'Picking "Fortune Telling" pre-selects the "Realism" reframe method',
   );
-  assert.ok(
-    (await page.locator('[data-field="newThought"]').inputValue()).trim().length > 0,
-    'Reframe method pre-fills the new-thought textarea',
+  // The method's starter is a placeholder, never the saved value: tapping
+  // through used to store a stock sentence with a literal "[X]" in it as the
+  // user's balanced thought.
+  assert.equal(
+    (await page.locator('[data-field="newThought"]').inputValue()).trim(), '',
+    'The new-thought box starts empty; the user writes the reframe',
   );
+  assert.ok(
+    ((await page.locator('[data-field="newThought"]').getAttribute('placeholder')) || '').length > 20,
+    'The chosen method\'s starter shape shows as the placeholder',
+  );
+  await page.locator('[data-field="newThought"]').fill('They may just want to plan next quarter. I will ask what it is about.');
   // New-thought belief slider (added in PR6) exists and is live.
   assert.equal(await page.locator('[data-field="newThoughtBelief"]').count(), 1, 'newThoughtBelief slider exists');
   await page.locator('[data-field="newThoughtBelief"]').fill('73');
@@ -179,7 +189,7 @@ try {
   const refText = await page.locator('.app, body').first().innerText();
   for (const label of [
     'Mental Filter',
-    'Historical test',
+    'Track record',
     'Responsibility pie',
     'Shades of gray',
     'Continuum thinking',
