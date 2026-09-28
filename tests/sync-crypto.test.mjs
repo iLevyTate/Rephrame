@@ -7,9 +7,10 @@
 // encrypted state exchange, rejection of wrong secrets, plaintext, wrong
 // versions and pre-v2 peers, the inbound back-off, the legacy-pairing lockout,
 // code rotation and the PIN gate. A fake IndexedDB (below) stands in for the
-// key store, so the storage layout is covered too: the secret is never
-// written anywhere, the derived keys survive a "reload" (a second sandbox
-// over the same storage), and a record without keys reads as unpaired.
+// pairing store, so the storage layout is covered too: nothing about a
+// pairing touches localStorage, the record and the derived keys survive a
+// "reload" (a second sandbox over the same storage), and a record without
+// keys reads as unpaired.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run crypto`
 // (node --test). No server needed.
@@ -41,8 +42,16 @@ function makeStorage(seed = {}) {
     setItem: (k, v) => { m.set(k, String(v)); },
     removeItem: (k) => { m.delete(k); },
     dump: () => JSON.stringify([...m.entries()]),
+    keys: () => [...m.keys()],
   };
 }
+// The only localStorage keys js/sync.js may write: nothing that came from a
+// pairing code.
+const SYNC_LOCAL_KEYS = ['rephrame_sync_enabled', 'rephrame_peer_id_v1', 'rephrame_entry_dels'];
+const assertLocalStorageClean = (dev, label) => {
+  const extra = dev.storage.keys().filter((k) => !SYNC_LOCAL_KEYS.includes(k));
+  assert.deepEqual(extra, [], label + ': localStorage holds only the device id, tombstones and the enabled flag');
+};
 
 // Minimal IndexedDB stand-in: enough of open() / onupgradeneeded /
 // createObjectStore / transaction / objectStore / get / put / delete /
@@ -95,10 +104,17 @@ function makeFakeIDB({ broken = false } = {}) {
     },
     close() {},
   });
+  const ensure = (name, st) => {
+    let rec = dbs.get(name);
+    if (!rec) { rec = { stores: new Map(), version: 1 }; dbs.set(name, rec); }
+    if (!rec.stores.has(st)) rec.stores.set(st, new Map());
+    return rec.stores.get(st);
+  };
   return {
     dbs,
-    // Synchronous peek for assertions.
+    // Synchronous peek / seed for assertions and fixtures.
     read: (name, st, key) => { const rec = dbs.get(name); const store = rec && rec.stores.get(st); return store ? store.get(key) : undefined; },
+    seed: (name, st, key, value) => { ensure(name, st).set(key, value); },
     open(name, version) {
       const req = mkRequest();
       req.onupgradeneeded = null; req.onblocked = null;
@@ -218,8 +234,10 @@ function loadSync({ storage = makeStorage(), Peer, state = { entries: [] }, glob
   return { sb: sandbox, hooks: sandbox.__syncTestHooks, storage, idb, state, toasts, log, dispatch };
 }
 
-const pairingOf = (dev) => JSON.parse(dev.storage.getItem('rephrame_sync_pair_v2'));
-const keysOf = (dev) => (dev.idb ? dev.idb.read('rephrame-sync', 'keys', 'pairing') : undefined);
+// Both records live in the fake IndexedDB; `pairingOf` yields undefined when
+// there is none.
+const pairingOf = (dev) => (dev.idb ? dev.idb.read('rephrame-sync', 'keys', 'pairing') : undefined);
+const keysOf = (dev) => (dev.idb ? dev.idb.read('rephrame-sync', 'keys', 'keys') : undefined);
 const peerOf = (dev) => dev.hooks.connState().peer;
 const entry = (id, body, updatedAt) => ({ id, kind: 'freeform', createdAt: '2024-01-01T00:00:00.000Z', updatedAt, body });
 // Boot a sandbox as a sync-enabled device on the shared broker.
@@ -358,10 +376,12 @@ test('two devices pair, prove the secret both ways and exchange only ciphertext'
   assert.deepEqual(plain(B.state.entries.map((e) => e.id).sort()), ['a1', 'b1']);
   assert.equal(A.hooks.connState().status, 'connected');
   assert.equal(B.hooks.connState().status, 'connected');
-  assert.equal(pairingOf(A).peer, peerOf(B).id, 'A learned B\'s id from the verified handshake');
+  await until(() => pairingOf(A).peer === peerOf(B).id, 'A persisted B\'s id');
   assert.equal(pairingOf(A).verified, true);
-  assert.equal(pairingOf(B).verified, true);
+  await until(() => pairingOf(B).verified === true, 'B persisted verified');
   assert.equal(A.hooks.offerCode(), null, 'the host forgets the secret once a device has paired');
+  assertLocalStorageClean(A, 'host');
+  assertLocalStorageClean(B, 'guest');
 
   // A later save broadcasts an encrypted patch that B merges.
   const before = broker.wire.length;
@@ -509,7 +529,7 @@ test('a valid hello followed by a bad hello-ok proof is closed after the ack, ne
   const inner = await H.hooks.decrypt(keys, H.hooks.aadFor(nonce2, got2[0].nonce, 'responder'), got2[1]);
   assert.equal(inner.type, 'state');
   assert.equal(inner.payload.entries[0].body, 'host secret entry', 'the journal only travels inside the ciphertext');
-  assert.equal(pairingOf(H).peer, 'rephrame-rawdial', 'the host adopts the peer that proved the secret');
+  await until(() => pairingOf(H).peer === 'rephrame-rawdial', 'the host adopts the peer that proved the secret');
   assert.equal(pairingOf(H).verified, true);
   assert.equal(H.hooks.offerCode(), null, 'the offered code is withdrawn once a device has paired');
 });
@@ -536,6 +556,7 @@ test('a pre-v2 pairing (room without secret) is neither dialled nor accepted unt
   assert.equal(L.hooks.offerCode().replace(/-/g, '').length, 18, 'a full code (room + 12-char secret) is offered');
   assert.equal(keysOf(L).room, p.room, 'keys for the new room are stored');
   assert.equal(p.peer, null);
+  assertLocalStorageClean(L, 'after generating a code');
   assert.equal(peerOf(L).id, 'rephrame-' + p.room.toLowerCase());
   assert.equal(L.storage.getItem('rephrame_peer_id_v1'), peerOf(L).id, 'the old device id is replaced');
   assert.equal(L.storage.getItem('rephrame_sync_room'), null, 'the legacy room record is removed');
@@ -585,7 +606,7 @@ test('with a PIN set and the journal locked, no peer is registered until unlock;
   assert.equal(broker.peers.has('rephrame-ab3c9d'), false);
 });
 
-test('storage layout: localStorage holds {room, peer, verified}, IndexedDB holds non-extractable keys, the secret is nowhere', async () => {
+test('storage layout: IndexedDB holds {room, peer, verified} and non-extractable keys; localStorage holds nothing from a pairing code', async () => {
   const broker = makeBroker();
   const A = bootDevice(broker);
   await until(() => peerOf(A), 'A peer');
@@ -594,6 +615,8 @@ test('storage layout: localStorage holds {room, peer, verified}, IndexedDB holds
   const rec = pairingOf(A);
   assert.deepEqual(Object.keys(rec).sort(), ['peer', 'room', 'verified']);
   assert.ok(!A.storage.dump().includes(secret), 'the secret appears in no localStorage value');
+  assert.equal(A.storage.getItem('rephrame_sync_pair_v2'), null, 'no pairing record in localStorage');
+  assertLocalStorageClean(A, 'host');
   const keys = keysOf(A);
   assert.equal(keys.room, rec.room);
   assert.equal(keys.aes.extractable, false, 'AES key is non-extractable');
@@ -608,6 +631,8 @@ test('storage layout: localStorage holds {room, peer, verified}, IndexedDB holds
   await B.hooks.connect(code);
   assert.deepEqual(Object.keys(pairingOf(B)).sort(), ['peer', 'room', 'verified']);
   assert.ok(!B.storage.dump().includes(secret), 'the guest does not store the secret either');
+  assert.ok(!B.storage.dump().includes(rec.room), 'the guest does not put the typed room in localStorage either');
+  assertLocalStorageClean(B, 'guest');
   assert.equal(keysOf(B).room, rec.room);
   assert.equal(B.hooks.offerCode(), null, 'a guest offers no code');
   // Finish the pairing so no handshake timer outlives the test.
@@ -656,36 +681,40 @@ test('keys survive a reload: a second boot over the same storage comes up paired
 
 test('a pairing record whose keys are missing is retired: unpaired, explained, nothing registered', async () => {
   const broker = makeBroker();
+  const idb = makeFakeIDB();
+  idb.seed('rephrame-sync', 'keys', 'pairing', { room: 'AB3C9D', peer: 'rephrame-other1', verified: true });
   const D = bootDevice(broker, {
-    storage: makeStorage({
-      rephrame_sync_enabled: '1',
-      rephrame_peer_id_v1: 'rephrame-ab3c9d',
-      rephrame_sync_pair_v2: JSON.stringify({ room: 'AB3C9D', peer: 'rephrame-other1', verified: true }),
-    }),
+    idb,
+    storage: makeStorage({ rephrame_sync_enabled: '1', rephrame_peer_id_v1: 'rephrame-ab3c9d' }),
   });
   await until(() => D.hooks.connState().status === 'unpaired', 'unpaired');
   await sleep(20);
   assert.equal(peerOf(D), null, 'no peer is registered without keys');
   assert.equal(broker.peers.size, 0);
   assert.match(D.hooks.connState().statusMsg, /sync keys are gone/);
-  assert.equal(pairingOf(D), null, 'the useless record is removed');
+  await until(() => pairingOf(D) === undefined, 'the useless record is removed');
   assert.equal(D.hooks.connState().pairing, null);
 });
 
-test('a pre-release record that carries a secret is ignored and replaced by a fresh pairing', async () => {
+test('pre-release leftovers are never read: the localStorage record is removed on boot, an IndexedDB record carrying a secret is ignored', async () => {
   const broker = makeBroker();
+  const idb = makeFakeIDB();
+  idb.seed('rephrame-sync', 'keys', 'pairing', { room: 'AB3C9D', secret: '0123456789AB', peer: 'rephrame-other1', verified: true });
   const D = bootDevice(broker, {
+    idb,
     storage: makeStorage({
       rephrame_sync_enabled: '1',
-      rephrame_sync_pair_v2: JSON.stringify({ room: 'AB3C9D', secret: '0123456789AB', peer: 'rephrame-other1', verified: true }),
+      rephrame_sync_pair_v2: JSON.stringify({ room: 'AB3C9D', peer: 'rephrame-other1', verified: true }),
     }),
   });
   await until(() => peerOf(D), 'D peer');
   const rec = pairingOf(D);
   assert.equal('secret' in rec, false, 'the replacement record has no secret');
+  assert.notEqual(rec.room, 'AB3C9D', 'neither leftover is adopted');
   assert.equal(rec.peer, null, 'the old partner is not carried over');
   assert.ok(D.hooks.offerCode(), 'a fresh code is offered');
-  assert.ok(!D.storage.dump().includes('0123456789AB'), 'the old secret is gone from storage');
+  assert.equal(D.storage.getItem('rephrame_sync_pair_v2'), null, 'the retired localStorage key is removed');
+  assertLocalStorageClean(D, 'after boot');
 });
 
 test('without IndexedDB the pairing works for the session, is flagged as not surviving a reload, and is gone after one', async () => {
@@ -705,11 +734,17 @@ test('without IndexedDB the pairing works for the session, is flagged as not sur
     A.hooks.acceptInbound();
     await until(() => A.hooks.connState().ready && B.hooks.connState().ready, 'pairs in-session (' + label + ')');
     assert.equal(B.hooks.connState().keysVolatile, true, 'the guest is flagged too (' + label + ')');
+    const oldRoom = A.hooks.connState().pairing.room;
     A.dispatch('beforeunload');
     await sleep(20);
+    // Nothing about the pairing was persisted, so the reloaded device knows
+    // no partner and offers a fresh code (the old room is not reused).
     const A2 = bootDevice(broker, { storage: A.storage, idb: idbA });
-    await until(() => A2.hooks.connState().status === 'unpaired', 'unpaired after reload (' + label + ')');
-    assert.match(A2.hooks.connState().statusMsg, /keys are gone/);
-    assert.equal(peerOf(A2), null);
+    await until(() => peerOf(A2), 'fresh pairing after reload (' + label + ')');
+    const st2 = A2.hooks.connState();
+    assert.equal(st2.pairing.peer, null, 'no partner survived (' + label + ')');
+    assert.notEqual(st2.pairing.room, oldRoom, 'the old room is gone (' + label + ')');
+    assert.ok(A2.hooks.offerCode(), 'a fresh code is offered (' + label + ')');
+    assertLocalStorageClean(A2, label);
   }
 });

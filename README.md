@@ -103,7 +103,8 @@ remaining twelve are a random secret that never leaves the two devices.
 The code is shown only right after it is generated (it disappears once a
 device has paired or the page is closed), and neither device stores the
 secret itself — each keeps only the encryption and authentication keys
-derived from it. Dashes and letter case don't matter when typing it.
+derived from it, in IndexedDB. Dashes and letter case don't matter when
+typing it.
 Once the connection opens,
 both ends prove they hold the secret (an HMAC challenge–response in each
 direction) before a single entry is sent, then exchange a full snapshot
@@ -252,14 +253,16 @@ crisis**, and reachable from a link in every empty-state and capture modal.
   except, if you've enabled Sync, to the device you paired with — and
   only directly, over WebRTC, encrypted with keys derived from the
   pairing secret.
-- Sync keeps its own records: `rephrame_sync_pair_v2` in `localStorage`
-  holds the room id, the paired device's id and a verified flag — never
-  the pairing secret, which is not stored anywhere. The AES-GCM and HMAC
-  keys derived from it live in IndexedDB (database `rephrame-sync`, store
-  `keys`) as non-extractable WebCrypto keys, so nothing can read them
-  back as bytes. Alongside: `rephrame_peer_id_v1` (this device's id),
-  `rephrame_entry_dels` (deletion tombstones) and `rephrame_sync_enabled`.
-  Disabling sync removes the pairing record and the keys.
+- Sync keeps everything about a pairing in IndexedDB (database
+  `rephrame-sync`, store `keys`): a `pairing` record with the room id, the
+  paired device's id and a verified flag, and a `keys` record with the
+  AES-GCM and HMAC keys derived from the pairing secret, stored as
+  non-extractable WebCrypto keys so nothing can read them back as bytes.
+  The secret itself is never stored anywhere. `localStorage` keeps only
+  `rephrame_peer_id_v1` (this device's id), `rephrame_entry_dels`
+  (deletion tombstones) and `rephrame_sync_enabled` — nothing that came
+  from a pairing code. Disabling sync removes the pairing record and the
+  keys.
 - A one-time onboarding flag lives under `reframe-onboarded-v1`.
 - The unlock token (`reframe-unlocked`) lives in `sessionStorage` and clears
   when the tab closes, so the PIN gate re-arms on each new session.

@@ -558,9 +558,24 @@ try {
       // holding the room and partner id but never the secret.
       await h.connect('YYY-YYY-' + secret.slice(0, 4) + '-' + secret.slice(4, 8) + '-' + secret.slice(8));
       const st = h.connState();
-      const rec = JSON.parse(localStorage.getItem('rephrame_sync_pair_v2'));
-      out.recordHasNoSecret = !!rec && rec.room === 'YYYYYY' && !('secret' in rec) &&
-        Object.keys(localStorage).every(k => !String(localStorage.getItem(k)).includes(secret));
+      // The typed code (room + secret) reaches web storage nowhere: the
+      // record is in IndexedDB and localStorage keeps only the device id,
+      // tombstones and the enabled flag.
+      const idbGet = (key) => new Promise((res, rej) => {
+        const r = indexedDB.open('rephrame-sync');
+        r.onerror = () => rej(r.error);
+        r.onsuccess = () => {
+          const db = r.result;
+          let g;
+          try { g = db.transaction('keys', 'readonly').objectStore('keys').get(key); } catch (e) { db.close(); rej(e); return; }
+          g.onsuccess = () => { db.close(); res(g.result); };
+          g.onerror = () => { db.close(); rej(g.error); };
+        };
+      });
+      const rec = await idbGet('pairing');
+      out.recordInIdbOnly = !!rec && rec.room === 'YYYYYY' && rec.peer === 'rephrame-yyyyyy' && !('secret' in rec) &&
+        localStorage.getItem('rephrame_sync_pair_v2') === null &&
+        Object.keys(localStorage).every(k => !String(localStorage.getItem(k)).includes(secret) && !String(localStorage.getItem(k)).includes('YYYYYY'));
       out.newDial = st.conn === window.__lastDial && window.__lastDial.peer === 'rephrame-yyyyyy';
       out.noReconnectTimer2 = st.reconnectScheduled === false;
       out.statusConnecting = st.status === 'connecting';
@@ -587,7 +602,7 @@ try {
     assert.equal(r.noReconnectTimer2, true, 'Re-pairing did not schedule an auto-reconnect');
     assert.equal(r.statusConnecting, true, 'Status reads connecting for the new dial');
     assert.equal(r.pairingFollows, true, 'The pairing record follows the code that was entered');
-    assert.equal(r.recordHasNoSecret, true, 'The localStorage record never carries the secret');
+    assert.equal(r.recordInIdbOnly, true, 'The pairing record lives in IndexedDB only; nothing from the typed code reaches localStorage');
 
     const r2 = await page.evaluate(async () => {
       const h = window.__syncTestHooks;
@@ -1054,10 +1069,11 @@ try {
   // ── 25. A pre-v2 sync pairing is retired, not dialled ──────────────────
   {
     const { ctx, page, errors } = await openApp(() => {
-      // Seed the pre-v2 state only until the app has replaced it: this init
-      // script also runs on the reload further down, which must see the
-      // freshly generated pairing, not the legacy one again.
-      if (!localStorage.getItem('rephrame_sync_pair_v2')) {
+      // Seed the pre-v2 state once: this init script also runs on the reload
+      // further down, which must see the freshly generated pairing, not the
+      // legacy one again.
+      if (!localStorage.getItem('__test_seeded')) {
+        localStorage.setItem('__test_seeded', '1');
         localStorage.setItem('rephrame_sync_enabled', '1');
         localStorage.setItem('rephrame_peer_id_v1', 'rephrame-abcdef');
         localStorage.setItem('rephrame_sync_room', 'RFR-ZZZ-ZZZ');
@@ -1085,25 +1101,28 @@ try {
     await page.waitForSelector('#syncMyCode', { timeout: 5000 });
     await page.waitForFunction(() => window.__fakePeers.length === 1, null, { timeout: 5000 });
     const after = await page.evaluate(async () => {
-      const p = JSON.parse(localStorage.getItem('rephrame_sync_pair_v2'));
       const code = document.getElementById('syncMyCode').textContent.trim();
       const secretPart = code.replace(/-/g, '').slice(6);
-      // The derived keys live in real IndexedDB here.
-      const keys = await new Promise((res, rej) => {
+      // The pairing record and the derived keys both live in real IndexedDB.
+      const idbGet = (key) => new Promise((res, rej) => {
         const r = indexedDB.open('rephrame-sync');
         r.onerror = () => rej(r.error);
         r.onsuccess = () => {
           const db = r.result;
           let g;
-          try { g = db.transaction('keys', 'readonly').objectStore('keys').get('pairing'); } catch (e) { db.close(); rej(e); return; }
+          try { g = db.transaction('keys', 'readonly').objectStore('keys').get(key); } catch (e) { db.close(); rej(e); return; }
           g.onsuccess = () => { db.close(); res(g.result); };
           g.onerror = () => { db.close(); rej(g.error); };
         };
       });
+      const p = await idbGet('pairing');
+      const keys = await idbGet('keys');
       return {
-        room: p.room, peer: p.peer, recordKeys: Object.keys(p).sort(),
+        room: p ? p.room : null, peer: p ? p.peer : undefined, recordKeys: p ? Object.keys(p).sort() : [],
         secretLen: secretPart.length,
         secretInStorage: Object.keys(localStorage).some(k => String(localStorage.getItem(k)).includes(secretPart)),
+        noLocalRecord: localStorage.getItem('rephrame_sync_pair_v2') === null,
+        localKeys: Object.keys(localStorage).sort(),
         legacyGone: localStorage.getItem('rephrame_sync_room') === null,
         code,
         id: localStorage.getItem('rephrame_peer_id_v1'),
@@ -1115,7 +1134,10 @@ try {
       };
     });
     assert.equal(after.secretLen, 12, 'The panel shows a 12-character secret');
-    assert.deepEqual(after.recordKeys, ['peer', 'room', 'verified'], 'The localStorage record holds room, peer and verified only');
+    assert.deepEqual(after.recordKeys, ['peer', 'room', 'verified'], 'The IndexedDB pairing record holds room, peer and verified only');
+    assert.equal(after.noLocalRecord, true, 'There is no rephrame_sync_pair_v2 key in localStorage');
+    assert.deepEqual(after.localKeys.filter(k => k.startsWith('rephrame_')), ['rephrame_peer_id_v1', 'rephrame_sync_enabled'],
+      'localStorage keeps only the device id and the enabled flag (plus tombstones once there are any)');
     assert.equal(after.secretInStorage, false, 'The secret appears in no localStorage value');
     assert.equal(after.keysRoom, after.room, 'IndexedDB holds the keys for the new room');
     assert.equal(after.keysNonExtractable, true, 'The stored keys are non-extractable CryptoKeys');

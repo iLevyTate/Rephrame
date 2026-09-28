@@ -24,13 +24,16 @@
 //   keys          = PBKDF2-SHA256(secret, salt "rephrame-sync-v2:" + ROOM,
 //                   100 000 iterations, 512 bits) → AES-256-GCM key ‖
 //                   HMAC-SHA256 key, imported as NON-extractable WebCrypto
-//                   keys the moment a code is generated or typed and kept in
-//                   IndexedDB (database "rephrame-sync", store "keys", record
-//                   "pairing" = {room, aes, mac}). The secret itself is never
-//                   written anywhere: the device that generated it holds it
-//                   in memory only until a device pairs (or the page reloads),
-//                   the device that typed it drops it right after derivation,
-//                   and localStorage keeps just {room, peer, verified}.
+//                   keys the moment a code is generated or typed. Everything
+//                   about the pairing lives in IndexedDB (database
+//                   "rephrame-sync", store "keys"): record "pairing" =
+//                   {room, peer, verified} and record "keys" = {room, aes,
+//                   mac}. The secret itself is never written anywhere: the
+//                   device that generated it holds it in memory only until a
+//                   device pairs (or the page reloads), and the device that
+//                   typed it drops it right after derivation. localStorage
+//                   keeps only this device's id, deletion tombstones and the
+//                   enabled flag — nothing that came from a pairing code.
 //   handshake     = dialer sends   {type:"hello",     v:2, nonce:Ni}
 //                   listener sends {type:"hello-ack", v:2, nonce:Nr,
 //                                   proof:HMAC("ack|"+Ni)}
@@ -50,10 +53,11 @@
 // code. While the journal is PIN-locked no peer is registered at all.
 
 const SYNC_PEER_KEY        = "rephrame_peer_id_v1";    // this device's PeerJS id
-const SYNC_PAIR_KEY        = "rephrame_sync_pair_v2";  // {room, peer, verified} — never the secret
-const SYNC_DB_NAME         = "rephrame-sync";           // IndexedDB: derived keys live here …
+const SYNC_PAIR_KEY_RETIRED = "rephrame_sync_pair_v2"; // pre-release localStorage record: removed on boot, never read
+const SYNC_DB_NAME         = "rephrame-sync";           // IndexedDB: the whole pairing lives here …
 const SYNC_DB_STORE        = "keys";
-const SYNC_DB_RECORD       = "pairing";                 // … as {room, aes, mac} (non-extractable CryptoKeys)
+const SYNC_DB_PAIRING      = "pairing";                 // … as {room, peer, verified}
+const SYNC_DB_KEYS         = "keys";                    // … and {room, aes, mac} (non-extractable CryptoKeys)
 const SYNC_LEGACY_ROOM_KEY = "rephrame_sync_room";     // pre-v2 paired room (read only to detect it)
 const SYNC_DELS_KEY        = "rephrame_entry_dels";
 const SYNC_ENABLED_KEY     = "rephrame_sync_enabled";
@@ -77,10 +81,12 @@ let _readyConn   = null;   // _conn once its handshake has completed
 let _activeSend  = null;   // encrypting sender bound to _readyConn
 let _syncEnabled = false;
 let _syncStatus  = "off";  // 'off' | 'unpaired' | 'loading' | 'waiting' | 'connecting' | 'connected' | 'error'
-let _pairing     = null;   // in-memory copy of SYNC_PAIR_KEY: {room, peer, verified}
+let _pairing     = null;   // in-memory copy of the IndexedDB "pairing" record: {room, peer, verified}
+let _pairingLoaded = false;              // the boot-time IndexedDB read has finished
+let _pairingLoadPromise = Promise.resolve(); // … and this is it (never rejects)
 let _pairingGen  = 0;      // bumps whenever _pairing changes, invalidates _keys
-let _keys        = null;   // {gen, room, aes, mac} — memory cache of the IndexedDB record
-let _keysVolatile = false; // keys exist in memory only (IndexedDB refused them)
+let _keys        = null;   // {gen, room, aes, mac} — memory cache of the IndexedDB "keys" record
+let _keysVolatile = false; // the pairing (record and/or keys) exists in memory only (IndexedDB refused it)
 let _offerSecret = null;   // the secret of a code this device generated, until a device pairs
 let _mintPromise = null;   // in-flight _mintPairing()
 let _connectTimeoutId   = null;
@@ -265,21 +271,21 @@ function _setSyncStatus(status, msg) {
 // device's PeerJS id — known up front on the device that typed the code,
 // learned from the first verified connection on the device that showed it;
 // `verified` flips once a handshake has succeeded. The secret is NOT part of
-// the record: only the keys derived from it are kept, in IndexedDB.
+// the record: only the keys derived from it are kept, in the sibling
+// IndexedDB record. Nothing about a pairing touches localStorage — the room
+// half of a typed code is a slice of the same string as its secret, and it
+// must never end up in clear-text web storage.
 
 function _validRoom(s)   { return typeof s === "string" && s.length === ROOM_LEN   && [...s].every(c => CODE_ALPHABET.includes(c)); }
 function _validSecret(s) { return typeof s === "string" && s.length === SECRET_LEN && [...s].every(c => CODE_ALPHABET.includes(c)); }
 
-function _loadPairing() {
-  let raw = null;
-  try { raw = localStorage.getItem(SYNC_PAIR_KEY); } catch { /* noop */ }
-  if (!raw) return null;
+// The stored record, or null. Runs once at boot (see the bottom of the file).
+async function _loadPairing() {
   try {
-    const p = JSON.parse(raw);
+    const p = await _idbGet(SYNC_DB_PAIRING);
     if (!p || typeof p !== "object" || !_validRoom(p.room)) return null;
-    // A record carrying a secret is from a pre-release build that stored it
-    // in the clear; refuse it outright rather than migrate (a fresh code is
-    // one tap away).
+    // Belt and braces: a record shaped like a pre-release one (secret in the
+    // clear) is refused rather than migrated — a fresh code is one tap away.
     if ("secret" in p) return null;
     return {
       room: p.room,
@@ -289,11 +295,21 @@ function _loadPairing() {
   } catch { return null; }
 }
 
+// Persist the current record (or its absence). Serialised with the key
+// writes, so a delete can never overtake a later put. If IndexedDB refuses,
+// the pairing keeps working from memory and the panel says it won't survive
+// a reload.
 function _savePairingRecord() {
-  try {
-    if (_pairing) localStorage.setItem(SYNC_PAIR_KEY, JSON.stringify({ room: _pairing.room, peer: _pairing.peer, verified: _pairing.verified }));
-    else localStorage.removeItem(SYNC_PAIR_KEY);
-  } catch { /* noop */ }
+  const gen = _pairingGen;
+  const op = _pairing
+    ? _idbPut(SYNC_DB_PAIRING, { room: _pairing.room, peer: _pairing.peer, verified: _pairing.verified })
+    : _idbDelete(SYNC_DB_PAIRING);
+  return op.catch(e => {
+    if (!_pairing || gen !== _pairingGen) return;
+    console.warn("[sync] pairing record could not be persisted; this pairing will not survive a reload", e);
+    _keysVolatile = true;
+    renderSyncPanel();
+  });
 }
 
 // Replace the pairing record. Keys for the new room are installed separately
@@ -308,7 +324,10 @@ function _setPairing(p) {
   if (!_pairing) _deleteStoredKeys();
 }
 
+// A pre-v2 room is "legacy" only once we know there is no v2 pairing, i.e.
+// after the boot-time IndexedDB read.
 function _hasLegacyPairing() {
+  if (!_pairingLoaded) return false;
   let legacy = null;
   try { legacy = localStorage.getItem(SYNC_LEGACY_ROOM_KEY); } catch { /* noop */ }
   return !!legacy && !_pairing;
@@ -371,10 +390,11 @@ async function _deriveKeys(secret, room) {
   return { aes, mac };
 }
 
-// ── Key storage (IndexedDB) ──────────────────────────────────────────────────
+// ── Pairing + key storage (IndexedDB) ────────────────────────────────────────
 // The derived keys are what a device keeps; the secret never is. CryptoKeys
 // are structured-cloneable, so the non-extractable objects go straight into
-// IndexedDB and come back unusable to anything but SubtleCrypto. Every
+// IndexedDB and come back unusable to anything but SubtleCrypto. The pairing
+// record ({room, peer, verified}) sits next to them in the same store. Every
 // operation opens the database, runs one request in its own transaction and
 // closes again; they are serialised so a delete can't overtake a later put.
 
@@ -427,7 +447,7 @@ async function _storeKeys(room, aes, mac) {
   const gen = _pairingGen;
   _keys = { gen, room, aes, mac };
   _keysVolatile = false;
-  try { await _idbPut(SYNC_DB_RECORD, { room, aes, mac }); }
+  try { await _idbPut(SYNC_DB_KEYS, { room, aes, mac }); }
   catch (e) {
     console.warn("[sync] sync keys could not be persisted; this pairing will not survive a reload", e);
     if (_pairingGen === gen) { _keysVolatile = true; renderSyncPanel(); }
@@ -436,19 +456,19 @@ async function _storeKeys(room, aes, mac) {
 
 async function _loadStoredKeys() {
   try {
-    const rec = await _idbGet(SYNC_DB_RECORD);
+    const rec = await _idbGet(SYNC_DB_KEYS);
     if (rec && typeof rec === "object" && _validRoom(rec.room) && rec.aes && rec.mac) return rec;
     return null;
   } catch { return null; }
 }
 
 function _deleteStoredKeys() {
-  return _idbDelete(SYNC_DB_RECORD).catch(() => { /* nothing stored, or storage unavailable */ });
+  return _idbDelete(SYNC_DB_KEYS).catch(() => { /* nothing stored, or storage unavailable */ });
 }
 
 // Keys for the current pairing: the session cache, else the IndexedDB record
-// for this room. Throws "not paired" when neither exists — the record in
-// localStorage alone is useless.
+// for this room. Throws "not paired" when neither exists — the pairing record
+// alone is useless.
 async function _getKeys() {
   if (!_pairing) throw new Error("not paired");
   if (_keys && _keys.gen === _pairingGen) return _keys;
@@ -1080,13 +1100,17 @@ let _idRetry = 0;
 async function syncInit() {
   if (_peer) return true;
   if (_syncInitPromise) return _syncInitPromise;
-  // PIN gate: no peer registration and no dial while the journal is locked.
-  // The "rephrame:unlocked" listener below starts sync after a good PIN.
-  if (_isLocked()) return false;
-  // Nothing to register without a v2 pairing — a legacy (secret-less) room
-  // or a never-paired device waits for the user to generate a code.
-  if (!_pairing) { _setSyncStatus("unpaired"); return false; }
   _syncInitPromise = (async () => {
+    // The pairing record comes from IndexedDB; nothing may be decided
+    // before that read has finished.
+    await _pairingLoadPromise;
+    if (_peer) return true;
+    // PIN gate: no peer registration and no dial while the journal is locked.
+    // The "rephrame:unlocked" listener below starts sync after a good PIN.
+    if (_isLocked()) return false;
+    // Nothing to register without a v2 pairing — a legacy (secret-less) room
+    // or a never-paired device waits for the user to generate a code.
+    if (!_pairing) { _setSyncStatus("unpaired"); return false; }
     _setSyncStatus("loading");
 
     // The keys must exist before this device answers to anyone. A record
@@ -1492,6 +1516,15 @@ function renderSyncPanel() {
     return;
   }
 
+  // The pairing record is still being read from IndexedDB.
+  if (!_pairingLoaded) {
+    panel.innerHTML =
+      '<div class="sync-active">' +
+        '<div class="sync-status-row"><span class="sync-dot sync-dot--loading" id="syncDot"></span><span id="syncStatus">Loading…</span></div>' +
+      '</div>';
+    return;
+  }
+
   // Legacy pairing (pre-v2, no secret): nothing is dialled or accepted until
   // a new code exists. One-time notice — it disappears with the old record.
   if (_hasLegacyPairing()) {
@@ -1688,6 +1721,14 @@ function syncEnable() {
   // is never reached, so paired devices silently stop syncing until the
   // user re-clicks "Enable sync" on both.
   try { localStorage.setItem(SYNC_ENABLED_KEY, "1"); } catch { /* noop */ }
+  // Until the boot-time IndexedDB read is in, there is nothing to decide:
+  // show the loading state and come back once the record is known.
+  if (!_pairingLoaded) {
+    _setSyncStatus("loading");
+    renderSyncPanel();
+    _pairingLoadPromise.then(() => { if (_syncEnabled && !_peer) syncEnable(); });
+    return;
+  }
   // A device with neither a v2 pairing nor a legacy one gets its code now.
   // A legacy pairing waits for the user to read the notice and generate one.
   if (!_pairing && !_hasLegacyPairing()) {
@@ -1761,6 +1802,7 @@ if (typeof window !== "undefined") {
     // secret only ever becomes keys. Lets a test seed a device without
     // writing a secret anywhere.
     installPairing: async ({ room, secret, peer, verified }) => {
+      await _pairingLoadPromise;
       const k = await _deriveKeys(secret, room);
       _clearLegacyPairing();
       _setPairing({ room, peer: peer || null, verified: !!verified });
@@ -1777,6 +1819,7 @@ if (typeof window !== "undefined") {
       reconnectScheduled: _reconnectTimerId !== null,
       pairing: _pairing ? { room: _pairing.room, peer: _pairing.peer, verified: _pairing.verified } : null,
       legacy: _hasLegacyPairing(),
+      loaded: _pairingLoaded,
       keysVolatile: _keysVolatile,
       hasOffer: !!_offerSecret,
       peer: _peer,
@@ -1790,8 +1833,23 @@ if (typeof window !== "undefined") {
   // syncInit() declines and the "rephrame:unlocked" listener starts it.
   // Never register a peer from inside another site's frame (see the
   // clickjacking guard in js/pwa.js; app.js refuses to boot there too).
-  _pairing = _loadPairing();
+  //
+  // The pairing record lives in IndexedDB, so boot is asynchronous: read it,
+  // then (and only then) restore the session. Anything that needs the record
+  // — syncInit, syncEnable, the panel, the test hooks — waits on
+  // _pairingLoadPromise. A pairing installed while the read is still in
+  // flight (a typed code, a test hook) wins over whatever the read returns.
   let _wasEnabled = false;
   try { _wasEnabled = localStorage.getItem(SYNC_ENABLED_KEY) === "1"; } catch { /* noop */ }
-  if (_wasEnabled && window.top === window.self) syncEnable();
+  _syncEnabled = _wasEnabled && window.top === window.self;
+  const _genAtLoad = _pairingGen;
+  _pairingLoadPromise = _loadPairing()
+    .then(p => { if (_pairingGen === _genAtLoad) _pairing = p; }, () => { /* treated as no record */ })
+    .then(() => {
+      _pairingLoaded = true;
+      // Hygiene: a pre-release build kept a copy of the record here.
+      try { localStorage.removeItem(SYNC_PAIR_KEY_RETIRED); } catch { /* noop */ }
+      renderSyncPanel();
+      if (_syncEnabled) syncEnable();
+    });
 }
