@@ -71,6 +71,18 @@
 //  27. Loaded inside another site's frame, the page shows an escape notice
 //      and never boots the app (clickjacking guard; the meta CSP cannot carry
 //      frame-ancestors).
+//  28. A tapped field is lifted clear of the Android keyboard AND the sticky
+//      chrome above it. interactive-widget=resizes-content shrinks
+//      innerHeight along with the visual viewport, so the keyboard read as
+//      0px tall: .kb-open never switched on, the nav and the Continue bar
+//      stayed parked above the keyboard, and the field typed into sat
+//      143px behind them.
+//  29. A <details> expander opened near the bottom of a step unfolds into
+//      view instead of under the sticky Continue bar.
+//  30. Every distortion's pre-set question and reframe exist and fit it (no
+//      responsibility pie for All-or-Nothing), the old "Zoom out (pie
+//      chart)" / "Perspective broadening" names migrate, and the intensity
+//      cues describe felt experience rather than how someone sounds.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -1253,6 +1265,141 @@ try {
     assert.match(inFrame.text, /inside another website/, 'The notice explains');
     assert.equal(inFrame.link, URL, 'The escape link opens the app directly');
     log('PASS — framed loads show the escape notice instead of the app.');
+    await ctx.close();
+  }
+
+  // Blocks 28–30 read app.js's reference tables and draft helpers from inside
+  // page.evaluate; they aren't in eslint's shared appProvides list.
+  /* global emptyEntry, seedDraftFromPrimaryDistortion, SOCRATIC_TYPES, REFRAME_METHODS,
+     DISTORTIONS, DISTORTION_DEFAULTS, INTENSITY_BANDS */
+  // ── 28. A tapped field clears the Android keyboard and the sticky chrome ──
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(ONBOARDED);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+    await page.evaluate(() => {
+      state.view = 'capture'; state.captureStep = 2;
+      state.draft = emptyEntry(); state.draft.trigger = 'Meeting ran long';
+      render(); window.scrollTo(0, 0);
+    });
+    await page.waitForTimeout(450);
+    // Park the Body field just above the sticky footer, where a user who has
+    // scrolled down to it would see it.
+    await page.evaluate(() => {
+      const r = document.querySelector('[data-field="bodyCheck"]').getBoundingClientRect();
+      const f = document.querySelector('.capture-footer').getBoundingClientRect();
+      window.scrollBy(0, r.bottom - f.top + 10);
+    });
+    await page.locator('[data-field="bodyCheck"]').tap();
+    await page.waitForTimeout(80);
+    // The keyboard opens: resizes-content shrinks the layout viewport, then
+    // Chrome scrolls the focused field to just above the keyboard edge,
+    // knowing nothing about the chrome stacked there.
+    await page.setViewportSize({ width: 390, height: 480 });
+    await page.evaluate(() => document.activeElement.scrollIntoView({ block: 'nearest' }));
+    await page.waitForTimeout(900);
+    const r = await page.evaluate(() => {
+      const ta = document.activeElement.getBoundingClientRect();
+      const footer = document.querySelector('.capture-footer').getBoundingClientRect();
+      return {
+        field: document.activeElement.dataset.field,
+        kbOpen: document.body.classList.contains('kb-open'),
+        taTop: ta.top, taBottom: ta.bottom, footerTop: footer.top,
+      };
+    });
+    assert.equal(r.field, 'bodyCheck', 'The tapped field still has focus');
+    assert.equal(r.kbOpen, true, 'A keyboard that shrinks innerHeight still switches .kb-open on');
+    assert.ok(r.taTop >= 0 && r.taBottom <= r.footerTop,
+      `The field sits fully above the sticky footer (field ${Math.round(r.taTop)}–${Math.round(r.taBottom)}, footer at ${Math.round(r.footerTop)})`);
+    noErrors(errors, 'keyboard reveal');
+    log('PASS — a tapped field is lifted clear of the keyboard and the sticky footer.');
+    await ctx.close();
+  }
+
+  // ── 29. An expander near the bottom opens into view ────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => {
+      state.view = 'capture'; state.captureStep = 2;
+      state.draft = emptyEntry(); state.draft.trigger = 'Meeting ran long';
+      render(); window.scrollTo(0, 0);
+    });
+    await page.waitForTimeout(450);
+    const summary = page.locator('details.ref-inline summary', { hasText: 'Body region reference' });
+    // Scroll so the summary sits just above the footer: opening it there is
+    // what used to unfold the table straight under the Continue bar.
+    await page.evaluate(() => {
+      const s = [...document.querySelectorAll('details.ref-inline summary')].find(x => /Body region/.test(x.textContent));
+      const f = document.querySelector('.capture-footer').getBoundingClientRect();
+      window.scrollBy(0, s.getBoundingClientRect().bottom - f.top + 4);
+    });
+    await summary.click();
+    await page.waitForTimeout(900);
+    const r = await page.evaluate(() => {
+      const s = [...document.querySelectorAll('details.ref-inline summary')].find(x => /Body region/.test(x.textContent));
+      const d = s.parentElement.getBoundingClientRect();
+      const f = document.querySelector('.capture-footer').getBoundingClientRect();
+      return { open: s.parentElement.open, bottom: d.bottom, top: d.top, footerTop: f.top };
+    });
+    assert.equal(r.open, true, 'The expander opened');
+    assert.ok(r.top >= 0 && r.bottom <= r.footerTop,
+      `The opened reference sits above the sticky footer (${Math.round(r.top)}–${Math.round(r.bottom)}, footer at ${Math.round(r.footerTop)})`);
+    noErrors(errors, 'expander reveal');
+    log('PASS — an expander opened near the footer unfolds into view.');
+    await ctx.close();
+  }
+
+  // ── 30. Distortion pairings fit, legacy names migrate, felt-sense cues ──
+  {
+    const { ctx, page, errors } = await openApp(() => {
+      localStorage.setItem('reframe-journal-v1', JSON.stringify([
+        { id: 'legacy-pie', kind: 'thought-record', createdAt: '2026-05-01T10:00:00.000Z', trigger: 'x', socraticType: 'Zoom out (pie chart)' },
+        { id: 'legacy-pb',  kind: 'thought-record', createdAt: '2026-05-02T10:00:00.000Z', trigger: 'y', socraticType: 'Perspective broadening' },
+      ]));
+    });
+    const r = await page.evaluate(() => {
+      const types = new Set(SOCRATIC_TYPES.map(t => t.type));
+      const methods = new Set(REFRAME_METHODS.map(m => m.method));
+      const unmapped = DISTORTIONS.map(d => d.name).filter(n => !DISTORTION_DEFAULTS[n]);
+      const dangling = Object.entries(DISTORTION_DEFAULTS)
+        .filter(([, v]) => !types.has(v.socratic) || !methods.has(v.reframe)).map(([k]) => k);
+      const seeded = {};
+      for (const name of ['All-or-Nothing Thinking', 'Mental Filter', 'Minimization', 'Personalization', 'Labeling', 'Should Statements']) {
+        const d = emptyEntry();
+        d.thoughts = [{ id: 't', text: 'I ruined the whole thing', isHot: true }];
+        d.distortions = [name];
+        seedDraftFromPrimaryDistortion(d);
+        seeded[name] = { type: d.socraticType, q: d.socraticQuestion, method: d.reframeMethod };
+      }
+      return {
+        unmapped, dangling, seeded,
+        legacy: state.entries.map(e => [e.id, e.socraticType]),
+        cues: INTENSITY_BANDS.map(b => b.signals).join(' | '),
+      };
+    });
+    assert.deepEqual(r.unmapped, [], 'Every distortion has pre-set defaults');
+    assert.deepEqual(r.dangling, [], 'Every default names a real question type and reframe method');
+    const aon = r.seeded['All-or-Nothing Thinking'];
+    assert.equal(aon.type, 'Shades of gray', 'All-or-Nothing is challenged on a continuum');
+    assert.doesNotMatch(aon.q, /pie chart|slice/i, 'All-or-Nothing is not handed the responsibility pie');
+    assert.match(aon.q, /0 to 100/, 'All-or-Nothing question asks where it sits between the extremes');
+    for (const name of ['Mental Filter', 'Minimization']) {
+      assert.doesNotMatch(r.seeded[name].q, /pie chart|slice/i, `${name} is not handed the responsibility pie`);
+    }
+    assert.equal(r.seeded['Personalization'].type, 'Responsibility pie', 'Self-blame gets the responsibility pie');
+    assert.equal(r.seeded['Labeling'].method, 'Behavior, not identity', 'A label is reframed as a behavior');
+    assert.equal(r.seeded['Should Statements'].method, 'Flexible preference', 'A should is reframed as a preference');
+    assert.deepEqual(Object.fromEntries(r.legacy), { 'legacy-pie': 'Responsibility pie', 'legacy-pb': 'Full picture' },
+      'Stored legacy question-type names migrate to the current ones');
+    assert.doesNotMatch(r.cues, /voice|vocal|tone|yelling|crying|speech/i,
+      'Intensity cues describe how it feels, not how it sounds: ' + r.cues);
+    noErrors(errors, 'distortion pairings');
+    log('PASS — distortion pairings fit, legacy names migrate, intensity cues are felt-sense.');
     await ctx.close();
   }
 

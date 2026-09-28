@@ -30,29 +30,37 @@ const DISTORTIONS = [
 
 // Default Socratic type + reframe method per distortion. Lets step 3 (Distortion)
 // seed Challenge (step 4) and Reframe (step 5) so a first-time user isn't asked
-// to map jargon-to-jargon mid-flow. The pairings
-// come from the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS;
-// this constant just encodes them as a lookup so the picker handler
-// can apply them. Keys must exactly match a DISTORTIONS[].name; values
-// must exactly match a SOCRATIC_TYPES[].type and REFRAME_METHODS[].method.
+// to map jargon-to-jargon mid-flow. Each pairing is the question and the
+// rewrite that answer what that distortion actually does, and should read
+// true against the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS:
+// an absolute gets a continuum, a prediction gets a probability, a label
+// gets the behavior it was stuck on, lopsided blame gets a responsibility
+// pie. Keys must exactly match a DISTORTIONS[].name; values must exactly
+// match a SOCRATIC_TYPES[].type and REFRAME_METHODS[].method.
+//
+// The responsibility pie used to be "Perspective broadening" (zoom out to
+// the whole week). PR 6 swapped its question for the pie but left
+// All-or-Nothing, Mental Filter and Minimization pointing at it, so "I
+// ruined the whole presentation" was answered with "how big is my slice of
+// the blame?". Those three now get questions built for them.
 const DISTORTION_DEFAULTS = {
-  "All-or-Nothing Thinking":    { socratic: "Zoom out (pie chart)",    reframe: "Continuum thinking" },
+  "All-or-Nothing Thinking":    { socratic: "Shades of gray",          reframe: "Continuum thinking" },
   "Overgeneralization":         { socratic: "Historical test",         reframe: "Continuum thinking" },
-  "Mental Filter":              { socratic: "Zoom out (pie chart)",    reframe: "Coping/encouraging thought" },
-  "Disqualifying the Positive": { socratic: "Evidence examination",    reframe: "Coping/encouraging thought" },
+  "Mental Filter":              { socratic: "Full picture",            reframe: "Balanced thought" },
+  "Disqualifying the Positive": { socratic: "Double standard",         reframe: "Balanced thought" },
   "Mind Reading":               { socratic: "Alternative explanation", reframe: "Behavioral experiment" },
   "Fortune Telling":            { socratic: "Probability testing",     reframe: "Realism" },
   "Catastrophizing":            { socratic: "Decatastrophizing",       reframe: "Realism" },
-  "Minimization":               { socratic: "Zoom out (pie chart)",    reframe: "Coping/encouraging thought" },
-  "Emotional Reasoning":        { socratic: "Evidence examination",    reframe: "Realism" },
-  "Should Statements":          { socratic: "Cost-benefit",            reframe: "Continuum thinking" },
-  "Labeling":                   { socratic: "Double standard",         reframe: "Compassionate reattribution" },
-  "Personalization":            { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
+  "Minimization":               { socratic: "Double standard",         reframe: "Balanced thought" },
+  "Emotional Reasoning":        { socratic: "Evidence examination",    reframe: "Balanced thought" },
+  "Should Statements":          { socratic: "Cost-benefit",            reframe: "Flexible preference" },
+  "Labeling":                   { socratic: "Double standard",         reframe: "Behavior, not identity" },
+  "Personalization":            { socratic: "Responsibility pie",      reframe: "Compassionate reattribution" },
   "Blame":                      { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
-  "Fallacy of Fairness":        { socratic: "Cost-benefit",            reframe: "Realism" },
-  "Fallacy of Change":          { socratic: "Cost-benefit",            reframe: "Behavioral experiment" },
+  "Fallacy of Fairness":        { socratic: "Cost-benefit",            reframe: "Flexible preference" },
+  "Fallacy of Change":          { socratic: "Cost-benefit",            reframe: "Flexible preference" },
   "Control Fallacy (external)": { socratic: "Evidence examination",    reframe: "Behavioral experiment" },
-  "Control Fallacy (internal)": { socratic: "Double standard",         reframe: "Compassionate reattribution" },
+  "Control Fallacy (internal)": { socratic: "Responsibility pie",      reframe: "Compassionate reattribution" },
 };
 
 const COMMON_PAIRS = [
@@ -73,12 +81,17 @@ const EMOTION_FAMILIES = {
   Disgust: ["repulsed", "contemptuous", "revolted"],
 };
 
+// What each band feels like from the inside. This is a self-report scale:
+// the person rating is the person feeling it, so the cues describe felt
+// experience, not how the feeling sounds or looks to someone listening
+// (the old "raised voice", "vocal frustration" wording was an observer's
+// checklist and made no sense for rating your own mood).
 const INTENSITY_BANDS = [
-  { max: 20, label: "Mild",     signals: "Matter-of-fact tone, no vocal tension" },
-  { max: 40, label: "Moderate", signals: "Slight edge, lingering on the topic" },
-  { max: 60, label: "Strong",   signals: "Repeating the issue, vocal frustration" },
-  { max: 80, label: "High",     signals: "Raised voice, spiraling, hard to drop" },
-  { max: 100, label: "Severe",  signals: "Shutdown, crying, yelling, physical distress" },
+  { max: 20, label: "Mild",     signals: "Noticeable, easy to set aside" },
+  { max: 40, label: "Moderate", signals: "Tugging at you, still manageable" },
+  { max: 60, label: "Strong",   signals: "Hard to think about much else" },
+  { max: 80, label: "High",     signals: "Taking over, felt in the body" },
+  { max: 100, label: "Severe",  signals: "Overwhelming, hard to function" },
 ];
 
 const BODY_REGIONS = [
@@ -92,27 +105,35 @@ const BODY_REGIONS = [
 ];
 
 const SOCRATIC_TYPES = [
-  { type: "Evidence examination",   when: "Thought stated as fact without proof",        template: "What evidence do I actually have that [thought] is true?" },
-  { type: "Alternative explanation", when: "Locked into one interpretation",             template: "Is there another way to explain why [person] did that?" },
-  { type: "Probability testing",    when: "Catastrophizing / fortune telling",           template: "How likely is [worst case] on a scale of 0–100%?" },
-  { type: "Historical test",        when: "Treating this as a pattern",                  template: "How many times has [feared outcome] actually happened vs not?" },
-  { type: "Double standard",        when: "Harsher on self than on others",              template: "If a friend told me they did this, what would I say?" },
-  { type: "Decatastrophizing",      when: "Worst-case thinking",                         template: "If the worst case happened, what would I realistically do?" },
-  { type: "Cost-benefit",           when: "Should statements / rigid rules",             template: "What does holding this belief cost me vs give me?" },
-  { type: "Zoom out (pie chart)",   when: "Tunnel vision / mental filter / sole-blame",  template: "If I drew a pie chart of every factor that contributed, how big would my slice actually be? What else fills the circle?" },
+  { type: "Evidence examination",   when: "A feeling or assumption treated as fact",            template: "What evidence do I actually have that [thought] is true?" },
+  { type: "Alternative explanation", when: "Locked into one reading of what someone did",       template: "Is there another way to explain why [person] did that?" },
+  { type: "Probability testing",    when: "Predicting the bad outcome as certain",              template: "How likely is [worst case] on a scale of 0–100%?" },
+  { type: "Historical test",        when: "One event treated as a pattern",                     template: "How many times has [feared outcome] actually happened vs not?" },
+  { type: "Double standard",        when: "Harder on yourself than on a friend, or waving off your own wins", template: "If a friend told me they did this, what would I say?" },
+  { type: "Decatastrophizing",      when: "Worst-case thinking",                                template: "If the worst case happened, what would I realistically do?" },
+  { type: "Cost-benefit",           when: "Should statements / rigid rules",                    template: "What does holding this belief cost me vs give me?" },
+  { type: "Shades of gray",         when: "All-or-nothing words: always, never, total, ruined", template: "Is this really all or nothing? On a scale from 0 to 100, where does it actually sit, and what would the middle look like?" },
+  { type: "Full picture",           when: "One detail blotting out everything else",            template: "What am I leaving out? If I zoomed out to the whole day or week, what else happened that I'm not counting?" },
+  { type: "Responsibility pie",     when: "Taking all the blame, or loading it on one person",  template: "If I drew a pie chart of every factor that contributed, how big would my slice actually be? What else fills the circle?" },
 ];
 
 const REFRAME_METHODS = [
   { method: "Coping/encouraging thought",  when: "Self-criticism about ability", does: "A kinder, more accurate line you can actually use as encouragement",
     template: "I haven't figured this out yet, and that's not the same as never being able to. One rough attempt isn't the verdict." },
-  { method: "Realism",                     when: "Catastrophizing",              does: "Replaces extreme prediction with most probable outcome",
+  { method: "Realism",                     when: "Catastrophizing / fortune telling", does: "Replaces extreme prediction with most probable outcome",
     template: "The worst case isn't the most likely case. The realistic outcome is more like [X], and I'd handle that the way I've handled similar things." },
-  { method: "Continuum thinking",          when: "All-or-nothing language",      does: "Places this on a 0–100 line instead of a binary; finds where it really sits",
+  { method: "Continuum thinking",          when: "All-or-nothing or always/never language", does: "Places this on a 0–100 line instead of a binary; finds where it really sits",
     template: "On a line from 0 to 100, this isn't at either end — it's around [X]. Naming where it actually sits is more honest than the absolute." },
-  { method: "Compassionate reattribution", when: "Personalized blame",           does: "Redistributes responsibility fairly",
-    template: "This wasn't all on me. A fair split of responsibility looks more like [X]. I'd never apply this label to a friend in the same spot." },
+  { method: "Compassionate reattribution", when: "Responsibility piled on one person, you or them", does: "Redistributes responsibility fairly",
+    template: "This wasn't all on one person. A fair split of responsibility looks more like [X]. I can own my share without carrying all of it, or handing all of it away." },
   { method: "Behavioral experiment",       when: "Untested assumptions",         does: "Reframes as hypothesis to test",
     template: "I'm treating this prediction as fact, but I haven't tested it. The honest version: 'I expect [X] — let me see if that's actually what happens.'" },
+  { method: "Balanced thought",            when: "One detail or one feeling crowding out the rest", does: "Holds the hard part and what you were leaving out in the same sentence",
+    template: "[The hard part] is real, and so is [what I was leaving out]. I don't have to pick one; both belong in the picture." },
+  { method: "Flexible preference",         when: "Shoulds, musts, and it's-not-fair rules", does: "Turns a rigid rule into a preference you can miss without it being a verdict",
+    template: "I'd prefer [X], and it's disappointing when that doesn't happen. It's a preference, not a rule that I or anyone else has to obey." },
+  { method: "Behavior, not identity",      when: "A label pinned on you from one action", does: "Describes what happened instead of passing a verdict on who you are",
+    template: "I [did X], and I'm not happy about it. That's something I did, not who I am." },
 ];
 
 // Worked before→after reframe examples, keyed by distortion name (must match
@@ -752,7 +773,11 @@ const WORRY_RESOLUTIONS = ["dissolved", "escalated", "postponed"];
 const DISTORTION_RENAME = { "Mental Filtering": "Mental Filter" };
 const SOCRATIC_RENAME = {
   "Historical testing": "Historical test",
-  "Perspective broadening": "Zoom out (pie chart)",
+  // Perspective broadening asked "what would this look like zoomed out to
+  // the full week?", which is what Full picture asks now. The pie question
+  // that later took over its name is Responsibility pie.
+  "Perspective broadening": "Full picture",
+  "Zoom out (pie chart)": "Responsibility pie",
 };
 const REFRAME_RENAME = {
   "Growth-Oriented": "Coping/encouraging thought",
@@ -1400,7 +1425,7 @@ function thoughtRecordToMd(e, idx) {
   }
 
   if (e.bodyCheck) {
-    const infTag = e.bodyInferred ? " *(inferred from speech)*" : "";
+    const infTag = e.bodyInferred ? " *(pieced together later)*" : "";
     L.push("- **Body Check:** " + e.bodyCheck + infTag, "");
   }
 
@@ -1702,6 +1727,100 @@ function smoothScrollIntoView(node, opts) {
   if (!node) return;
   if (_prefersReducedMotion()) node.scrollIntoView({ ...opts, behavior: "auto" });
   else node.scrollIntoView(opts);
+}
+
+// Screen chrome that page content slides underneath. The browser's own
+// focus scrolling (and scrollIntoView) knows nothing about any of it, so a
+// field it "reveals" can land right behind the capture step's sticky
+// Back / Continue bar or the bottom nav, which together cover ~150px just
+// above an Android keyboard. revealInView() measures around them instead.
+const _BOTTOM_CHROME_SEL = ".bottom-nav, .capture-footer";
+const _TOP_CHROME_SEL = ".sync-incoming-bar, .sw-update-banner";
+
+function _nearestScrollBox(el) {
+  for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight + 1) return p;
+  }
+  return null;
+}
+
+// The slice of the screen where `el` can actually be seen, in client coords:
+// the visual viewport (which already excludes an iOS keyboard), minus chrome
+// pinned over either edge, clipped to the scrolling dialog `box` if any.
+function _visibleBandFor(el, box) {
+  const vv = window.visualViewport;
+  let top = (vv && vv.offsetTop) || 0;
+  let bottom = top + ((vv && vv.height) || window.innerHeight);
+  const rects = sel => Array.from(document.querySelectorAll(sel))
+    .filter(c => !c.contains(el))
+    .map(c => c.getBoundingClientRect())
+    .filter(r => r.height > 0);
+  // A dialog or the lock screen sits above the page's own chrome.
+  if (!el.closest(".modal-overlay, .lock-screen")) {
+    // Walk up from the bottom edge. Chrome only covers content while it is
+    // anchored there (or stacked on chrome that is): the capture footer back
+    // in normal flow at the end of a step is just part of the page, and the
+    // nav slid away under .kb-open, or a footer behind an iOS keyboard,
+    // starts below the band and covers nothing.
+    for (const r of rects(_BOTTOM_CHROME_SEL).sort((a, b) => b.bottom - a.bottom)) {
+      if (r.top >= bottom) continue;
+      if (r.bottom < bottom - 4) break;
+      bottom = r.top;
+    }
+  }
+  for (const r of rects(_TOP_CHROME_SEL)) {
+    if (r.top <= top + 16 && r.bottom > top) top = Math.max(top, r.bottom);
+  }
+  if (box) {
+    const b = box.getBoundingClientRect();
+    top = Math.max(top, b.top);
+    bottom = Math.min(bottom, b.bottom);
+  }
+  return { top, bottom };
+}
+
+// Scroll just far enough that `el` sits fully inside the visible band, or,
+// with block "center", centre it there (a field about to be typed into).
+// Anything taller than the band gets its top edge shown, since that's where
+// reading starts. Scrolls the enclosing dialog first and the page with
+// whatever is left over. No-op when `el` is already fully in view.
+function revealInView(el, { block = "nearest" } = {}) {
+  if (!el || !el.isConnected) return false;
+  const r = el.getBoundingClientRect();
+  if (!r.height && !r.width) return false;
+  const box = _nearestScrollBox(el);
+  const { top, bottom } = _visibleBandFor(el, box);
+  const pad = 12;
+  const room = bottom - top - 2 * pad;
+  if (room <= 0) return false;
+  if (r.top >= top + pad && r.bottom <= bottom - pad) return false;
+  let delta;
+  if (r.height > room)              delta = r.top - (top + pad);
+  else if (block === "center")      delta = (r.top + r.bottom) / 2 - (top + bottom) / 2;
+  else if (r.bottom > bottom - pad) delta = r.bottom - (bottom - pad);
+  else                              delta = r.top - (top + pad);
+  const behavior = _prefersReducedMotion() ? "auto" : "smooth";
+  if (box) {
+    const target = Math.max(0, Math.min(box.scrollHeight - box.clientHeight, box.scrollTop + delta));
+    delta -= target - box.scrollTop;
+    box.scrollTo({ top: target, behavior });
+  }
+  if (Math.abs(delta) >= 1) window.scrollBy({ top: delta, behavior });
+  return true;
+}
+
+// Focus a field because the user asked for it indirectly (tapped "Add
+// another thought", or a starter chip that writes into the box). Keyboard
+// avoidance only moves the page for focus the user caused, and this marks
+// the focus as theirs so the field is brought clear of the keyboard and the
+// sticky footer like a direct tap would be.
+let _focusRequestedFor = null;
+function focusForUser(el) {
+  if (!el || typeof el.focus !== "function") return;
+  _focusRequestedFor = el;
+  try { el.focus({ preventScroll: true }); } catch (_) { try { el.focus(); } catch (__) {} }
+  _focusRequestedFor = null;
 }
 
 function humanDuration(ms) {
@@ -2715,7 +2834,7 @@ function renderEntryDetails(entry) {
         ` : ""}
         ${entry.bodyCheck ? `
           <div class="detail-label" style="font-size: 13px; margin: 14px 0 6px; opacity: 0.85;">Body check</div>
-          <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(inferred from speech)</span>` : ""}</p>
+          <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(pieced together later)</span>` : ""}</p>
         ` : ""}
       </div>
       ${entry.thoughtsAccurate ? `
@@ -3386,7 +3505,7 @@ function renderCaptureStep(step, d) {
           <textarea class="textarea" data-field="bodyCheck" rows="2" placeholder="Face flushing, urge to flee…">${esc(d.bodyCheck)}</textarea>
           <label class="checkbox-flag">
             <input type="checkbox" data-field="bodyInferred" ${d.bodyInferred ? "checked" : ""}>
-            <span>Inferred from speech, not directly felt</span>
+            <span>Pieced together later, not felt at the time</span>
           </label>
           <details class="ref-inline">
             <summary><span class="chev">▸</span> Body region reference</summary>
@@ -3512,7 +3631,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">Your Socratic question</label>
-        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc((() => { const st = SOCRATIC_TYPES.find(s => s.type === d.socraticType); return (st && st.template) ? applyTemplate(st.template, d) : "Pick a type above and a starting question will fill in — then make it your own."; })())}">${esc(d.socraticQuestion)}</textarea>
+        <textarea class="textarea" data-field="socraticQuestion" rows="3" placeholder="${esc((() => { const st = SOCRATIC_TYPES.find(s => s.type === d.socraticType); return (st && st.template) ? applyTemplate(st.template, d) : "Pick a type above and a starting question will fill in — then make it your own."; })())}">${esc(d.socraticQuestion)}</textarea>
         <p class="field-help-paper" style="margin-top: 8px;">Picking a type above pre-fills a starting question — feel free to rewrite it in your own words. The point is to <em>genuinely consider</em> the answer, so the wording has to be one you can take seriously.</p>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All question types</summary>
@@ -3693,7 +3812,7 @@ function renderReview(d) {
           }).join("")}
         </div>
       ` : ""}
-      ${d.bodyCheck ? `<div class="review-meta-row" style="margin-top: 8px;"><div class="review-meta-item">Body: ${esc(d.bodyCheck)}${d.bodyInferred ? " (inferred)" : ""}</div></div>` : ""}
+      ${d.bodyCheck ? `<div class="review-meta-row" style="margin-top: 8px;"><div class="review-meta-item">Body: ${esc(d.bodyCheck)}${d.bodyInferred ? " (pieced together later)" : ""}</div></div>` : ""}
     </div>
 
     <div class="review-card">
@@ -4406,7 +4525,7 @@ function renderReference() {
         <h2 class="ref-section-title display">Intensity Scale</h2>
         <span class="ref-section-step">Step 2</span>
       </div>
-      <p class="ref-section-intro">If uncertain, estimate conservatively and mark as estimated.</p>
+      <p class="ref-section-intro">Rate how strong it feels to you, not how it looks from outside. If it's hard to pin a number on it, give your best guess and tick <em>Mark as estimated</em>.</p>
       <div class="ref-table-intensity">
         ${INTENSITY_BANDS.map((b, i) => {
           const minR = i === 0 ? 0 : INTENSITY_BANDS[i - 1].max + 1;
@@ -4429,7 +4548,7 @@ function renderReference() {
         <h2 class="ref-section-title display">Body Check</h2>
         <span class="ref-section-step">Step 2</span>
       </div>
-      <p class="ref-section-intro">Where emotion lives in the body. If you don't directly feel it but speech patterns suggest it, mark as <em>inferred from speech</em>.</p>
+      <p class="ref-section-intro">Where emotion lives in the body. If you didn't notice it in the moment and are working it out afterward, say so with the checkbox under the body field.</p>
       ${BODY_REGIONS.map(b => `
         <div class="ref-item">
           <div class="ref-item-name">${esc(b.region)}</div>
@@ -5208,6 +5327,10 @@ function bindJournal() {
         if (wasExpanded) body.setAttribute("inert", "");
         else body.removeAttribute("inert");
       }
+      // Opening a card near the bottom of the screen unfolds its body under
+      // the bottom nav. Bring it up once the 320ms grid-row reveal is done,
+      // so the measurement sees the full height.
+      if (!wasExpanded && card) setTimeout(() => revealInView(card), 340);
     };
     el.addEventListener("click", toggle);
     // The card head is a div acting as a button; give keyboard users the
@@ -5799,7 +5922,7 @@ function bindCapture() {
         : seed;
       el.value = next;
       el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.focus();
+      focusForUser(el);
       el.setSelectionRange(next.length, next.length);
       refreshNextButton();
     });
@@ -5992,9 +6115,14 @@ function bindCapture() {
   document.querySelectorAll('[data-action="add-thought"]').forEach(el => {
     el.addEventListener("click", () => {
       state.draft.thoughts = state.draft.thoughts || [];
-      state.draft.thoughts.push(normalizeThought({}));
+      const added = normalizeThought({});
+      state.draft.thoughts.push(added);
       saveDraft(state.draft);
       render();
+      // The new row lands where the button was, often right at the sticky
+      // footer. Put the caret in it; focusForUser also lifts it into view.
+      const ta = document.querySelector(`[data-action="edit-thought-text"][data-id="${added.id}"]`);
+      if (ta) focusForUser(ta);
     });
   });
   document.querySelectorAll('[data-action="remove-thought"]').forEach(el => {
@@ -6057,9 +6185,14 @@ function bindCapture() {
   document.querySelectorAll('[data-action="add-mood"]').forEach(el => {
     el.addEventListener("click", () => {
       state.draft.moods = state.draft.moods || [];
-      state.draft.moods.push(normalizeMood({}));
+      const added = normalizeMood({});
+      state.draft.moods.push(added);
       saveDraft(state.draft);
       render();
+      // Nothing to type into (the row opens on a select), so just make sure
+      // the new row isn't sitting under the sticky footer.
+      const row = document.querySelector(`[data-list="moods"] [data-row-id="${added.id}"]`);
+      if (row) requestAnimationFrame(() => revealInView(row));
     });
   });
   document.querySelectorAll('[data-action="remove-mood"]').forEach(el => {
@@ -6585,7 +6718,7 @@ function bindModal() {
       qt.value = next;
       state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
       state.quickDraft.thought = next;
-      qt.focus();
+      focusForUser(qt);
       qt.setSelectionRange(next.length, next.length);
     });
   });
@@ -7108,82 +7241,123 @@ document.addEventListener("keydown", e => {
 // Keyboard avoidance: a three-layer fix. The viewport meta tag handles
 // Chromium/Firefox by shrinking the layout viewport when the VK rises;
 // the .kb-open CSS slides bottom-nav off so it can't occlude focused
-// fields; this IIFE handles iOS (which ignores interactive-widget) and
-// lifts a focused field clear of the keyboard when the VK opens.
+// fields; this IIFE detects the keyboard on both platforms and lifts a
+// field the user tapped clear of the keyboard and the sticky chrome.
 //
 // The scrolling here is deliberately conservative. An earlier version
 // re-centred the focused field on *every* visualViewport event, including
 // the `scroll` events the user's own panning produces — so scrolling away
 // from a textarea you hadn't blurred yanked the page straight back to it,
-// over and over. Two rules prevent that now:
-//   1. Only a keyboard-height *change* (a resize) may scroll. Panning the
-//      visual viewport updates the CSS bits and nothing else.
-//   2. A hand-driven scroll (touch or wheel) switches auto-scrolling off
-//      until the next focusin, so the app never fights the user for the
-//      scroll position.
+// over and over. Three rules prevent that now:
+//   1. Only focus the user caused (a tap on the field or its label, a Tab,
+//      focusForUser()) may scroll. Code that restores or seeds focus does
+//      it with preventScroll on purpose.
+//   2. After that first reveal, only a keyboard-height *change* (a resize)
+//      may scroll. Panning the visual viewport updates the CSS and nothing
+//      else.
+//   3. A hand-driven scroll (touch or wheel) switches auto-scrolling off
+//      until the next tap on a field, so the app never fights the user for
+//      the scroll position.
 // A field that's already fully visible is never scrolled at all.
 (function initKeyboardAvoidance(){
   const vv = window.visualViewport;
-  const FIELD = 'input, textarea, [contenteditable="true"]';
+  // Fields that raise a soft keyboard. Checkboxes, radios and sliders take
+  // focus too, but revealing a slider as it's grabbed would scroll the page
+  // out from under the finger dragging it.
+  const TEXT_FIELD = 'textarea, [contenteditable="true"], input:not([type="checkbox"]):not([type="radio"])' +
+    ':not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"])' +
+    ':not([type="file"]):not([type="color"]):not([type="image"])';
+  const isTextField = el => !!(el && el.matches && el.matches(TEXT_FIELD));
   let lastFocused = null;
-  // Permission to move the page on the user's behalf. Granted on focusin,
-  // revoked the moment they scroll by hand or leave the field.
+  // Permission to move the page on the user's behalf. Granted when they
+  // tap a field, revoked the moment they scroll by hand or leave it.
   let mayAutoScroll = false;
   let lastKbH = 0;
 
-  const kbHeight = () =>
-    vv ? Math.max(0, window.innerHeight - vv.height) : 0;
-
-  // The slice of the screen not covered by the keyboard, in client coords.
-  const visibleBand = () => {
-    const top = (vv && vv.offsetTop) || 0;
-    return { top, bottom: top + ((vv && vv.height) || window.innerHeight) };
+  // What the user last pressed, and when: tells a tap on the field apart
+  // from code focusing it (a step's first field, a dialog re-rendered in
+  // place, a sync merge restoring the caret).
+  let pressTarget = null, pressAt = 0, tabAt = 0;
+  document.addEventListener('pointerdown', e => { pressTarget = e.target; pressAt = Date.now(); }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Tab') tabAt = Date.now(); }, true);
+  const userCausedFocus = el => {
+    if (el === _focusRequestedFor) return true;
+    const now = Date.now();
+    if (now - tabAt < 600) return true;
+    if (!pressTarget || now - pressAt > 1200) return false;
+    if (el === pressTarget || el.contains(pressTarget)) return true;
+    const label = pressTarget.closest && pressTarget.closest('label');
+    return !!(label && label.control === el);
   };
 
-  // Only scroll a field that actually needs it. Centring one that's already
-  // comfortably in view is pure motion — and it's what made a tap in a
-  // mid-screen textarea jump the page for no reason.
-  const isObscured = (el) => {
-    let r;
-    try { r = el.getBoundingClientRect(); } catch (_) { return false; }
-    if (!r || (!r.height && !r.width)) return false;
-    const { top, bottom } = visibleBand();
-    const pad = 8;
-    return r.top < top + pad || r.bottom > bottom - pad;
+  // Keyboard height. iOS lays the keyboard over the page, so the visual
+  // viewport shrinks and the window doesn't. Android with
+  // interactive-widget=resizes-content shrinks both, so innerHeight minus
+  // vv.height read ~0 there: .kb-open never switched on, and the bottom nav
+  // plus the Continue bar stayed parked above the keyboard with the field
+  // behind them. Measure against the tallest height seen at this width
+  // instead, and only while a text field has focus — nothing else raises a
+  // keyboard, and a desktop window resized mid-typing shouldn't count.
+  let fullW = window.innerWidth;
+  let fullH = window.innerHeight;
+  const kbHeight = () => {
+    if (!vv) return 0;
+    const typing = isTextField(document.activeElement);
+    if (window.innerWidth !== fullW) { fullW = window.innerWidth; fullH = window.innerHeight; }
+    else if (!typing) fullH = window.innerHeight;
+    else fullH = Math.max(fullH, window.innerHeight);
+    return typing ? Math.max(0, fullH - vv.height) : 0;
   };
 
-  const revealField = (el) => {
-    if (!el || !el.isConnected || !isObscured(el)) return;
-    smoothScrollIntoView(el, { block: 'center' });
+  const reveal = () => {
+    if (mayAutoScroll && lastFocused && document.activeElement === lastFocused) {
+      revealInView(lastFocused, { block: 'center' });
+    }
+  };
+  // Look twice: once the focus ring has painted, and again after the
+  // keyboard and the chrome sliding out of its way (180–200ms transitions)
+  // have settled. The second look is free when the first one sufficed.
+  let settleTimer = 0;
+  const scheduleReveal = settleMs => {
+    requestAnimationFrame(() => requestAnimationFrame(reveal));
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(reveal, settleMs);
   };
 
   document.addEventListener('focusin', e => {
     const t = e.target;
-    if (!t || !t.matches || !t.matches(FIELD)) return;
+    if (!isTextField(t)) return;
+    lastFocused = t;
+    mayAutoScroll = userCausedFocus(t);
+    if (mayAutoScroll) scheduleReveal(450);
+  });
+  // A tap on the field that already has focus: on Android the back button
+  // hides the keyboard without blurring, and tapping the field again brings
+  // the keyboard back with no focusin to react to. Capture phase: dialogs
+  // stop click propagation at .modal, so a bubbling listener never hears
+  // taps inside Settings or quick capture.
+  document.addEventListener('click', e => {
+    const t = e.target;
+    if (!isTextField(t) || document.activeElement !== t) return;
     lastFocused = t;
     mayAutoScroll = true;
-    // Two rAFs: first lets the browser paint the focus state, second
-    // gives the VK a moment to start rising so the post-VK viewport
-    // height is what the visibility check sees.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (mayAutoScroll && document.activeElement === lastFocused) revealField(lastFocused);
-    }));
-  });
+    scheduleReveal(450);
+  }, true);
   document.addEventListener('focusout', e => {
     if (e.target === lastFocused) { lastFocused = null; mayAutoScroll = false; }
   });
 
-  // Hand-driven scrolling wins, permanently, until the next focus. Listening
-  // for touchmove/wheel rather than `scroll` keeps this unambiguous: our own
-  // programmatic scrolls fire `scroll`, but never these.
+  // Hand-driven scrolling wins, permanently, until the next tap on a field.
+  // Listening for touchmove/wheel rather than `scroll` keeps this
+  // unambiguous: our own programmatic scrolls fire `scroll`, never these.
   const yieldToUser = () => { mayAutoScroll = false; };
   window.addEventListener('touchmove', yieldToUser, { passive: true });
   window.addEventListener('wheel', yieldToUser, { passive: true });
 
   if (vv) {
     const syncKbCss = () => {
-      // 150px threshold to ignore URL-bar chrome shifts on iOS. A real
-      // keyboard is always at least ~250px tall.
+      // 150px threshold to ignore URL-bar chrome shifts. A real keyboard is
+      // always at least ~250px tall.
       const h = kbHeight();
       const kbUp = h > 150;
       document.body.classList.toggle('kb-open', kbUp);
@@ -7197,14 +7371,33 @@ document.addEventListener("keydown", e => {
       const { h, kbUp } = syncKbCss();
       const changed = Math.abs(h - lastKbH) > 24;
       lastKbH = h;
-      if (!changed || !kbUp) return;
-      if (mayAutoScroll && lastFocused && document.activeElement === lastFocused) {
-        revealField(lastFocused);
-      }
+      if (changed && kbUp) scheduleReveal(300);
     });
     // scroll = the viewport was panned. Keep the CSS in sync; never scroll.
     vv.addEventListener('scroll', syncKbCss);
   }
+})();
+
+// Something the user opened that grows downward: a <details> expander (the
+// body region reference, "All question types") or a journal entry. Near the
+// bottom of the screen its new content unfolds straight under the sticky
+// Continue bar or the bottom nav, and the user had to scroll to find what
+// they'd just opened. Bring it into view, keeping its heading on screen.
+(function initRevealOnExpand(){
+  // `toggle` also fires for a <details> rendered already open, so only react
+  // to one the user just clicked open.
+  let opening = null;
+  document.addEventListener('click', e => {
+    const s = e.target.closest && e.target.closest('summary');
+    const d = s && s.parentElement;
+    opening = (d && d.tagName === 'DETAILS' && !d.open) ? d : null;
+  }, true);
+  document.addEventListener('toggle', e => {
+    const d = e.target;
+    if (d !== opening) return;
+    opening = null;
+    if (d.open) requestAnimationFrame(() => revealInView(d));
+  }, true);
 })();
 
 // Last-resort safety net. The app swallows expected failures locally (best-

@@ -180,7 +180,8 @@ try {
   for (const label of [
     'Mental Filter',
     'Historical test',
-    'Zoom out (pie chart)',
+    'Responsibility pie',
+    'Shades of gray',
     'Continuum thinking',
     'Coping/encouraging thought',
     'Strong',
