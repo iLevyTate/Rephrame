@@ -1,0 +1,750 @@
+// Node-only exercise of js/sync.js's pairing + wire protocol: no browser, no
+// network. The real sync.js source is loaded into a vm sandbox with stubs for
+// the DOM, localStorage and PeerJS it touches, so what runs is the shipped
+// code. Covers pairing-code parsing, PBKDF2 key derivation, HMAC proofs and
+// AES-GCM round trips, and — with several sandboxes wired through a fake
+// PeerJS broker — the full hello / hello-ack / hello-ok handshake, the
+// encrypted state exchange, rejection of wrong secrets, plaintext, wrong
+// versions and pre-v2 peers, the inbound back-off, the legacy-pairing lockout,
+// code rotation and the PIN gate. A fake IndexedDB (below) stands in for the
+// pairing store, so the storage layout is covered too: nothing about a
+// pairing touches localStorage, the record and the derived keys survive a
+// "reload" (a second sandbox over the same storage), and a record without
+// keys reads as unpaired.
+//
+// Runs in CI (.github/workflows/smoke.yml) and locally via `npm run crypto`
+// (node --test). No server needed.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+const SRC = readFileSync(path.resolve(import.meta.dirname, '..', 'js', 'sync.js'), 'utf8');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function until(fn, label, ms = 8000) {
+  const t0 = Date.now();
+  while (!fn()) {
+    if (Date.now() - t0 > ms) throw new Error('timed out waiting for ' + label);
+    await sleep(5);
+  }
+}
+const b64 = (bytes) => Buffer.from(bytes).toString('base64');
+// Values born inside a vm sandbox carry that realm's prototypes, which strict
+// deepEqual rejects; compare their JSON shape instead.
+const plain = (v) => JSON.parse(JSON.stringify(v));
+const randomNonce = () => b64(crypto.getRandomValues(new Uint8Array(16)));
+
+function makeStorage(seed = {}) {
+  const m = new Map(Object.entries(seed));
+  return {
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => { m.set(k, String(v)); },
+    removeItem: (k) => { m.delete(k); },
+    dump: () => JSON.stringify([...m.entries()]),
+    keys: () => [...m.keys()],
+  };
+}
+// The only localStorage keys js/sync.js may write: nothing that came from a
+// pairing code.
+const SYNC_LOCAL_KEYS = ['rephrame_sync_enabled', 'rephrame_peer_id_v1', 'rephrame_entry_dels'];
+const assertLocalStorageClean = (dev, label) => {
+  const extra = dev.storage.keys().filter((k) => !SYNC_LOCAL_KEYS.includes(k));
+  assert.deepEqual(extra, [], label + ': localStorage holds only the device id, tombstones and the enabled flag');
+};
+
+// Minimal IndexedDB stand-in: enough of open() / onupgradeneeded /
+// createObjectStore / transaction / objectStore / get / put / delete /
+// oncomplete for js/sync.js's key store, backed by Maps so a second sandbox
+// given the same instance sees what the first one stored. `broken` makes
+// every open() fail, like a browser that refuses persistent storage.
+function makeFakeIDB({ broken = false } = {}) {
+  const dbs = new Map(); // name -> { stores: Map<name, Map<key, value>> }
+  const later = (fn) => setTimeout(fn, 0);
+  const mkRequest = () => ({ result: undefined, error: null, onsuccess: null, onerror: null });
+  const makeDb = (rec, name) => ({
+    name,
+    objectStoreNames: { contains: (st) => rec.stores.has(st) },
+    createObjectStore(st) { if (!rec.stores.has(st)) rec.stores.set(st, new Map()); return {}; },
+    transaction(st, mode) {
+      const names = Array.isArray(st) ? st : [st];
+      for (const n of names) if (!rec.stores.has(n)) throw new Error('NotFoundError: no object store ' + n);
+      const tx = { mode, error: null, oncomplete: null, onerror: null, onabort: null, _pending: 0, _done: false };
+      const finish = () => later(() => {
+        if (tx._pending === 0 && !tx._done) { tx._done = true; if (tx.oncomplete) tx.oncomplete({ target: tx }); }
+      });
+      tx.objectStore = (n) => {
+        const store = rec.stores.get(n);
+        const run = (fn, write) => {
+          if (write && mode !== 'readwrite') throw new Error('ReadOnlyError');
+          const req = mkRequest();
+          tx._pending++;
+          later(() => {
+            try { req.result = fn(); }
+            catch (e) {
+              req.error = e; tx.error = e; tx._pending--; tx._done = true;
+              if (req.onerror) req.onerror({ target: req });
+              if (tx.onabort) tx.onabort({ target: tx });
+              return;
+            }
+            tx._pending--;
+            if (req.onsuccess) req.onsuccess({ target: req });
+            finish();
+          });
+          return req;
+        };
+        return {
+          get: (k) => run(() => store.get(k)),
+          put: (v, k) => run(() => { store.set(k, v); return k; }, true),
+          delete: (k) => run(() => { store.delete(k); }, true),
+        };
+      };
+      later(() => { if (tx._pending === 0) finish(); });
+      return tx;
+    },
+    close() {},
+  });
+  const ensure = (name, st) => {
+    let rec = dbs.get(name);
+    if (!rec) { rec = { stores: new Map(), version: 1 }; dbs.set(name, rec); }
+    if (!rec.stores.has(st)) rec.stores.set(st, new Map());
+    return rec.stores.get(st);
+  };
+  return {
+    dbs,
+    // Synchronous peek / seed for assertions and fixtures.
+    read: (name, st, key) => { const rec = dbs.get(name); const store = rec && rec.stores.get(st); return store ? store.get(key) : undefined; },
+    seed: (name, st, key, value) => { ensure(name, st).set(key, value); },
+    open(name, version) {
+      const req = mkRequest();
+      req.onupgradeneeded = null; req.onblocked = null;
+      if (broken) {
+        later(() => { req.error = new Error('IndexedDB unavailable'); if (req.onerror) req.onerror({ target: req }); });
+        return req;
+      }
+      later(() => {
+        let rec = dbs.get(name);
+        const fresh = !rec;
+        if (fresh) { rec = { stores: new Map(), version: version || 1 }; dbs.set(name, rec); }
+        req.result = makeDb(rec, name);
+        if (fresh && req.onupgradeneeded) req.onupgradeneeded({ target: req });
+        if (req.onsuccess) req.onsuccess({ target: req });
+      });
+      return req;
+    },
+  };
+}
+
+// A fake PeerJS broker shared by every sandbox in a test: peers register by
+// id, connect() delivers a mirrored DataConnection to the target on the next
+// tick, and every message crossing the wire is recorded so a test can assert
+// on exactly what the other end could have seen.
+function makeBroker() {
+  const peers = new Map();
+  const wire = [];
+  const clone = (m) => JSON.parse(JSON.stringify(m));
+  class Emitter {
+    constructor() { this._h = {}; }
+    on(ev, fn) { (this._h[ev] = this._h[ev] || []).push(fn); return this; }
+    off(ev, fn) { this._h[ev] = (this._h[ev] || []).filter((f) => f !== fn); return this; }
+    emit(ev, ...a) { for (const fn of [...(this._h[ev] || [])]) fn(...a); }
+  }
+  class FakeConn extends Emitter {
+    constructor(localId, remoteId) {
+      super();
+      this._localId = localId; this.peer = remoteId;
+      this.open = false; this.closed = false; this.remote = null;
+    }
+    send(msg) {
+      if (!this.open) throw new Error('send on a connection that is not open');
+      wire.push({ from: this._localId, to: this.peer, msg: clone(msg) });
+      const r = this.remote;
+      setTimeout(() => { if (r && r.open) r.emit('data', clone(msg)); }, 0);
+    }
+    close() {
+      if (this.closed) return;
+      this.closed = true;
+      const wasOpen = this.open;
+      this.open = false;
+      const r = this.remote;
+      if (wasOpen) this.emit('close');
+      if (r && !r.closed) setTimeout(() => r.close(), 0);
+    }
+  }
+  class FakePeer extends Emitter {
+    constructor(id) {
+      super();
+      this.id = id; this.destroyed = false;
+      if (peers.has(id)) { setTimeout(() => this.emit('error', { type: 'unavailable-id' }), 0); return; }
+      peers.set(id, this);
+      setTimeout(() => this.emit('open', id), 0);
+    }
+    connect(targetId) {
+      const local = new FakeConn(this.id, targetId);
+      setTimeout(() => {
+        const target = peers.get(targetId);
+        if (!target || target.destroyed) {
+          this.emit('error', { type: 'peer-unavailable', message: 'Could not connect to peer ' + targetId });
+          return;
+        }
+        const remote = new FakeConn(targetId, this.id);
+        local.remote = remote; remote.remote = local;
+        target.emit('connection', remote);
+        setTimeout(() => { remote.open = true; local.open = true; remote.emit('open'); local.emit('open'); }, 0);
+      }, 0);
+      return local;
+    }
+    destroy() { this.destroyed = true; if (peers.get(this.id) === this) peers.delete(this.id); this.emit('disconnected'); }
+    reconnect() {}
+  }
+  return { FakePeer, wire, peers };
+}
+
+// Load js/sync.js into a fresh sandbox standing in for one device.
+// `idb` is the fake IndexedDB instance (shared between sandboxes to simulate
+// a reload); null leaves the sandbox without an indexedDB global at all.
+function loadSync({ storage = makeStorage(), Peer, state = { entries: [] }, globals = {}, idb = makeFakeIDB() } = {}) {
+  const log = [];
+  const toasts = [];
+  const listeners = {};
+  const el = () => ({ innerHTML: '', textContent: '', className: '', remove() {}, appendChild() {} });
+  const sandbox = {
+    console: { log: (...a) => log.push(a), warn: (...a) => log.push(a), error: (...a) => log.push(a) },
+    crypto: globalThis.crypto,
+    TextEncoder, TextDecoder, atob, btoa, Uint8Array, ArrayBuffer,
+    setTimeout, clearTimeout, queueMicrotask,
+    localStorage: storage,
+    navigator: {},
+    document: { getElementById: () => null, createElement: el, body: { appendChild() {} }, head: { appendChild() {} }, activeElement: null },
+    state,
+    persist() {},
+    render() {},
+    toast(m) { toasts.push(String(m)); },
+    ...globals,
+  };
+  sandbox.window = sandbox;
+  sandbox.self = sandbox;
+  sandbox.top = sandbox;
+  sandbox.addEventListener = (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); };
+  if (Peer) sandbox.Peer = Peer;
+  if (idb) sandbox.indexedDB = idb;
+  vm.createContext(sandbox);
+  vm.runInContext(SRC, sandbox, { filename: 'js/sync.js' });
+  const dispatch = (ev) => { for (const fn of listeners[ev] || []) fn(); };
+  return { sb: sandbox, hooks: sandbox.__syncTestHooks, storage, idb, state, toasts, log, dispatch };
+}
+
+// Both records live in the fake IndexedDB; `pairingOf` yields undefined when
+// there is none.
+const pairingOf = (dev) => (dev.idb ? dev.idb.read('rephrame-sync', 'keys', 'pairing') : undefined);
+const keysOf = (dev) => (dev.idb ? dev.idb.read('rephrame-sync', 'keys', 'keys') : undefined);
+const peerOf = (dev) => dev.hooks.connState().peer;
+const entry = (id, body, updatedAt) => ({ id, kind: 'freeform', createdAt: '2024-01-01T00:00:00.000Z', updatedAt, body });
+// Boot a sandbox as a sync-enabled device on the shared broker.
+const bootDevice = (broker, opts = {}) => loadSync({
+  storage: opts.storage || makeStorage({ rephrame_sync_enabled: '1' }),
+  Peer: broker.FakePeer,
+  state: { entries: opts.entries || [] },
+  globals: opts.globals,
+  idb: opts.idb,
+});
+// Seed a device the way a typed code would (secret → keys only), then enable.
+async function bootPaired(broker, pairing, opts = {}) {
+  const dev = bootDevice(broker, { ...opts, storage: opts.storage || makeStorage({}) });
+  await dev.hooks.installPairing(pairing);
+  dev.hooks.enable();
+  return dev;
+}
+
+test('pairing codes: parse, normalise and format', () => {
+  const { hooks } = loadSync();
+  assert.equal(hooks.CODE_ALPHABET, '0123456789ABCDEFGHJKMNPQRSTVWXYZ', 'Crockford base32: no I, L, O, U');
+  const code = hooks.formatCode('AB3C9D', '0123456789AB');
+  assert.equal(code, 'AB3-C9D-0123-4567-89AB');
+  for (const v of [code, 'ab3c9d0123456789ab', 'AB3C9D 0123 4567 89AB', 'rfr-ab3-c9d-0123-4567-89ab', ' ab3-c9d-0123-4567-89ab ']) {
+    assert.deepEqual(plain(hooks.parseCode(v)), { ok: true, room: 'AB3C9D', secret: '0123456789AB' }, 'accepts ' + JSON.stringify(v));
+  }
+  // Crockford look-alikes fold: I/L → 1, O → 0.
+  assert.deepEqual(plain(hooks.parseCode('ABICOD-OI23-4567-89AB')), { ok: true, room: 'AB1C0D', secret: '0123456789AB' });
+  // Old 6-character codes are refused with a specific message, never treated as a room.
+  const legacy = hooks.parseCode('RFR-AB3-C9D');
+  assert.equal(legacy.ok, false);
+  assert.equal(legacy.legacy, true);
+  assert.match(legacy.message, /older version/);
+  assert.equal(hooks.parseCode('AB3C9D').legacy, true);
+  assert.equal(hooks.parseCode('AB3C9D0123456789A').ok, false, '17 chars');
+  assert.equal(hooks.parseCode('AB3C9D0123456789ABC').ok, false, '19 chars');
+  assert.equal(hooks.parseCode('AB3C9D0123456789AU').ok, false, 'U is not in the alphabet');
+  assert.equal(hooks.parseCode('').ok, false);
+  assert.equal(hooks.parseCode(null).ok, false);
+  // A room that happens to start with the letters R-F-R is not mangled.
+  assert.deepEqual(plain(hooks.parseCode('RFRABC0123456789AB')), { ok: true, room: 'RFRABC', secret: '0123456789AB' });
+  assert.deepEqual(plain(hooks.parseCode('RFR-RFRABC0123456789AB')), { ok: true, room: 'RFRABC', secret: '0123456789AB' });
+  for (let i = 0; i < 20; i++) {
+    const s = hooks.randomCode(12);
+    assert.equal(s.length, 12);
+    assert.ok([...s].every((c) => hooks.CODE_ALPHABET.includes(c)), 'random codes stay inside the alphabet');
+  }
+});
+
+test('key derivation is deterministic per (secret, room) and HMAC proofs round-trip', async () => {
+  const { hooks } = loadSync();
+  const a = await hooks.deriveKeys('0123456789AB', 'AB3C9D');
+  const b = await hooks.deriveKeys('0123456789AB', 'AB3C9D');
+  const otherSecret = await hooks.deriveKeys('0123456789AC', 'AB3C9D');
+  const otherRoom = await hooks.deriveKeys('0123456789AB', 'AB3C9E');
+  const nonce = randomNonce();
+  const p1 = await hooks.makeProof(a.mac, 'ack', nonce);
+  assert.equal(p1, await hooks.makeProof(b.mac, 'ack', nonce), 'same secret + room → same proof');
+  assert.equal(Buffer.from(p1, 'base64').length, 32, 'proof is a 32-byte HMAC-SHA256');
+  assert.equal(await hooks.verifyProof(a.mac, 'ack', nonce, p1), true);
+  assert.equal(await hooks.verifyProof(a.mac, 'ok', nonce, p1), false, 'label is bound');
+  assert.equal(await hooks.verifyProof(a.mac, 'ack', randomNonce(), p1), false, 'nonce is bound');
+  assert.notEqual(await hooks.makeProof(otherSecret.mac, 'ack', nonce), p1, 'different secret → different proof');
+  assert.notEqual(await hooks.makeProof(otherRoom.mac, 'ack', nonce), p1, 'room salts the derivation');
+  assert.equal(await hooks.verifyProof(a.mac, 'ack', nonce, 'not base64!'), false);
+  assert.equal(await hooks.verifyProof(a.mac, 'ack', nonce, btoa('short')), false);
+  assert.equal(await hooks.verifyProof(a.mac, 'ack', nonce, undefined), false);
+  assert.equal(hooks.ctEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3])), true);
+  assert.equal(hooks.ctEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 4])), false);
+  assert.equal(hooks.ctEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2])), false);
+  assert.equal(hooks.ctEqual(null, new Uint8Array([1])), false);
+});
+
+test('AES-GCM transport round-trips and rejects tampering, wrong keys, wrong direction and plaintext', async () => {
+  const { hooks } = loadSync();
+  const keys = await hooks.deriveKeys('0123456789AB', 'AB3C9D');
+  const wrong = await hooks.deriveKeys('0123456789AC', 'AB3C9D');
+  const aadOut = hooks.aadFor('n1', 'n2', 'initiator');
+  const aadIn = hooks.aadFor('n1', 'n2', 'responder');
+  const inner = { type: 'state', payload: { syncV: 1, entries: [entry('e1', 'private thought', 1)], entryDels: {} } };
+  const wire = await hooks.encrypt(keys, aadOut, inner);
+  assert.equal(wire.type, 'enc');
+  assert.equal(wire.v, 2);
+  assert.equal(Buffer.from(wire.iv, 'base64').length, 12, '96-bit IV');
+  assert.ok(!JSON.stringify(wire).includes('private thought'), 'ciphertext carries no plaintext');
+  assert.deepEqual(plain(await hooks.decrypt(keys, aadOut, wire)), inner);
+  await assert.rejects(hooks.decrypt(wrong, aadOut, wire), 'wrong key');
+  await assert.rejects(hooks.decrypt(keys, aadIn, wire), 'direction is bound through the AAD');
+  const flip = (s) => (s[0] === 'A' ? 'B' : 'A') + s.slice(1);
+  await assert.rejects(hooks.decrypt(keys, aadOut, { ...wire, ct: flip(wire.ct) }), 'tampered ciphertext');
+  await assert.rejects(hooks.decrypt(keys, aadOut, { ...wire, v: 1 }), 'version pinned');
+  await assert.rejects(hooks.decrypt(keys, aadOut, { ...wire, iv: btoa('short') }), 'iv length checked');
+  await assert.rejects(hooks.decrypt(keys, aadOut, { type: 'state', payload: {} }), 'plaintext is never accepted');
+  const again = await hooks.encrypt(keys, aadOut, inner);
+  assert.notEqual(again.iv, wire.iv, 'fresh IV per message');
+  assert.notEqual(again.ct, wire.ct);
+});
+
+test('two devices pair, prove the secret both ways and exchange only ciphertext', async () => {
+  const broker = makeBroker();
+  const A = bootDevice(broker, { entries: [entry('a1', 'from A', 100)] });
+  await until(() => peerOf(A), 'A peer');
+  const pairA = pairingOf(A);
+  assert.equal('secret' in pairA, false, 'the stored record carries no secret');
+  assert.equal(pairA.peer, null, 'a freshly minted pairing knows no partner yet');
+  assert.equal(peerOf(A).id, 'rephrame-' + pairA.room.toLowerCase(), 'the room id is the host device id');
+  const code = A.hooks.offerCode();
+  assert.match(code, /^[0-9A-Z]{3}-[0-9A-Z]{3}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/, 'the offered code is room + 12-char secret');
+  assert.ok(code.startsWith(pairA.room.slice(0, 3) + '-' + pairA.room.slice(3)), 'the code starts with the room id');
+
+  const B = bootDevice(broker, { entries: [entry('b1', 'from B', 100)] });
+  await until(() => peerOf(B), 'B peer');
+  assert.notEqual(peerOf(B).id, peerOf(A).id);
+
+  // B enters A's code: it stores the same room, keys derived from the secret
+  // (never the secret itself) and dials A.
+  await B.hooks.connect(code);
+  assert.equal(pairingOf(B).room, pairA.room);
+  assert.equal('secret' in pairingOf(B), false);
+  assert.equal(keysOf(B).room, pairA.room, 'the guest keeps keys for the room in IndexedDB');
+  assert.equal(pairingOf(B).peer, peerOf(A).id);
+  // A shows the consent banner for the unknown device; nothing is wired yet
+  // and the hello that arrived meanwhile is held, not lost.
+  await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'B hello');
+  await sleep(20);
+  assert.equal(A.hooks.connState().conn, null, 'A has not wired the inbound connection before Accept');
+  assert.equal(broker.wire.length, 1, 'only the hello has crossed the wire while the banner is up');
+  A.hooks.acceptInbound();
+  await until(() => A.hooks.connState().ready && B.hooks.connState().ready, 'both ready');
+  await until(() => A.state.entries.length === 2 && B.state.entries.length === 2, 'full-state merge');
+  const types = broker.wire.map((m) => m.msg.type);
+  assert.deepEqual(types.slice(0, 3), ['hello', 'hello-ack', 'hello-ok'], 'handshake transcript');
+  assert.ok(types.slice(3).length >= 2 && types.slice(3).every((t) => t === 'enc'), 'everything after the handshake is enc: ' + types.join(','));
+  assert.ok(!/from A|from B|entries|entryDels|"state"/.test(JSON.stringify(broker.wire)), 'no journal content in plaintext on the wire');
+  assert.deepEqual(plain(A.state.entries.map((e) => e.id).sort()), ['a1', 'b1']);
+  assert.deepEqual(plain(B.state.entries.map((e) => e.id).sort()), ['a1', 'b1']);
+  assert.equal(A.hooks.connState().status, 'connected');
+  assert.equal(B.hooks.connState().status, 'connected');
+  await until(() => pairingOf(A).peer === peerOf(B).id, 'A persisted B\'s id');
+  assert.equal(pairingOf(A).verified, true);
+  await until(() => pairingOf(B).verified === true, 'B persisted verified');
+  assert.equal(A.hooks.offerCode(), null, 'the host forgets the secret once a device has paired');
+  assertLocalStorageClean(A, 'host');
+  assertLocalStorageClean(B, 'guest');
+
+  // A later save broadcasts an encrypted patch that B merges.
+  const before = broker.wire.length;
+  A.state.entries.push(entry('a2', 'later from A', 200));
+  A.sb.syncBroadcast();
+  await until(() => B.state.entries.some((e) => e.id === 'a2'), 'patch merged');
+  const later = broker.wire.slice(before);
+  assert.ok(later.length >= 1 && later.every((m) => m.msg.type === 'enc'), 'patches are encrypted');
+  assert.ok(!JSON.stringify(later).includes('later from A'));
+});
+
+test('a device holding the wrong secret is closed by the dialler and receives nothing', async () => {
+  const broker = makeBroker();
+  const A = bootDevice(broker, { entries: [entry('a1', 'from A', 100)] });
+  await until(() => peerOf(A), 'A peer');
+  const offer = A.hooks.parseCode(A.hooks.offerCode());
+  const wrongSecret = offer.secret.slice(0, 11) + (offer.secret.endsWith('A') ? 'B' : 'A');
+  const C = bootDevice(broker);
+  await until(() => peerOf(C), 'C peer');
+  await C.hooks.connect(A.hooks.formatCode(offer.room, wrongSecret));
+  await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'hello');
+  await sleep(20);
+  A.hooks.acceptInbound();
+  // A answers with a proof C cannot verify; C closes at once.
+  await until(() => C.hooks.connState().status === 'error', 'C error');
+  assert.match(C.hooks.connState().statusMsg, /codes do not match/);
+  assert.ok(C.toasts.some((t) => /codes do not match/.test(t)), 'the user is told');
+  assert.equal(C.hooks.connState().conn, null);
+  assert.equal(C.hooks.connState().reconnectScheduled, false, 'no auto-redial after a failed handshake');
+  await until(() => A.hooks.connState().conn === null, 'A dropped the link');
+  assert.deepEqual(broker.wire.map((m) => m.msg.type), ['hello', 'hello-ack'], 'nothing beyond the handshake crossed the wire');
+  assert.equal(A.hooks.connState().ready, false);
+  assert.equal(pairingOf(A).peer, null, 'A did not adopt the device as its partner');
+  assert.equal(C.state.entries.length, 0);
+});
+
+test('a squatter on the host id cannot get past hello; a responder refuses bad proofs, plaintext, wrong versions and then backs off', async () => {
+  const broker = makeBroker();
+  const room = 'AB3C9D', secret = '0123456789AB';
+  // A raw peer squatting the host id that a paired guest auto-dials on boot.
+  const squatter = new broker.FakePeer('rephrame-ab3c9d');
+  const seen = [];
+  squatter.on('connection', (c) => {
+    c.on('data', (m) => {
+      seen.push(m);
+      if (m.type === 'hello') c.send({ type: 'hello-ack', v: 2, nonce: m.nonce, proof: b64(new Uint8Array(32)) });
+    });
+  });
+  const G = await bootPaired(broker, { room, secret, peer: 'rephrame-ab3c9d', verified: true }, {
+    entries: [entry('g1', 'guest secret entry', 100)],
+    storage: makeStorage({ rephrame_peer_id_v1: 'rephrame-guest1' }),
+  });
+  await until(() => G.hooks.connState().status === 'error', 'guest rejects the squatter');
+  assert.match(G.hooks.connState().statusMsg, /codes do not match/);
+  assert.deepEqual(seen.map((m) => m.type), ['hello'], 'the squatter received nothing but the hello');
+  assert.ok(!JSON.stringify(seen).includes('guest secret entry'));
+  assert.equal(G.hooks.connState().reconnectScheduled, false, 'no auto-redial');
+
+  // Now a raw peer dials a real device (H hosts a room; the raw peer is
+  // unknown, so H shows the banner and the test taps Accept).
+  const H = bootDevice(broker, { entries: [entry('h1', 'host secret entry', 100)] });
+  await until(() => peerOf(H), 'H peer');
+  const raw = new broker.FakePeer('rephrame-rawdial');
+  await until(() => broker.peers.has('rephrame-rawdial'), 'raw registered');
+  const dialH = () => { const got = []; const c = raw.connect(peerOf(H).id); c.on('data', (m) => got.push(m)); return { c, got }; };
+
+  // (a) pre-v2 plaintext before any handshake, held while the banner is up.
+  let { c, got } = dialH();
+  await until(() => c.open, 'open a');
+  c.send({ type: 'state', payload: { syncV: 1, entries: [], entryDels: {} } });
+  await sleep(20);
+  H.hooks.acceptInbound();
+  await until(() => c.closed, 'closed a');
+  assert.equal(got.length, 0, 'a pre-v2 peer gets no answer');
+  assert.match(H.hooks.connState().statusMsg, /older version/);
+
+  // (b) wrong protocol version (back-off reset so the case stands alone).
+  H.hooks.resetHandshakeThrottle();
+  ({ c, got } = dialH());
+  await until(() => c.open, 'open b');
+  H.hooks.acceptInbound();
+  c.send({ type: 'hello', v: 1, nonce: randomNonce() });
+  await until(() => c.closed, 'closed b');
+  assert.equal(got.length, 0, 'a v1 hello gets no answer');
+  assert.match(H.hooks.connState().statusMsg, /incompatible sync version/);
+
+  // (c) ciphertext before the handshake.
+  H.hooks.resetHandshakeThrottle();
+  ({ c, got } = dialH());
+  await until(() => c.open, 'open c');
+  H.hooks.acceptInbound();
+  c.send({ type: 'enc', v: 2, iv: b64(new Uint8Array(12)), ct: b64(new Uint8Array(32)) });
+  await until(() => c.closed, 'closed c');
+  assert.equal(got.length, 0);
+
+  // Failures back off inbound connections: the next one is closed on arrival
+  // (no banner, no answer), so a guessing peer gets nothing to test against.
+  ({ c, got } = dialH());
+  await until(() => c.closed, 'closed while throttled');
+  H.hooks.acceptInbound();
+  assert.equal(H.hooks.connState().conn, null, 'nothing pending to accept while throttled');
+  assert.equal(got.length, 0);
+  assert.ok(!JSON.stringify(broker.wire).includes('host secret entry'), 'the host never sent its journal');
+  assert.equal(pairingOf(H).peer, null, 'the host never adopted the raw peer');
+});
+
+test('a valid hello followed by a bad hello-ok proof is closed after the ack, never ready', async () => {
+  const broker = makeBroker();
+  const H = bootDevice(broker, { entries: [entry('h1', 'host secret entry', 100)] });
+  await until(() => peerOf(H), 'H peer');
+  const offer = H.hooks.parseCode(H.hooks.offerCode());
+  const keys = await H.hooks.deriveKeys(offer.secret, offer.room);
+  const raw = new broker.FakePeer('rephrame-rawdial');
+  await until(() => broker.peers.has('rephrame-rawdial'), 'raw registered');
+  const got = [];
+  const c = raw.connect(peerOf(H).id);
+  c.on('data', (m) => got.push(m));
+  await until(() => c.open, 'open');
+  H.hooks.acceptInbound();
+  const nonce = randomNonce();
+  c.send({ type: 'hello', v: 2, nonce });
+  await until(() => got.length === 1, 'hello-ack');
+  assert.equal(got[0].type, 'hello-ack');
+  assert.equal(got[0].v, 2);
+  assert.equal(await H.hooks.verifyProof(keys.mac, 'ack', nonce, got[0].proof), true, 'the responder proves the secret first');
+  assert.equal(H.hooks.connState().ready, false, 'not ready until the dialler proves it too');
+  c.send({ type: 'hello-ok', v: 2, proof: b64(new Uint8Array(32)) });
+  await until(() => c.closed, 'closed');
+  assert.equal(got.length, 1, 'no enc message ever left the host');
+  assert.equal(H.hooks.connState().ready, false);
+  assert.match(H.hooks.connState().statusMsg, /codes do not match/);
+  // …and with the right proof the same exchange completes and turns to ciphertext.
+  H.hooks.resetHandshakeThrottle(); // past the back-off from the single failure
+  const got2 = [];
+  const c2 = raw.connect(peerOf(H).id);
+  c2.on('data', (m) => got2.push(m));
+  await until(() => c2.open, 'open 2');
+  H.hooks.acceptInbound();
+  const nonce2 = randomNonce();
+  c2.send({ type: 'hello', v: 2, nonce: nonce2 });
+  await until(() => got2.length === 1, 'hello-ack 2');
+  c2.send({ type: 'hello-ok', v: 2, proof: await H.hooks.makeProof(keys.mac, 'ok', got2[0].nonce) });
+  await until(() => H.hooks.connState().ready && got2.length >= 2, 'ready + state');
+  assert.ok(got2.slice(1).every((m) => m.type === 'enc'));
+  const inner = await H.hooks.decrypt(keys, H.hooks.aadFor(nonce2, got2[0].nonce, 'responder'), got2[1]);
+  assert.equal(inner.type, 'state');
+  assert.equal(inner.payload.entries[0].body, 'host secret entry', 'the journal only travels inside the ciphertext');
+  await until(() => pairingOf(H).peer === 'rephrame-rawdial', 'the host adopts the peer that proved the secret');
+  assert.equal(pairingOf(H).verified, true);
+  assert.equal(H.hooks.offerCode(), null, 'the offered code is withdrawn once a device has paired');
+});
+
+test('a pre-v2 pairing (room without secret) is neither dialled nor accepted until a new code is generated', async () => {
+  const broker = makeBroker();
+  const L = bootDevice(broker, {
+    storage: makeStorage({ rephrame_sync_enabled: '1', rephrame_sync_room: 'RFR-ZZZ-ZZZ', rephrame_peer_id_v1: 'rephrame-legacy' }),
+  });
+  await sleep(30);
+  assert.equal(peerOf(L), null, 'no peer is registered for a legacy pairing');
+  assert.equal(broker.peers.size, 0);
+  assert.equal(L.hooks.connState().legacy, true);
+  assert.equal(L.hooks.connState().status, 'unpaired');
+  L.hooks.connect('RFR-ZZZ-ZZZ');
+  assert.match(L.hooks.connState().statusMsg, /older version/);
+  assert.equal(peerOf(L), null, 'an old-format code does not start anything');
+  // Generating a new code mints a room + secret, retires the legacy record
+  // and registers the new id.
+  L.hooks.regenerateCode();
+  await until(() => peerOf(L), 'peer after regenerate');
+  const p = pairingOf(L);
+  assert.equal('secret' in p, false, 'the record has no secret');
+  assert.equal(L.hooks.offerCode().replace(/-/g, '').length, 18, 'a full code (room + 12-char secret) is offered');
+  assert.equal(keysOf(L).room, p.room, 'keys for the new room are stored');
+  assert.equal(p.peer, null);
+  assertLocalStorageClean(L, 'after generating a code');
+  assert.equal(peerOf(L).id, 'rephrame-' + p.room.toLowerCase());
+  assert.equal(L.storage.getItem('rephrame_peer_id_v1'), peerOf(L).id, 'the old device id is replaced');
+  assert.equal(L.storage.getItem('rephrame_sync_room'), null, 'the legacy room record is removed');
+  assert.equal(L.hooks.connState().legacy, false);
+});
+
+test('generating a new pairing code rotates the room id and secret and forgets the old partner', async () => {
+  const broker = makeBroker();
+  const A = bootDevice(broker);
+  await until(() => peerOf(A), 'A peer');
+  const before = pairingOf(A);
+  const beforeCode = A.hooks.offerCode();
+  const oldPeer = peerOf(A);
+  A.hooks.regenerateCode();
+  await until(() => peerOf(A) && peerOf(A) !== oldPeer, 'new peer');
+  const after = pairingOf(A);
+  assert.notEqual(after.room, before.room);
+  assert.notEqual(A.hooks.offerCode(), beforeCode);
+  assert.equal(keysOf(A).room, after.room, 'the stored keys follow the new room');
+  assert.equal(after.peer, null);
+  assert.equal(after.verified, false);
+  assert.equal(oldPeer.destroyed, true, 'the old id is released');
+  assert.equal(peerOf(A).id, 'rephrame-' + after.room.toLowerCase());
+});
+
+test('with a PIN set and the journal locked, no peer is registered until unlock; locking takes it down again', async () => {
+  const broker = makeBroker();
+  new broker.FakePeer('rephrame-other1'); // the paired device, online but silent
+  let unlocked = false;
+  const P = await bootPaired(broker, { room: 'AB3C9D', secret: '0123456789AB', peer: 'rephrame-other1', verified: true }, {
+    storage: makeStorage({ rephrame_peer_id_v1: 'rephrame-ab3c9d' }),
+    globals: { hasPin: () => true, isUnlocked: () => unlocked },
+  });
+  await sleep(30);
+  assert.equal(peerOf(P), null, 'locked: no peer, no dial');
+  assert.equal(broker.peers.has('rephrame-ab3c9d'), false);
+  assert.equal(broker.wire.length, 0);
+  unlocked = true;
+  P.dispatch('rephrame:unlocked');
+  await until(() => peerOf(P), 'peer after unlock');
+  await until(() => P.hooks.connState().conn !== null, 'auto-dial after unlock');
+  assert.equal(P.hooks.connState().conn.peer, 'rephrame-other1');
+  unlocked = false;
+  P.dispatch('rephrame:locked');
+  assert.equal(peerOf(P), null, 'locked again: peer destroyed');
+  assert.equal(P.hooks.connState().conn, null);
+  assert.equal(broker.peers.has('rephrame-ab3c9d'), false);
+});
+
+test('storage layout: IndexedDB holds {room, peer, verified} and non-extractable keys; localStorage holds nothing from a pairing code', async () => {
+  const broker = makeBroker();
+  const A = bootDevice(broker);
+  await until(() => peerOf(A), 'A peer');
+  const code = A.hooks.offerCode();
+  const secret = A.hooks.parseCode(code).secret;
+  const rec = pairingOf(A);
+  assert.deepEqual(Object.keys(rec).sort(), ['peer', 'room', 'verified']);
+  assert.ok(!A.storage.dump().includes(secret), 'the secret appears in no localStorage value');
+  assert.equal(A.storage.getItem('rephrame_sync_pair_v2'), null, 'no pairing record in localStorage');
+  assertLocalStorageClean(A, 'host');
+  const keys = keysOf(A);
+  assert.equal(keys.room, rec.room);
+  assert.equal(keys.aes.extractable, false, 'AES key is non-extractable');
+  assert.equal(keys.mac.extractable, false, 'HMAC key is non-extractable');
+  assert.equal(keys.aes.algorithm.name, 'AES-GCM');
+  assert.equal(keys.mac.algorithm.name, 'HMAC');
+  assert.deepEqual(Object.keys(keys).sort(), ['aes', 'mac', 'room'], 'the key record is {room, aes, mac}');
+  assert.equal(A.hooks.connState().keysVolatile, false);
+
+  const B = bootDevice(broker);
+  await until(() => peerOf(B), 'B peer');
+  await B.hooks.connect(code);
+  assert.deepEqual(Object.keys(pairingOf(B)).sort(), ['peer', 'room', 'verified']);
+  assert.ok(!B.storage.dump().includes(secret), 'the guest does not store the secret either');
+  assert.ok(!B.storage.dump().includes(rec.room), 'the guest does not put the typed room in localStorage either');
+  assertLocalStorageClean(B, 'guest');
+  assert.equal(keysOf(B).room, rec.room);
+  assert.equal(B.hooks.offerCode(), null, 'a guest offers no code');
+  // Finish the pairing so no handshake timer outlives the test.
+  await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'hello');
+  await sleep(20);
+  A.hooks.acceptInbound();
+  await until(() => A.hooks.connState().ready && B.hooks.connState().ready, 'paired with stored keys');
+});
+
+test('keys survive a reload: a second boot over the same storage comes up paired, without the code, and reconnects', async () => {
+  const broker = makeBroker();
+  const storageA = makeStorage({ rephrame_sync_enabled: '1' });
+  const idbA = makeFakeIDB();
+  const A = bootDevice(broker, { storage: storageA, idb: idbA, entries: [entry('a1', 'from A', 100)] });
+  await until(() => peerOf(A), 'A peer');
+  const code = A.hooks.offerCode();
+  const B = bootDevice(broker, { entries: [entry('b1', 'from B', 100)] });
+  await until(() => peerOf(B), 'B peer');
+  await B.hooks.connect(code);
+  await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'hello');
+  await sleep(20);
+  A.hooks.acceptInbound();
+  await until(() => A.hooks.connState().ready && B.hooks.connState().ready, 'paired');
+  const bId = peerOf(B).id;
+
+  // "Reload" A: the page goes away (beforeunload tears the peer down) and a
+  // fresh sandbox boots over the same localStorage + IndexedDB.
+  A.dispatch('beforeunload');
+  await sleep(20);
+  const A2 = bootDevice(broker, { storage: storageA, idb: idbA, entries: [entry('a1', 'from A', 100), entry('a2', 'after reload', 200)] });
+  await until(() => peerOf(A2), 'A2 peer');
+  const st = A2.hooks.connState();
+  assert.equal(st.pairing.room, pairingOf(A).room);
+  assert.equal(st.pairing.peer, bId, 'the partner id came back from storage');
+  assert.equal(st.pairing.verified, true);
+  assert.equal(A2.hooks.offerCode(), null, 'the code did not survive the page (the secret was never stored)');
+  assert.equal(st.keysVolatile, false);
+  assert.ok(!storageA.dump().includes(A.hooks.parseCode(code).secret));
+  // A2 auto-dials B, proves the secret with the stored keys, and the two
+  // exchange ciphertext again.
+  await until(() => A2.hooks.connState().ready && B.hooks.connState().ready, 'reconnected after reload');
+  await until(() => B.state.entries.some((e) => e.id === 'a2'), 'B received the post-reload entry');
+  assert.ok(broker.wire.every((m) => ['hello', 'hello-ack', 'hello-ok', 'enc'].includes(m.msg.type)), 'only handshake and enc messages ever crossed the wire');
+  assert.ok(!JSON.stringify(broker.wire).includes('after reload'));
+});
+
+test('a pairing record whose keys are missing is retired: unpaired, explained, nothing registered', async () => {
+  const broker = makeBroker();
+  const idb = makeFakeIDB();
+  idb.seed('rephrame-sync', 'keys', 'pairing', { room: 'AB3C9D', peer: 'rephrame-other1', verified: true });
+  const D = bootDevice(broker, {
+    idb,
+    storage: makeStorage({ rephrame_sync_enabled: '1', rephrame_peer_id_v1: 'rephrame-ab3c9d' }),
+  });
+  await until(() => D.hooks.connState().status === 'unpaired', 'unpaired');
+  await sleep(20);
+  assert.equal(peerOf(D), null, 'no peer is registered without keys');
+  assert.equal(broker.peers.size, 0);
+  assert.match(D.hooks.connState().statusMsg, /sync keys are gone/);
+  await until(() => pairingOf(D) === undefined, 'the useless record is removed');
+  assert.equal(D.hooks.connState().pairing, null);
+});
+
+test('pre-release leftovers are never read: the localStorage record is removed on boot, an IndexedDB record carrying a secret is ignored', async () => {
+  const broker = makeBroker();
+  const idb = makeFakeIDB();
+  idb.seed('rephrame-sync', 'keys', 'pairing', { room: 'AB3C9D', secret: '0123456789AB', peer: 'rephrame-other1', verified: true });
+  const D = bootDevice(broker, {
+    idb,
+    storage: makeStorage({
+      rephrame_sync_enabled: '1',
+      rephrame_sync_pair_v2: JSON.stringify({ room: 'AB3C9D', peer: 'rephrame-other1', verified: true }),
+    }),
+  });
+  await until(() => peerOf(D), 'D peer');
+  const rec = pairingOf(D);
+  assert.equal('secret' in rec, false, 'the replacement record has no secret');
+  assert.notEqual(rec.room, 'AB3C9D', 'neither leftover is adopted');
+  assert.equal(rec.peer, null, 'the old partner is not carried over');
+  assert.ok(D.hooks.offerCode(), 'a fresh code is offered');
+  assert.equal(D.storage.getItem('rephrame_sync_pair_v2'), null, 'the retired localStorage key is removed');
+  assertLocalStorageClean(D, 'after boot');
+});
+
+test('without IndexedDB the pairing works for the session, is flagged as not surviving a reload, and is gone after one', async () => {
+  for (const [label, mkIdb] of [['no indexedDB API', () => null], ['indexedDB that refuses to open', () => makeFakeIDB({ broken: true })]]) {
+    const broker = makeBroker();
+    const idbA = mkIdb();
+    const A = bootDevice(broker, { idb: idbA });
+    await until(() => peerOf(A), 'A peer (' + label + ')');
+    await until(() => A.hooks.connState().keysVolatile === true, 'volatile flag (' + label + ')');
+    const code = A.hooks.offerCode();
+    assert.ok(code, 'a code is still offered (' + label + ')');
+    const B = bootDevice(broker, { idb: mkIdb() });
+    await until(() => peerOf(B), 'B peer');
+    await B.hooks.connect(code);
+    await until(() => broker.wire.some((m) => m.msg.type === 'hello'), 'hello');
+    await sleep(20);
+    A.hooks.acceptInbound();
+    await until(() => A.hooks.connState().ready && B.hooks.connState().ready, 'pairs in-session (' + label + ')');
+    assert.equal(B.hooks.connState().keysVolatile, true, 'the guest is flagged too (' + label + ')');
+    const oldRoom = A.hooks.connState().pairing.room;
+    A.dispatch('beforeunload');
+    await sleep(20);
+    // Nothing about the pairing was persisted, so the reloaded device knows
+    // no partner and offers a fresh code (the old room is not reused).
+    const A2 = bootDevice(broker, { storage: A.storage, idb: idbA });
+    await until(() => peerOf(A2), 'fresh pairing after reload (' + label + ')');
+    const st2 = A2.hooks.connState();
+    assert.equal(st2.pairing.peer, null, 'no partner survived (' + label + ')');
+    assert.notEqual(st2.pairing.room, oldRoom, 'the old room is gone (' + label + ')');
+    assert.ok(A2.hooks.offerCode(), 'a fresh code is offered (' + label + ')');
+    assertLocalStorageClean(A2, label);
+  }
+});

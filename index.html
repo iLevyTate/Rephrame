@@ -2,18 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- Content Security Policy. App is self-hosted plus Google Fonts. All JS is
-     external (app.js + js/pwa.js), so script-src is strict 'self' with no
-     'unsafe-inline'. style-src still needs 'unsafe-inline' because the
-     rendered templates carry inline style="..." attributes; the bulk of the
-     CSS lives in the external styles.css. data: in img-src allows inline SVG
-     icons; blob: in img-src and manifest-src covers the PWA inline manifest
-     path that js/pwa.js uses on file:// launches. The peerjs.com + stun:
-     entries in connect-src are required only for the optional P2P sync
+<!-- Content Security Policy. The app is entirely self-hosted (fonts included,
+     see fonts/fonts.css) so every fetch directive is 'self'. All JS is
+     external (app.js + js/pwa.js + js/sync.js), so script-src is strict
+     'self' with no 'unsafe-inline'. style-src still needs 'unsafe-inline'
+     because the rendered templates carry inline style="..." attributes; the
+     bulk of the CSS lives in the external styles.css. data: in img-src allows
+     inline SVG icons; blob: in img-src and manifest-src covers the PWA inline
+     manifest path that js/pwa.js uses on file:// launches. The peerjs.com +
+     stun: entries in connect-src are required only for the optional P2P sync
      feature (js/sync.js): PeerJS brokers the WebRTC handshake over
      wss://*.peerjs.com and ICE gathering uses public STUN servers. Entry
-     data still flows device-to-device, never through a server. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://*.peerjs.com wss://*.peerjs.com stun: stuns:; manifest-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+     data still flows device-to-device, never through a server, and is
+     end-to-end encrypted with a key derived from the pairing secret.
+     A meta CSP cannot carry frame-ancestors and GitHub Pages sets no
+     X-Frame-Options header, so clickjacking protection is the frame guard
+     at the top of js/pwa.js (the first script loaded). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://*.peerjs.com wss://*.peerjs.com stun: stuns:; manifest-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <!-- Two media-scoped theme-color metas so the browser picks the right
      status-bar / tab-strip color at first paint, before applyTheme()
@@ -40,9 +45,8 @@
 <!-- PWA bootstrap: service worker registration + install prompt + file:// fallback -->
 <script src="js/pwa.js"></script>
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Fonts are self-hosted (fonts/) so no visit ever contacts Google Fonts. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 
 <link rel="stylesheet" href="styles.css">
 </head>

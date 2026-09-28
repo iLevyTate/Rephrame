@@ -15,7 +15,7 @@ const browserGlobals = {
   setTimeout: 'readonly', clearTimeout: 'readonly', setInterval: 'readonly',
   clearInterval: 'readonly', requestAnimationFrame: 'readonly',
   cancelAnimationFrame: 'readonly', queueMicrotask: 'readonly',
-  console: 'readonly', crypto: 'readonly', TextEncoder: 'readonly',
+  console: 'readonly', crypto: 'readonly', CryptoKey: 'readonly', indexedDB: 'readonly', TextEncoder: 'readonly',
   TextDecoder: 'readonly', Uint8Array: 'readonly', atob: 'readonly', btoa: 'readonly',
   matchMedia: 'readonly', getComputedStyle: 'readonly', alert: 'readonly',
   confirm: 'readonly', prompt: 'readonly',

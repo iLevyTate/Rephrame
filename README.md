@@ -95,25 +95,45 @@ version is ready — reload?" banner at the top. Your entries are
 untouched by the reload.
 
 **Sync between devices (optional).** Settings → Sync turns on a
-peer-to-peer link so two devices on the same account hold the same
-journal. Pairing: enable Sync on both devices, then on the second device
-paste the 6-character code shown on the first (formatted `RFRM-XXXXXX`).
-Once the connection opens, both ends exchange a full snapshot and after
-that every save broadcasts. Conflicts are resolved last-write-wins per
-entry by `updatedAt`; deletions carry tombstones so a stale peer can't
-resurrect a removed entry. If the link drops, the app auto-reconnects
-with exponential backoff (five attempts) and the sync panel shows a
-live status — connecting, connected, reconnecting, or "Reconnect
-failed". Tap **Reconnect** to retry manually, **Regenerate code** to
-rotate (this unpairs every device that knew the old code), or
-**Disconnect** to take the device offline without rotating.
+peer-to-peer link so two of your devices hold the same journal.
+Pairing: enable Sync on both devices; the first shows an 18-character
+pairing code (formatted `XXX-XXX-YYYY-YYYY-YYYY`), which you enter on
+the second. The first six characters are the device's room id; the
+remaining twelve are a random secret that never leaves the two devices.
+The code is shown only right after it is generated (it disappears once a
+device has paired or the page is closed), and neither device stores the
+secret itself — each keeps only the encryption and authentication keys
+derived from it, in IndexedDB. Dashes and letter case don't matter when
+typing it.
+Once the connection opens,
+both ends prove they hold the secret (an HMAC challenge–response in each
+direction) before a single entry is sent, then exchange a full snapshot
+encrypted with AES-GCM under a key derived from the secret; after that
+every save broadcasts the same way. Conflicts are resolved
+last-write-wins per entry by `updatedAt`; deletions carry tombstones so
+a stale peer can't resurrect a removed entry. If the link drops, the app
+auto-reconnects with exponential backoff (five attempts) and the sync
+panel shows a live status — connecting, connected, reconnecting, or
+"Reconnect failed". Tap **Reconnect** to retry manually, **Generate new
+pairing code** to rotate (a fresh room id and secret; the other device
+must be re-paired with the new code), or **Disable sync** to take the
+device offline.
+
+Pairings made before this scheme (a room id with no secret) are retired:
+Sync shows a one-time "re-pairing needed" notice and neither dials nor
+accepts anything until you generate a new code on one device and enter
+it on the other. Old 6-character codes are refused. If a PIN is set, no
+peer is registered and nothing is dialled while the journal is locked;
+sync starts after a successful unlock and stops again on **Lock now**.
 
 The link uses WebRTC data channels via PeerJS, with public STUN servers
 for NAT traversal — once negotiated, journal data flows device-to-device
-and never touches the matchmaking server. The pairing code is
-sensitive: anyone who learns it can join sync and pull your full
-journal until you regenerate. Treat it like a password and don't share
-it over insecure channels.
+and never touches the matchmaking server. PeerJS ids are first-come on
+a public broker with no proof of ownership, which is why the secret
+exists: someone who registers your room id learns nothing without it.
+The pairing code is still sensitive while it is on screen — anyone who
+copies it can pair with your journal until you generate a new one — so
+don't share it over channels others can read.
 
 ## Live demo
 
@@ -170,12 +190,12 @@ npx --yes http-server -p 8000 .
 ```
 
 Then open `http://localhost:8000/` and install. After the first load the
-service worker caches the app shell — HTML, JS, icons, manifest — so you can
-disconnect entirely. Google Fonts (Fraunces, Manrope, JetBrains Mono) are
-cached lazily on first online load into a separate font cache, so once
-they've been seen the typography matches identically offline. On a brand-new
-install with no network, the app falls back to system fonts after a 1.5 s
-cap and stays usable.
+service worker caches the app shell — HTML, JS, icons, manifest, fonts — so
+you can disconnect entirely. The fonts (Fraunces, Manrope, JetBrains Mono,
+all SIL OFL) are self-hosted under `fonts/` and precached with the shell, so
+no visit ever contacts Google Fonts and the typography matches identically
+offline. On a brand-new install with no network, the app falls back to
+system fonts after a 1.5 s cap and stays usable.
 
 ### `file://` mode
 
@@ -231,7 +251,18 @@ crisis**, and reachable from a link in every empty-state and capture modal.
   (theme, nudge interval, worry-window time), and `reframe-pin-hash-v1`
   (PBKDF2-SHA256 hash + salt of your PIN, if set). Never sent anywhere
   except, if you've enabled Sync, to the device you paired with — and
-  only directly, over WebRTC.
+  only directly, over WebRTC, encrypted with keys derived from the
+  pairing secret.
+- Sync keeps everything about a pairing in IndexedDB (database
+  `rephrame-sync`, store `keys`): a `pairing` record with the room id, the
+  paired device's id and a verified flag, and a `keys` record with the
+  AES-GCM and HMAC keys derived from the pairing secret, stored as
+  non-extractable WebCrypto keys so nothing can read them back as bytes.
+  The secret itself is never stored anywhere. `localStorage` keeps only
+  `rephrame_peer_id_v1` (this device's id), `rephrame_entry_dels`
+  (deletion tombstones) and `rephrame_sync_enabled` — nothing that came
+  from a pairing code. Disabling sync removes the pairing record and the
+  keys.
 - A one-time onboarding flag lives under `reframe-onboarded-v1`.
 - The unlock token (`reframe-unlocked`) lives in `sessionStorage` and clears
   when the tab closes, so the PIN gate re-arms on each new session.
@@ -251,8 +282,9 @@ sw.js                      service worker (offline cache)
 js/pwa.js                  install prompt + SW registration + file:// fallback
 js/sync.js                 optional P2P sync (WebRTC via PeerJS)
 js/vendor/peerjs.min.js    vendored PeerJS — no npm supply chain
+fonts/                     self-hosted web fonts (woff2 + fonts.css)
 icons/                     SVG app icons
-tests/                     static checks + Playwright smoke/flow/robustness/sync/regression walks
+tests/                     static checks, a Node test of the sync crypto/handshake, Playwright smoke/flow/robustness/sync/regression walks
 eslint.config.js           lint config (run via `npm run lint`)
 ```
 

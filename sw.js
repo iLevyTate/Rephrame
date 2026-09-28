@@ -4,12 +4,12 @@
 // The deploy workflow (.github/workflows/pages.yml) stamps a unique version
 // over this value at deploy time; the committed value only matters for
 // local/self-hosted use.
-const CACHE_NAME = 'reframe-v38';
-// Fonts live in a separate cache so version bumps don't wipe them. Populated
-// lazily on first successful fetch — we can't precache cross-origin Google
-// Font responses reliably during install (opaque, CSS-driven woff2 URLs).
-const FONT_CACHE = 'reframe-fonts-v1';
+const CACHE_NAME = 'reframe-v39';
 
+// Fonts are self-hosted under fonts/ (they used to come from Google Fonts,
+// which meant a third-party request on every visit). They precache with the
+// rest of the shell; the old separate 'reframe-fonts-v1' cache is dropped on
+// activate like any other stale cache.
 const ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,25 @@ const ASSETS = [
   './icons/icon-512.svg',
   './icons/icon-maskable-512.svg',
   './icons/icon-small.svg',
+  './fonts/fonts.css',
+  './fonts/fraunces-italic-latin.woff2',
+  './fonts/fraunces-italic-latin-ext.woff2',
+  './fonts/fraunces-italic-vietnamese.woff2',
+  './fonts/fraunces-normal-latin.woff2',
+  './fonts/fraunces-normal-latin-ext.woff2',
+  './fonts/fraunces-normal-vietnamese.woff2',
+  './fonts/manrope-normal-latin.woff2',
+  './fonts/manrope-normal-latin-ext.woff2',
+  './fonts/manrope-normal-cyrillic.woff2',
+  './fonts/manrope-normal-cyrillic-ext.woff2',
+  './fonts/manrope-normal-greek.woff2',
+  './fonts/manrope-normal-vietnamese.woff2',
+  './fonts/jetbrains-mono-normal-latin.woff2',
+  './fonts/jetbrains-mono-normal-latin-ext.woff2',
+  './fonts/jetbrains-mono-normal-cyrillic.woff2',
+  './fonts/jetbrains-mono-normal-cyrillic-ext.woff2',
+  './fonts/jetbrains-mono-normal-greek.woff2',
+  './fonts/jetbrains-mono-normal-vietnamese.woff2',
 ];
 
 self.addEventListener('install', e => {
@@ -56,7 +75,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME && k !== FONT_CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -65,29 +84,9 @@ self.addEventListener('fetch', e => {
   if(e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
 
-  // Reframe is fully self-contained except for Google Fonts. Cache-first
-  // against FONT_CACHE so the app renders identically offline once the
-  // browser has loaded a font response at least once. Background refresh
-  // keeps cached responses warm without blocking the render.
-  if(url.hostname.includes('fonts.googleapis.com') || url.hostname.includes('fonts.gstatic.com')){
-    e.respondWith(
-      caches.open(FONT_CACHE).then(c =>
-        c.match(e.request).then(cached => {
-          const net = fetch(e.request).then(res => {
-            // Google Font responses are CORS for stylesheets (basic) and
-            // opaque for the woff2 files. Cache both — opaque responses
-            // still render fine even though their bodies are unreadable.
-            if(res && (res.status === 200 || res.type === 'opaque')){
-              c.put(e.request, res.clone()).catch(() => {});
-            }
-            return res;
-          }).catch(() => cached || new Response('', { status: 504 }));
-          return cached || net;
-        })
-      )
-    );
-    return;
-  }
+  // Reframe is fully self-contained (fonts included), so only same-origin
+  // requests are ever served from cache; anything else goes straight to the
+  // network untouched.
   if(url.origin !== self.location.origin) return;
 
   // Navigation: cache-first with background refresh. Subresources below are
