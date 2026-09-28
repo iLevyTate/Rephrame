@@ -95,7 +95,9 @@ const EMOTION_FAMILIES = {
   Shame: ["ashamed", "embarrassed", "humiliated", "inadequate", "exposed", "self-conscious"],
   Guilt: ["guilty", "remorseful", "regretful", "self-reproachful"],
   Fear: ["afraid", "scared", "frightened", "terrified", "insecure", "vulnerable", "helpless"],
-  Jealousy: ["jealous", "envious", "possessive", "inferior"],
+  // Envy and jealousy are different feelings (Parrott & Smith, 1993): envy
+  // wants what someone has, jealousy fears losing what you have.
+  "Jealousy & envy": ["jealous", "possessive", "envious", "inferior"],
   Disgust: ["disgusted", "repulsed", "contemptuous"],
 };
 // Variant <option>s for a mood row. A word saved before it was retired from
@@ -894,11 +896,20 @@ function normalizeEntry(e) {
     // thought (Mind Over Mood's alternative-thought rating). The latter is a
     // separate scalar so it survives multi-thought edits.
     newThoughtBelief: typeof e.newThoughtBelief === "number" ? e.newThoughtBelief : null,
+    // Feelings that showed up after the reframe (relief, calm, hope).
+    // Mind Over Mood's last column re-rates the original moods "as well as
+    // any new moods". Kept as words, not rated rows: every mood statistic
+    // treats a falling number as progress, which a rising "relief" is not.
+    newFeelings: e.newFeelings || "",
 
     pivot: e.pivot || "",
     pivotDone: !!e.pivotDone,
     pivotDoneAt: e.pivotDoneAt || "",
     pivotReflection: e.pivotReflection || "",
+    // Written before acting, so the outcome has something to be checked
+    // against: the prediction that turns the pivot into a small behavioral
+    // experiment (Mind Over Mood, ch. 11).
+    pivotPrediction: e.pivotPrediction || "",
     outcomeRecorded: !!e.outcomeRecorded,
 
     // Free-form (kind: "freeform") fields — title is optional, body is the
@@ -909,7 +920,7 @@ function normalizeEntry(e) {
     // are rated 0–10, as in Beck et al.'s (1979) activity scheduling and the
     // Beck Institute worksheets ("predict, then measure"). predicted* are set when
     // planning; actual* + completedAt are set on log-completion.
-    category: e.category || "",          // connection|movement|creation|self-care|chore|rest|other
+    category: e.category || "",          // connection|movement|creation|work|meaning|self-care|chore|rest|other
     plannedFor: e.plannedFor || "",      // ISO datetime
     predictedP: typeof e.predictedP === "number" ? e.predictedP : null,
     predictedM: typeof e.predictedM === "number" ? e.predictedM : null,
@@ -931,6 +942,9 @@ function normalizeEntry(e) {
     // peer must not reach the markup.
     resolution: WORRY_RESOLUTIONS.includes(e.resolution) ? e.resolution : null,
     resolvedAt: e.resolvedAt || "",
+    // How many times this worry has been pushed to another window. Past two,
+    // postponing has stopped being postponement and started being avoidance.
+    postponeCount: Number.isInteger(e.postponeCount) && e.postponeCount > 0 ? Math.min(e.postponeCount, 999) : 0,
     linkedEntryId: e.linkedEntryId || "",
 
     isQuick: !!e.isQuick,
@@ -980,11 +994,12 @@ function normalizeEntry(e) {
   return out;
 }
 
+const MOOD_FAMILY_RENAME = { Jealousy: "Jealousy & envy" };
 function normalizeMood(m) {
   m = m || {};
   return {
     id: safeId(m.id),
-    family: m.family || "",
+    family: MOOD_FAMILY_RENAME[m.family] || m.family || "",
     variant: m.variant || "",
     intensity: typeof m.intensity === "number" ? m.intensity : 40,
     estimated: !!m.estimated,
@@ -1241,6 +1256,8 @@ const ICONS = {
   creation:   '<path d="M11 20.5h9"/><path d="M16.4 4a1.9 1.9 0 0 1 2.7 2.7L8.4 17.4 4 18.5l1.1-4.4z"/>',
   selfcare:   '<path d="M12 20.3 4.8 13a4.4 4.4 0 0 1 6.2-6.2l1 1 1-1A4.4 4.4 0 0 1 20.2 13z"/>',
   chore:      '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M8 12l2.8 2.8L16.4 9"/>',
+  work:       '<rect x="3.5" y="7.5" width="17" height="12" rx="2.5"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5"/><path d="M3.5 12.5h17"/>',
+  meaning:    '<circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
   rest:       '<path d="M20.4 13.4A8 8 0 1 1 10.6 3.6a6.3 6.3 0 0 0 9.8 9.8z"/>',
   other:      '<circle cx="5.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
   // Entry / state marks
@@ -1525,8 +1542,10 @@ function thoughtRecordToMd(e, idx) {
   if (typeof e.newThoughtBelief === "number") {
     L.push("- **Belief in new thought:** " + e.newThoughtBelief + "%", "");
   }
+  if (e.newFeelings) L.push("- **New feelings:** " + e.newFeelings, "");
 
   L.push("**6. The Pivot**", "", e.pivot || "—", "");
+  if (e.pivotPrediction) L.push("- **Expected:** " + e.pivotPrediction, "");
   if (e.pivotDone) {
     L.push("", "*Pivot completed" + (e.pivotDoneAt ? " — " + fmtDateTime(e.pivotDoneAt) : "") + ".*", "");
     if (e.pivotReflection) {
@@ -1917,6 +1936,8 @@ function hasDraftContent(d) {
       String(d.socraticType || "").trim() ||
       String(d.socraticQuestion || "").trim() ||
       String(d.socraticAnswer || "").trim() ||
+      String(d.newFeelings || "").trim() ||
+      String(d.pivotPrediction || "").trim() ||
       String(d.evidenceFor || "").trim() ||
       String(d.evidenceAgainst || "").trim() ||
       String(d.bodyCheck || "").trim() ||
@@ -2284,7 +2305,7 @@ function entryMatchesSearch(e, q) {
   const blob = [
     e.trigger, thoughtText, moodText, e.newThought, e.pivot,
     e.pivotReflection, e.distortionNote, e.evidenceFor, e.evidenceAgainst,
-    e.socraticQuestion, e.socraticAnswer, e.bodyCheck,
+    e.socraticQuestion, e.socraticAnswer, e.bodyCheck, e.newFeelings, e.pivotPrediction,
     e.body, e.worryText, e.activityNotes,
     (e.distortions || []).join(" ")
   ].join(" ").toLowerCase();
@@ -2947,11 +2968,13 @@ function renderEntryDetails(entry) {
         </div>
         <p class="detail-text italic">${entry.newThought ? `"${esc(entry.newThought)}"` : "—"}</p>
         ${typeof entry.newThoughtBelief === "number" ? `<p class="detail-text" style="margin-top: 4px; color: var(--on-paper-mute);">Belief in this thought: <strong>${entry.newThoughtBelief}%</strong></p>` : ""}
+        ${entry.newFeelings ? `<p class="detail-text" style="margin-top: 4px; color: var(--on-paper-mute);">New feelings: ${esc(entry.newFeelings)}</p>` : ""}
       </div>
       <div class="detail-row entry-pivot">
         <div class="entry-pivot-content">
           <div class="detail-label" style="color: var(--copper);">6 · The Pivot</div>
           <p class="detail-text entry-pivot-text ${entry.pivotDone ? "done" : ""}">${esc(entry.pivot) || "—"}</p>
+          ${entry.pivotPrediction ? `<p class="detail-text" style="margin-top: 4px; color: var(--on-paper-mute);">Expected: ${esc(entry.pivotPrediction)}</p>` : ""}
         </div>
         <label class="pivot-toggle-large">
           <input type="checkbox" data-action="toggle-pivot" data-id="${entry.id}" ${entry.pivotDone ? "checked" : ""}>
@@ -2964,7 +2987,7 @@ function renderEntryDetails(entry) {
             <span>What happened?</span>
             ${entry.pivotDoneAt ? `<span class="pivot-followup-when">marked done ${esc(fmtDateTime(entry.pivotDoneAt))}</span>` : ""}
           </div>
-          <textarea class="textarea pivot-reflection-input" data-action="edit-reflection" data-id="${entry.id}" rows="3" placeholder="A line on how it went. The dread vs. the actual outcome is the part to write down — that's what teaches you the next time.">${esc(entry.pivotReflection)}</textarea>
+          <textarea class="textarea pivot-reflection-input" data-action="edit-reflection" data-id="${entry.id}" rows="3" placeholder="${entry.pivotPrediction ? "How did it compare with what you expected? That gap is what teaches you next time." : "A line on how it went. The dread vs. the actual outcome is the part to write down; that's what teaches you next time."}">${esc(entry.pivotReflection)}</textarea>
           ${!entry.outcomeRecorded ? `
             <button class="btn btn-primary outcome-cta" data-action="open-outcome" data-id="${entry.id}">
               Step 8 · Re-rate moods after acting
@@ -3097,9 +3120,12 @@ function renderWorryDetails(entry) {
           </div>
           <div class="worry-actions">
             <button class="action-btn primary" data-action="worry-dissolve" data-id="${entry.id}">Dissolved on its own</button>
-            <button class="action-btn" data-action="worry-escalate" data-id="${entry.id}">Open as thought record</button>
+            <button class="action-btn" data-action="worry-escalate" data-id="${entry.id}">Work it through or make a plan</button>
             <button class="action-btn ghost" data-action="worry-postpone" data-id="${entry.id}">Postpone again</button>
           </div>
+          ${entry.postponeCount >= 2 ? `
+            <p class="field-help-paper" style="margin-top: 8px;">This one has been postponed ${entry.postponeCount} times. Worry time is for dealing with it, so working it through, or making a plan (the thought record ends with one concrete step), will likely help more than another postponement.</p>
+          ` : ""}
         </div>
       ` : ""}
     </div>
@@ -3244,7 +3270,7 @@ function renderFreeformCapture(d) {
                     <div class="field-row-split">
                       <select class="select" data-action="edit-mood-family" data-id="${esc(m.id)}">
                         <option value="">— family —</option>
-                        ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${f}" ${m.family === f ? "selected" : ""}>${f}</option>`).join("")}
+                        ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${esc(f)}" ${m.family === f ? "selected" : ""}>${esc(f)}</option>`).join("")}
                       </select>
                       <select class="select" data-action="edit-mood-variant" data-id="${esc(m.id)}" ${!m.family ? "disabled" : ""}>
                         <option value="">— variant —</option>
@@ -3423,6 +3449,11 @@ const ACTIVITY_CATEGORIES = [
   { value: "connection", label: "Connection", icon: "connection" },
   { value: "movement",   label: "Movement",   icon: "movement" },
   { value: "creation",   label: "Creation",   icon: "creation" },
+  // Behavioral activation is organised around life areas and values
+  // (Martell et al.; Lejuez et al.'s BATD-R), and work or study and
+  // meaning (helping, faith, learning, values) had nowhere to go.
+  { value: "work",       label: "Work or study", icon: "work" },
+  { value: "meaning",    label: "Meaning",    icon: "meaning" },
   { value: "self-care",  label: "Self-care",  icon: "selfcare" },
   { value: "chore",      label: "Responsibilities", icon: "chore" },
   { value: "rest",       label: "Rest",       icon: "rest" },
@@ -3532,7 +3563,7 @@ function renderCaptureStep(step, d) {
                 <div class="field-row-split">
                   <select class="select" data-action="edit-mood-family" data-id="${esc(m.id)}">
                     <option value="">— family —</option>
-                    ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${f}" ${m.family === f ? "selected" : ""}>${f}</option>`).join("")}
+                    ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${esc(f)}" ${m.family === f ? "selected" : ""}>${esc(f)}</option>`).join("")}
                   </select>
                   <select class="select" data-action="edit-mood-variant" data-id="${esc(m.id)}" ${!m.family ? "disabled" : ""}>
                     <option value="">— variant —</option>
@@ -3674,6 +3705,18 @@ function renderCaptureStep(step, d) {
         <p class="field-help-paper" style="margin: -4px 0 8px 0;">What facts or past experiences would push back? Often the strongest counter-evidence is "I've thought this before and was wrong" or "I'd never apply this label to a friend in the same spot."</p>
         <textarea class="textarea" data-field="evidenceAgainst" rows="3" placeholder="Facts that complicate the thought. Times the predicted bad thing didn't happen. What you'd tell a friend.">${esc(d.evidenceAgainst)}</textarea>
       </div>
+      <!-- Whether a thought is accurate is settled by the evidence, not by how
+           true it feels (distorted thoughts feel true too), so the choice
+           offered on Step 3 comes back here, once both lists are written. -->
+      <div class="field-group">
+        <button class="accurate-tile ${d.thoughtsAccurate ? "active" : ""}" data-action="toggle-accurate">
+          <div class="accurate-tile-name">
+            <span>Having weighed it, the facts back this thought up</span>
+            <span class="distortion-tile-check">${svgIcon("check")}</span>
+          </div>
+          <div class="accurate-tile-desc">Pick this if the evidence supports the thought; the next step then helps you hold what's true instead of arguing with it. If the facts hold but your conclusion goes further ("so I'm a terrible partner"), leave this off and reframe the conclusion.</div>
+        </button>
+      </div>
 
       <div class="explainer-card explainer-card--socratic">
         <div class="explainer-eyebrow">What a Socratic question is</div>
@@ -3761,7 +3804,7 @@ function renderCaptureStep(step, d) {
       <div class="field-group reframe-new-thought">
         <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "Your new thought — write the reframe here"}</label>
         <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (() => { const rm = REFRAME_METHODS.find(r => r.method === d.reframeMethod); return (rm && rm.template) ? applyTemplate(rm.template, d) : "Write a more balanced, reasonable thought you'd actually accept, in your own words. (Pick a method above to see an example of the shape.)"; })())}">${esc(d.newThought)}</textarea>
-        <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.`}</div>
+        <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands. Often the facts are true and the conclusion is the distortion ("I snapped at them" is true; "so I'm a terrible partner" isn't): keep the true part and rewrite the conclusion.`}</div>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All reframe methods</summary>
           <div class="ref-inline-body">
@@ -3826,6 +3869,9 @@ function renderCaptureStep(step, d) {
             </div>
           `;
         }).join("")}
+
+        <label class="field-label-paper" style="margin-top: 18px;">Anything new showing up?</label>
+        <textarea class="textarea" data-field="newFeelings" rows="2" placeholder="Relief, calm, hope, sadness underneath the anger… a word or two, optional.">${esc(d.newFeelings)}</textarea>
       </div>
     `;
     }
@@ -3840,6 +3886,11 @@ function renderCaptureStep(step, d) {
             <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-insert-field="pivot" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
           `).join("")}
         </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label-paper">What do you expect will happen? (optional)</label>
+        <textarea class="textarea" data-field="pivotPrediction" rows="2" placeholder="They'll ignore it. / It'll feel awkward but fine. / I won't be able to finish.">${esc(d.pivotPrediction)}</textarea>
+        <div class="field-help-paper">Writing the prediction down before you act turns the action into a small experiment: afterward you can check what actually happened against it.</div>
       </div>
     `;
 
@@ -3927,11 +3978,12 @@ function renderReview(d) {
         const bD = hasHotB ? (hot.beliefAfter - hot.beliefBefore) : null;
         const hasNewB = typeof d.newThoughtBelief === "number";
         const ratedMoods = moods.filter(m => typeof m.intensityAfterReframe === "number");
-        if (!hasHotB && !hasNewB && ratedMoods.length === 0) return "";
+        if (!hasHotB && !hasNewB && ratedMoods.length === 0 && !d.newFeelings) return "";
         return `
           <div class="review-rerate">
             ${hasHotB ? `<div class="review-meta-item"><strong>Belief in hot thought:</strong> ${hot.beliefBefore}% ${svgIcon("arrowRight", "ico--xs")} ${hot.beliefAfter}% <span class="delta-tag ${bD < 0 ? "good" : "flat"}">${bD > 0 ? "+" : ""}${bD}</span></div>` : ""}
             ${hasNewB ? `<div class="review-meta-item" style="margin-top: 4px;"><strong>Belief in new thought:</strong> ${d.newThoughtBelief}%</div>` : ""}
+            ${d.newFeelings ? `<div class="review-meta-item" style="margin-top: 4px;"><strong>New feelings:</strong> ${esc(d.newFeelings)}</div>` : ""}
             ${ratedMoods.map(m => {
               const label = m.variant ? cap(m.variant) : (m.family || "Mood");
               const delta = m.intensityAfterReframe - m.intensity;
@@ -3948,6 +4000,7 @@ function renderReview(d) {
         <button class="review-edit-btn" data-action="goto-step" data-step="6">Edit</button>
       </div>
       <div class="review-card-content">${d.pivot ? esc(d.pivot) : '<span class="empty">missing</span>'}</div>
+      ${d.pivotPrediction ? `<div class="review-meta-item" style="margin-top: 6px;"><strong>Expected:</strong> ${esc(d.pivotPrediction)}</div>` : ""}
     </div>
   `;
 }
@@ -4003,11 +4056,17 @@ function renderOutcomeView() {
             <span class="outcome-context-label">Pivot</span>
             <p class="outcome-context-text">${esc(entry.pivot) || "—"}</p>
           </div>
+          ${entry.pivotPrediction ? `
+            <div class="outcome-context-row">
+              <span class="outcome-context-label">Expected</span>
+              <p class="outcome-context-text">${esc(entry.pivotPrediction)}</p>
+            </div>
+          ` : ""}
         </div>
 
         <div class="field-group">
           <label class="field-label-paper">What happened?</label>
-          <textarea class="textarea" id="outcomeReflection" rows="4" placeholder="A line on how it went. The dread vs. the actual outcome is the part to write down — that's what teaches you next time.">${esc(entry.pivotReflection)}</textarea>
+          <textarea class="textarea" id="outcomeReflection" rows="4" placeholder="${entry.pivotPrediction ? "How did it compare with what you expected? That gap is what teaches you next time." : "A line on how it went. The dread vs. the actual outcome is the part to write down; that's what teaches you next time."}">${esc(entry.pivotReflection)}</textarea>
         </div>
 
         ${moods.filter(m => m.family).length ? `
@@ -4594,8 +4653,8 @@ function renderReference() {
       <p class="ref-section-intro">Eight families, with more precise variants. Use the closest match.</p>
       ${Object.entries(EMOTION_FAMILIES).map(([fam, variants]) => `
         <div class="ref-item ref-table-emotion">
-          <div class="ref-item-name">${fam}</div>
-          <div class="ref-item-desc">${variants.join(" · ")}</div>
+          <div class="ref-item-name">${esc(fam)}</div>
+          <div class="ref-item-desc">${esc(variants.join(" · "))}</div>
         </div>
       `).join("")}
     </div>
@@ -5868,6 +5927,7 @@ function bindJournal() {
       // (resolution stays null) so it reappears in the next worry-window
       // banner — that's the whole point of postponement.
       entry.scheduledFor = computeNextWorryWindow();
+      entry.postponeCount = (entry.postponeCount || 0) + 1;
       touchEntry(entry);
       persist();
       render();

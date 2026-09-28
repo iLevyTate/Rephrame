@@ -87,6 +87,12 @@
 //      "Historical test" / "Minimization" migrate; 0 reads as None.
 //  31. Crisis resources list the US Lifeline and Canada's 9-8-8 separately,
 //      use each country's text-line keyword, and carry no dead links.
+//  32. The follow-through pieces the clinical review asked for: the
+//      "facts back this up" choice returns after the evidence on Step 4,
+//      new feelings after the reframe and a prediction before the pivot are
+//      saved and exported, a worry postponed twice suggests working it
+//      through, a stored "Jealousy" mood migrates to "Jealousy & envy", and
+//      the activity types include work/study and meaning.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -1275,7 +1281,7 @@ try {
   // Blocks 28–30 read app.js's reference tables and draft helpers from inside
   // page.evaluate; they aren't in eslint's shared appProvides list.
   /* global emptyEntry, seedDraftFromPrimaryDistortion, SOCRATIC_TYPES, REFRAME_METHODS,
-     DISTORTIONS, DISTORTION_DEFAULTS, INTENSITY_BANDS, band */
+     DISTORTIONS, DISTORTION_DEFAULTS, INTENSITY_BANDS, band, entryToMd, ACTIVITY_CATEGORIES */
   // ── 28. A tapped field clears the Android keyboard and the sticky chrome ──
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -1438,6 +1444,62 @@ try {
     }
     noErrors(errors, 'crisis resources');
     log('PASS — crisis resources name the right service, keyword and link per country.');
+    await ctx.close();
+  }
+
+  // ── 32. Accuracy after evidence, new feelings, prediction, worries ─────
+  {
+    const { ctx, page, errors } = await openApp(() => {
+      localStorage.setItem('reframe-journal-v1', JSON.stringify([
+        { id: 'w-loop', kind: 'worry', createdAt: '2026-09-01T10:00:00.000Z', worryText: 'What if I lose the job?', scheduledFor: '2026-09-01T18:00:00.000Z' },
+        { id: 'tr-old', kind: 'thought-record', createdAt: '2026-08-01T10:00:00.000Z', trigger: 'x',
+          moods: [{ id: 'm1', family: 'Jealousy', variant: 'envious', intensity: 50 }] },
+      ]));
+    });
+    const r = await page.evaluate(() => {
+      state.view = 'capture'; state.captureStep = 4;
+      state.draft = emptyEntry(); state.draft.trigger = 'Snapped at my partner';
+      state.draft.thoughts = [{ id: 't', text: "I'm a terrible partner", isHot: true, beliefBefore: 80 }];
+      render();
+      const step4 = document.querySelector('.capture-screen').innerHTML;
+      const againstIdx = step4.indexOf('data-field="evidenceAgainst"');
+      const tileIdx = step4.indexOf('Having weighed it, the facts back this thought up');
+      state.captureStep = 5; render();
+      const hasNewFeelings = !!document.querySelector('[data-field="newFeelings"]');
+      state.captureStep = 6; render();
+      const hasPrediction = !!document.querySelector('[data-field="pivotPrediction"]');
+      state.draft.newFeelings = 'relief';
+      state.draft.pivotPrediction = 'They will be cold all evening.';
+      const md = entryToMd(normalizeEntry(state.draft), 0);
+      return {
+        againstIdx, tileIdx, hasNewFeelings, hasPrediction, md,
+        oldFamily: state.entries.find(e => e.id === 'tr-old').moods[0].family,
+        cats: ACTIVITY_CATEGORIES.map(c => c.value),
+      };
+    });
+    assert.ok(r.againstIdx > 0 && r.tileIdx > r.againstIdx, 'Step 4 offers the accuracy choice after the evidence lists');
+    assert.equal(r.hasNewFeelings, true, 'The reframe re-rate has room for feelings that showed up');
+    assert.equal(r.hasPrediction, true, 'The pivot step asks what you expect to happen');
+    assert.match(r.md, /New feelings:\*\* relief/, 'New feelings reach the Markdown export');
+    assert.match(r.md, /Expected:\*\* They will be cold/, 'The prediction reaches the Markdown export');
+    assert.equal(r.oldFamily, 'Jealousy & envy', 'A stored "Jealousy" mood migrates to "Jealousy & envy"');
+    assert.ok(r.cats.includes('work') && r.cats.includes('meaning'), 'Activity types include work/study and meaning');
+
+    // Postpone the same worry twice from its card: the second time it says so.
+    await page.evaluate(() => { state.view = 'journal'; state.expandedIds.add('w-loop'); render(); });
+    for (let i = 0; i < 2; i++) {
+      await page.locator('#entry-w-loop [data-action="worry-postpone"]').click();
+      await page.waitForTimeout(150);
+      await page.evaluate(() => { state.expandedIds.add('w-loop'); render(); });
+    }
+    const w = await page.evaluate(() => ({
+      count: state.entries.find(e => e.id === 'w-loop').postponeCount,
+      text: document.getElementById('entry-w-loop').innerText,
+    }));
+    assert.equal(w.count, 2, 'Each postponement is counted');
+    assert.match(w.text, /postponed 2 times/, 'A twice-postponed worry suggests working it through');
+    noErrors(errors, 'follow-through pieces');
+    log('PASS — accuracy after evidence, new feelings, prediction, postpone count, family and category updates.');
     await ctx.close();
   }
 
