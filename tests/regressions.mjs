@@ -71,6 +71,28 @@
 //  27. Loaded inside another site's frame, the page shows an escape notice
 //      and never boots the app (clickjacking guard; the meta CSP cannot carry
 //      frame-ancestors).
+//  28. A tapped field is lifted clear of the Android keyboard AND the sticky
+//      chrome above it. interactive-widget=resizes-content shrinks
+//      innerHeight along with the visual viewport, so the keyboard read as
+//      0px tall: .kb-open never switched on, the nav and the Continue bar
+//      stayed parked above the keyboard, and the field typed into sat
+//      143px behind them.
+//  29. A <details> expander opened near the bottom of a step unfolds into
+//      view instead of under the sticky Continue bar.
+//  30. Every distortion's pre-set question and reframe exist and fit it (no
+//      responsibility pie for All-or-Nothing), the old "Zoom out (pie
+//      chart)" / "Perspective broadening" names migrate, and the intensity
+//      cues describe felt experience rather than how someone sounds.
+//      Picking a distortion never writes a stock reframe into the entry, and
+//      "Historical test" / "Minimization" migrate; 0 reads as None.
+//  31. Crisis resources list the US Lifeline and Canada's 9-8-8 separately,
+//      use each country's text-line keyword, and carry no dead links.
+//  32. The follow-through pieces the clinical review asked for: the
+//      "facts back this up" choice returns after the evidence on Step 4,
+//      new feelings after the reframe and a prediction before the pivot are
+//      saved and exported, a worry postponed twice suggests working it
+//      through, a stored "Jealousy" mood migrates to "Jealousy & envy", and
+//      the activity types include work/study and meaning.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -1253,6 +1275,231 @@ try {
     assert.match(inFrame.text, /inside another website/, 'The notice explains');
     assert.equal(inFrame.link, URL, 'The escape link opens the app directly');
     log('PASS — framed loads show the escape notice instead of the app.');
+    await ctx.close();
+  }
+
+  // Blocks 28–30 read app.js's reference tables and draft helpers from inside
+  // page.evaluate; they aren't in eslint's shared appProvides list.
+  /* global emptyEntry, seedDraftFromPrimaryDistortion, SOCRATIC_TYPES, REFRAME_METHODS,
+     DISTORTIONS, DISTORTION_DEFAULTS, INTENSITY_BANDS, band, entryToMd, ACTIVITY_CATEGORIES */
+  // ── 28. A tapped field clears the Android keyboard and the sticky chrome ──
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(ONBOARDED);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.app', { timeout: 10000 });
+    await page.evaluate(() => {
+      state.view = 'capture'; state.captureStep = 2;
+      state.draft = emptyEntry(); state.draft.trigger = 'Meeting ran long';
+      render(); window.scrollTo(0, 0);
+    });
+    await page.waitForTimeout(450);
+    // Park the Body field just above the sticky footer, where a user who has
+    // scrolled down to it would see it.
+    await page.evaluate(() => {
+      const r = document.querySelector('[data-field="bodyCheck"]').getBoundingClientRect();
+      const f = document.querySelector('.capture-footer').getBoundingClientRect();
+      window.scrollBy(0, r.bottom - f.top + 10);
+    });
+    await page.locator('[data-field="bodyCheck"]').tap();
+    await page.waitForTimeout(80);
+    // The keyboard opens: resizes-content shrinks the layout viewport, then
+    // Chrome scrolls the focused field to just above the keyboard edge,
+    // knowing nothing about the chrome stacked there.
+    await page.setViewportSize({ width: 390, height: 480 });
+    await page.evaluate(() => document.activeElement.scrollIntoView({ block: 'nearest' }));
+    await page.waitForTimeout(900);
+    const r = await page.evaluate(() => {
+      const ta = document.activeElement.getBoundingClientRect();
+      const footer = document.querySelector('.capture-footer').getBoundingClientRect();
+      return {
+        field: document.activeElement.dataset.field,
+        kbOpen: document.body.classList.contains('kb-open'),
+        taTop: ta.top, taBottom: ta.bottom, footerTop: footer.top,
+      };
+    });
+    assert.equal(r.field, 'bodyCheck', 'The tapped field still has focus');
+    assert.equal(r.kbOpen, true, 'A keyboard that shrinks innerHeight still switches .kb-open on');
+    assert.ok(r.taTop >= 0 && r.taBottom <= r.footerTop,
+      `The field sits fully above the sticky footer (field ${Math.round(r.taTop)}–${Math.round(r.taBottom)}, footer at ${Math.round(r.footerTop)})`);
+    noErrors(errors, 'keyboard reveal');
+    log('PASS — a tapped field is lifted clear of the keyboard and the sticky footer.');
+    await ctx.close();
+  }
+
+  // ── 29. An expander near the bottom opens into view ────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => {
+      state.view = 'capture'; state.captureStep = 2;
+      state.draft = emptyEntry(); state.draft.trigger = 'Meeting ran long';
+      render(); window.scrollTo(0, 0);
+    });
+    await page.waitForTimeout(450);
+    const summary = page.locator('details.ref-inline summary', { hasText: 'Body region reference' });
+    // Scroll so the summary sits just above the footer: opening it there is
+    // what used to unfold the table straight under the Continue bar.
+    await page.evaluate(() => {
+      const s = [...document.querySelectorAll('details.ref-inline summary')].find(x => /Body region/.test(x.textContent));
+      const f = document.querySelector('.capture-footer').getBoundingClientRect();
+      window.scrollBy(0, s.getBoundingClientRect().bottom - f.top + 4);
+    });
+    await summary.click();
+    await page.waitForTimeout(900);
+    const r = await page.evaluate(() => {
+      const s = [...document.querySelectorAll('details.ref-inline summary')].find(x => /Body region/.test(x.textContent));
+      const d = s.parentElement.getBoundingClientRect();
+      const f = document.querySelector('.capture-footer').getBoundingClientRect();
+      return { open: s.parentElement.open, bottom: d.bottom, top: d.top, footerTop: f.top };
+    });
+    assert.equal(r.open, true, 'The expander opened');
+    assert.ok(r.top >= 0 && r.bottom <= r.footerTop,
+      `The opened reference sits above the sticky footer (${Math.round(r.top)}–${Math.round(r.bottom)}, footer at ${Math.round(r.footerTop)})`);
+    noErrors(errors, 'expander reveal');
+    log('PASS — an expander opened near the footer unfolds into view.');
+    await ctx.close();
+  }
+
+  // ── 30. Distortion pairings fit, legacy names migrate, felt-sense cues ──
+  {
+    const { ctx, page, errors } = await openApp(() => {
+      localStorage.setItem('reframe-journal-v1', JSON.stringify([
+        { id: 'legacy-pie', kind: 'thought-record', createdAt: '2026-05-01T10:00:00.000Z', trigger: 'x', socraticType: 'Zoom out (pie chart)' },
+        { id: 'legacy-pb',  kind: 'thought-record', createdAt: '2026-05-02T10:00:00.000Z', trigger: 'y', socraticType: 'Perspective broadening' },
+        { id: 'legacy-ht',  kind: 'thought-record', createdAt: '2026-05-03T10:00:00.000Z', trigger: 'z', socraticType: 'Historical test', distortions: ['Minimization'] },
+      ]));
+    });
+    const r = await page.evaluate(() => {
+      const types = new Set(SOCRATIC_TYPES.map(t => t.type));
+      const methods = new Set(REFRAME_METHODS.map(m => m.method));
+      const unmapped = DISTORTIONS.map(d => d.name).filter(n => !DISTORTION_DEFAULTS[n]);
+      const dangling = Object.entries(DISTORTION_DEFAULTS)
+        .filter(([, v]) => !types.has(v.socratic) || !methods.has(v.reframe)).map(([k]) => k);
+      const seeded = {};
+      for (const name of ['All-or-Nothing Thinking', 'Mental Filter', 'Magnification and Minimization', 'Personalization', 'Labeling', 'Should Statements', 'Blame']) {
+        const d = emptyEntry();
+        d.thoughts = [{ id: 't', text: 'I ruined the whole thing', isHot: true }];
+        d.distortions = [name];
+        seedDraftFromPrimaryDistortion(d);
+        seeded[name] = { type: d.socraticType, q: d.socraticQuestion, method: d.reframeMethod, newThought: d.newThought };
+      }
+      return {
+        unmapped, dangling, seeded,
+        legacy: state.entries.map(e => [e.id, e.socraticType]),
+        legacyDistortions: state.entries.find(e => e.id === 'legacy-ht').distortions,
+        cues: INTENSITY_BANDS.map(b => b.signals).join(' | '),
+        zeroBand: band(0).label,
+        severeFrom: INTENSITY_BANDS.find(b => b.label === 'Severe') && band(80).label,
+      };
+    });
+    assert.deepEqual(r.unmapped, [], 'Every distortion has pre-set defaults');
+    assert.deepEqual(r.dangling, [], 'Every default names a real question type and reframe method');
+    const aon = r.seeded['All-or-Nothing Thinking'];
+    assert.equal(aon.type, 'Shades of gray', 'All-or-Nothing is challenged on a continuum');
+    assert.doesNotMatch(aon.q, /pie chart|slice/i, 'All-or-Nothing is not handed the responsibility pie');
+    assert.match(aon.q, /0 to 100/, 'All-or-Nothing question asks where it sits between the extremes');
+    for (const name of ['Mental Filter', 'Magnification and Minimization']) {
+      assert.doesNotMatch(r.seeded[name].q, /pie chart|slice/i, `${name} is not handed the responsibility pie`);
+    }
+    assert.equal(r.seeded['Personalization'].type, 'Responsibility pie', 'Self-blame gets the responsibility pie');
+    assert.equal(r.seeded['Labeling'].method, 'Behavior, not identity', 'A label is reframed as a behavior');
+    assert.equal(r.seeded['Should Statements'].method, 'Flexible preference', 'A should is reframed as a preference');
+    assert.equal(r.seeded['Blame'].type, 'Responsibility pie', 'Blame gets the responsibility pie, self included');
+    for (const [name, v] of Object.entries(r.seeded)) {
+      assert.equal(v.newThought, '', `${name}: picking a distortion never writes a stock reframe into the entry`);
+    }
+    assert.deepEqual(Object.fromEntries(r.legacy),
+      { 'legacy-pie': 'Responsibility pie', 'legacy-pb': 'Full picture', 'legacy-ht': 'Track record' },
+      'Stored legacy question-type names migrate to the current ones');
+    assert.deepEqual(r.legacyDistortions, ['Magnification and Minimization'],
+      'A stored "Minimization" tag migrates to Burns\'s two-way item');
+    assert.equal(r.zeroBand, 'None', 'A rating of 0 reads as None, not Mild');
+    assert.equal(r.severeFrom, 'Severe', 'The Severe band starts at 80, where the grounding note appears');
+    assert.doesNotMatch(r.cues, /voice|vocal|tone|yelling|crying|speech/i,
+      'Intensity cues describe how it feels, not how it sounds: ' + r.cues);
+    noErrors(errors, 'distortion pairings');
+    log('PASS — distortion pairings fit, legacy names migrate, intensity cues are felt-sense.');
+    await ctx.close();
+  }
+
+  // ── 31. Crisis resources name the right service for each country ──────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.locator('[data-nav="reference"]').click();
+    await page.waitForSelector('.ref-section--safety', { timeout: 5000 });
+    const ref = await page.locator('.ref-section--safety').innerText();
+    await page.evaluate(() => setState({ modal: 'safety' }));
+    await page.waitForSelector('.safety-list', { timeout: 5000 });
+    const modal = await page.locator('.safety-list').innerText();
+    for (const [where, text] of [['Reference', ref], ['Safety dialog', modal]]) {
+      assert.doesNotMatch(text, /US \/ Canada/, `${where}: the US Lifeline and Canada's 9-8-8 are listed separately`);
+      assert.match(text, /9-8-8: Suicide Crisis Helpline/, `${where}: Canada's own service is named`);
+      assert.match(text, /SHOUT[\s\S]{0,8}85258/, `${where}: the UK text line uses Shout's keyword`);
+      assert.match(text, /CONNECT[\s\S]{0,8}686868/, `${where}: Kids Help Phone uses its own keyword`);
+      assert.doesNotMatch(text, /iasp\.info|988lifeline\.org\/chat/, `${where}: no dead or redirected links`);
+    }
+    noErrors(errors, 'crisis resources');
+    log('PASS — crisis resources name the right service, keyword and link per country.');
+    await ctx.close();
+  }
+
+  // ── 32. Accuracy after evidence, new feelings, prediction, worries ─────
+  {
+    const { ctx, page, errors } = await openApp(() => {
+      localStorage.setItem('reframe-journal-v1', JSON.stringify([
+        { id: 'w-loop', kind: 'worry', createdAt: '2026-09-01T10:00:00.000Z', worryText: 'What if I lose the job?', scheduledFor: '2026-09-01T18:00:00.000Z' },
+        { id: 'tr-old', kind: 'thought-record', createdAt: '2026-08-01T10:00:00.000Z', trigger: 'x',
+          moods: [{ id: 'm1', family: 'Jealousy', variant: 'envious', intensity: 50 }] },
+      ]));
+    });
+    const r = await page.evaluate(() => {
+      state.view = 'capture'; state.captureStep = 4;
+      state.draft = emptyEntry(); state.draft.trigger = 'Snapped at my partner';
+      state.draft.thoughts = [{ id: 't', text: "I'm a terrible partner", isHot: true, beliefBefore: 80 }];
+      render();
+      const step4 = document.querySelector('.capture-screen').innerHTML;
+      const againstIdx = step4.indexOf('data-field="evidenceAgainst"');
+      const tileIdx = step4.indexOf('Having weighed it, the facts back this thought up');
+      state.captureStep = 5; render();
+      const hasNewFeelings = !!document.querySelector('[data-field="newFeelings"]');
+      state.captureStep = 6; render();
+      const hasPrediction = !!document.querySelector('[data-field="pivotPrediction"]');
+      state.draft.newFeelings = 'relief';
+      state.draft.pivotPrediction = 'They will be cold all evening.';
+      const md = entryToMd(normalizeEntry(state.draft), 0);
+      return {
+        againstIdx, tileIdx, hasNewFeelings, hasPrediction, md,
+        oldFamily: state.entries.find(e => e.id === 'tr-old').moods[0].family,
+        cats: ACTIVITY_CATEGORIES.map(c => c.value),
+      };
+    });
+    assert.ok(r.againstIdx > 0 && r.tileIdx > r.againstIdx, 'Step 4 offers the accuracy choice after the evidence lists');
+    assert.equal(r.hasNewFeelings, true, 'The reframe re-rate has room for feelings that showed up');
+    assert.equal(r.hasPrediction, true, 'The pivot step asks what you expect to happen');
+    assert.match(r.md, /New feelings:\*\* relief/, 'New feelings reach the Markdown export');
+    assert.match(r.md, /Expected:\*\* They will be cold/, 'The prediction reaches the Markdown export');
+    assert.equal(r.oldFamily, 'Jealousy & envy', 'A stored "Jealousy" mood migrates to "Jealousy & envy"');
+    assert.ok(r.cats.includes('work') && r.cats.includes('meaning'), 'Activity types include work/study and meaning');
+
+    // Postpone the same worry twice from its card: the second time it says so.
+    await page.evaluate(() => { state.view = 'journal'; state.expandedIds.add('w-loop'); render(); });
+    for (let i = 0; i < 2; i++) {
+      await page.locator('#entry-w-loop [data-action="worry-postpone"]').click();
+      await page.waitForTimeout(150);
+      await page.evaluate(() => { state.expandedIds.add('w-loop'); render(); });
+    }
+    const w = await page.evaluate(() => ({
+      count: state.entries.find(e => e.id === 'w-loop').postponeCount,
+      text: document.getElementById('entry-w-loop').innerText,
+    }));
+    assert.equal(w.count, 2, 'Each postponement is counted');
+    assert.match(w.text, /postponed 2 times/, 'A twice-postponed worry suggests working it through');
+    noErrors(errors, 'follow-through pieces');
+    log('PASS — accuracy after evidence, new feelings, prediction, postpone count, family and category updates.');
     await ctx.close();
   }
 

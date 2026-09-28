@@ -8,77 +8,125 @@ if (window.top !== window.self) throw new Error("Rephrame does not run inside a 
 // REFERENCE DATA
 // ═══════════════════════════════════════════════════════════════════
 
+// Names and definitions follow Burns's checklist (Feeling Good, 1980; Feeling
+// Good Handbook, 1989; 2016 revision) and J. Beck (2020), plus the Blame,
+// Fairness, Change and Control items from McKay, Davis & Fanning (Thoughts
+// and Feelings, 1981). Burns's "Jumping to conclusions" is split into Mind
+// Reading and Fortune Telling, as J. Beck lists them. Catastrophizing is the
+// worst-case prediction; the two-way "binocular trick" of blowing up the bad
+// and shrinking the good stays one item, Magnification and Minimization.
 const DISTORTIONS = [
-  { name: "All-or-Nothing Thinking", desc: "Binary extremes.", cues: '"always," "never," "completely," "ruined"' },
-  { name: "Overgeneralization", desc: "One event = infinite pattern.", cues: '"every time," "nothing ever"' },
-  { name: "Mental Filter", desc: "Fixating on one negative detail, ignoring the rest.", cues: "" },
-  { name: "Disqualifying the Positive", desc: "Dismissing good things.", cues: '"that doesn\'t count," "anyone could do that"' },
-  { name: "Mind Reading", desc: "Assuming others' thoughts.", cues: '"she probably," "they must think"' },
-  { name: "Fortune Telling", desc: "Predicting negatives as certain.", cues: '"this will definitely," "there\'s no way"' },
-  { name: "Catastrophizing", desc: "Worst case far beyond probability — also covers magnification (blowing the bad up bigger).", cues: '"what if," disaster language' },
-  { name: "Minimization", desc: "Shrinking the good. Burns pairs this with magnification — Catastrophizing covers that side.", cues: '"it\'s not a big deal"' },
-  { name: "Emotional Reasoning", desc: "Feelings as proof.", cues: '"I feel like a failure so I must be one"' },
-  { name: "Should Statements", desc: "Rigid rules.", cues: '"I should," "I must," "I have to"' },
-  { name: "Labeling", desc: "Fixed label from one behavior.", cues: '"I\'m a terrible partner"' },
-  { name: "Personalization", desc: "Blame for things not entirely your fault.", cues: "" },
-  { name: "Blame", desc: "Assigning all responsibility to others.", cues: "" },
-  { name: "Fallacy of Fairness", desc: "Fixation on fairness.", cues: '"it\'s not fair," "I deserve"' },
-  { name: "Fallacy of Change", desc: "Expecting others to change for your happiness.", cues: "" },
-  { name: "Control Fallacy (external)", desc: "Powerlessness.", cues: '"there\'s nothing I can do"' },
-  { name: "Control Fallacy (internal)", desc: "Overresponsibility.", cues: '"it\'s all on me to fix everything"' },
+  { name: "All-or-Nothing Thinking", desc: "Seeing things in only two boxes, like perfect or total failure, with nothing in between.", cues: '"total failure," "perfect," "completely ruined"' },
+  { name: "Overgeneralization", desc: "Treating one bad event as proof of a never-ending pattern.", cues: '"always," "never," "every time," "nothing ever"' },
+  { name: "Mental Filter", desc: "Fixating on one negative detail, ignoring the rest.", cues: '"but that one comment…"' },
+  { name: "Disqualifying the Positive", desc: "Insisting good things don't count, so the negative view stays intact.", cues: '"that doesn\'t count," "anyone could do that"' },
+  { name: "Mind Reading", desc: "Deciding you know what someone thinks of you, usually something negative, without checking.", cues: '"she probably," "they must think"' },
+  { name: "Fortune Telling", desc: "Predicting things will turn out badly and treating the prediction as fact.", cues: '"this will definitely," "there\'s no way"' },
+  { name: "Catastrophizing", desc: "Jumping to the worst possible outcome and treating it as likely, or as more than you could cope with.", cues: '"what if," "this is a disaster," "I couldn\'t handle it"' },
+  { name: "Magnification and Minimization", desc: "Blowing up your mistakes and shrinking your strengths, like looking through the wrong end of binoculars.", cues: '"what a huge mistake," "it was nothing, really"' },
+  { name: "Emotional Reasoning", desc: "Treating a feeling as proof: I feel it, so it must be true.", cues: '"I feel like a failure so I must be one"' },
+  { name: "Should Statements", desc: "Rigid rules about how you, other people or the world must be. Breaking them brings guilt; others breaking them brings anger.", cues: '"I should," "I must," "they shouldn\'t"' },
+  { name: "Labeling", desc: "Pinning a global label on yourself or someone else, like loser or jerk, instead of describing what happened.", cues: '"I\'m a terrible partner," "he\'s useless"' },
+  { name: "Personalization", desc: "Seeing yourself as the main cause of something bad, or assuming other people's moods are about you, when other things were involved.", cues: '"it\'s all my fault," "what did I do?"' },
+  { name: "Blame", desc: "Holding other people fully responsible for your problems or feelings and overlooking your own part.", cues: '"it\'s all their fault"' },
+  { name: "Fallacy of Fairness", desc: "Judging everything by your own idea of fair, and staying resentful when life or people don't match it.", cues: '"it\'s not fair," "I deserve"' },
+  { name: "Fallacy of Change", desc: "Believing you can only be happy once other people change, and that pushing hard enough will make them.", cues: '"if they would just…"' },
+  { name: "Control Fallacy (external)", desc: "Believing outside forces control everything, so nothing you do matters.", cues: '"there\'s nothing I can do"' },
+  { name: "Control Fallacy (internal)", desc: "Feeling responsible for everyone else's feelings and happiness.", cues: '"it\'s all on me to fix everything"' },
 ];
 
 // Default Socratic type + reframe method per distortion. Lets step 3 (Distortion)
 // seed Challenge (step 4) and Reframe (step 5) so a first-time user isn't asked
-// to map jargon-to-jargon mid-flow. The pairings
-// come from the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS;
-// this constant just encodes them as a lookup so the picker handler
-// can apply them. Keys must exactly match a DISTORTIONS[].name; values
-// must exactly match a SOCRATIC_TYPES[].type and REFRAME_METHODS[].method.
+// to map jargon-to-jargon mid-flow. Each pairing is the question and the
+// rewrite that answer what that distortion actually does, and should read
+// true against the "when" fields on SOCRATIC_TYPES and REFRAME_METHODS:
+// an absolute gets a continuum, a prediction gets a probability, a label
+// gets the behavior it was stuck on, lopsided blame gets a responsibility
+// pie. Keys must exactly match a DISTORTIONS[].name; values must exactly
+// match a SOCRATIC_TYPES[].type and REFRAME_METHODS[].method.
+//
+// The responsibility pie used to be "Perspective broadening" (zoom out to
+// the whole week). PR 6 swapped its question for the pie but left
+// All-or-Nothing, Mental Filter and Minimization pointing at it, so "I
+// ruined the whole presentation" was answered with "how big is my slice of
+// the blame?". Those three now get questions built for them.
 const DISTORTION_DEFAULTS = {
-  "All-or-Nothing Thinking":    { socratic: "Zoom out (pie chart)",    reframe: "Continuum thinking" },
-  "Overgeneralization":         { socratic: "Historical test",         reframe: "Continuum thinking" },
-  "Mental Filter":              { socratic: "Zoom out (pie chart)",    reframe: "Coping/encouraging thought" },
-  "Disqualifying the Positive": { socratic: "Evidence examination",    reframe: "Coping/encouraging thought" },
+  "All-or-Nothing Thinking":    { socratic: "Shades of gray",          reframe: "Continuum thinking" },
+  "Overgeneralization":         { socratic: "Track record",            reframe: "Continuum thinking" },
+  "Mental Filter":              { socratic: "Full picture",            reframe: "Balanced thought" },
+  "Disqualifying the Positive": { socratic: "Double standard",         reframe: "Balanced thought" },
   "Mind Reading":               { socratic: "Alternative explanation", reframe: "Behavioral experiment" },
   "Fortune Telling":            { socratic: "Probability testing",     reframe: "Realism" },
   "Catastrophizing":            { socratic: "Decatastrophizing",       reframe: "Realism" },
-  "Minimization":               { socratic: "Zoom out (pie chart)",    reframe: "Coping/encouraging thought" },
-  "Emotional Reasoning":        { socratic: "Evidence examination",    reframe: "Realism" },
-  "Should Statements":          { socratic: "Cost-benefit",            reframe: "Continuum thinking" },
-  "Labeling":                   { socratic: "Double standard",         reframe: "Compassionate reattribution" },
-  "Personalization":            { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
-  "Blame":                      { socratic: "Alternative explanation", reframe: "Compassionate reattribution" },
-  "Fallacy of Fairness":        { socratic: "Cost-benefit",            reframe: "Realism" },
-  "Fallacy of Change":          { socratic: "Cost-benefit",            reframe: "Behavioral experiment" },
+  "Magnification and Minimization": { socratic: "Double standard",     reframe: "Balanced thought" },
+  "Emotional Reasoning":        { socratic: "Evidence examination",    reframe: "Balanced thought" },
+  "Should Statements":          { socratic: "Cost-benefit",            reframe: "Flexible preference" },
+  "Labeling":                   { socratic: "Double standard",         reframe: "Behavior, not identity" },
+  "Personalization":            { socratic: "Responsibility pie",      reframe: "Compassionate reattribution" },
+  "Blame":                      { socratic: "Responsibility pie",      reframe: "Compassionate reattribution" },
+  "Fallacy of Fairness":        { socratic: "Cost-benefit",            reframe: "Flexible preference" },
+  "Fallacy of Change":          { socratic: "Cost-benefit",            reframe: "Flexible preference" },
   "Control Fallacy (external)": { socratic: "Evidence examination",    reframe: "Behavioral experiment" },
-  "Control Fallacy (internal)": { socratic: "Double standard",         reframe: "Compassionate reattribution" },
+  "Control Fallacy (internal)": { socratic: "Responsibility pie",      reframe: "Compassionate reattribution" },
 };
 
+// Illustrations, not findings: no published study reports these specific
+// pairs as the most common. Each is shown with why the two tend to travel
+// together, so it reads as an example rather than a statistic.
 const COMMON_PAIRS = [
-  "Catastrophizing + Fortune Telling",
-  "Mind Reading + Personalization",
-  "All-or-Nothing + Should Statements",
-  "Emotional Reasoning + Labeling",
+  "Catastrophizing + Fortune Telling: near twins. Both predict the worst; catastrophizing adds that you couldn't cope.",
+  "Mind Reading + Personalization: deciding someone's cold reply is a verdict on you.",
+  "All-or-Nothing Thinking + Should Statements: perfectionism, where anything short of the rule counts as failure.",
+  "Emotional Reasoning + Labeling: I feel like a failure, so I am one.",
 ];
 
+// Mood words, one per option (Mind Over Mood: if it takes more than one word
+// to describe a mood, it's probably a thought). Each family leads with its
+// plain word, the one most people reach for first. Words that name a
+// judgment or someone else's action rather than a feeling ("blameworthy",
+// "threatened", "excluded", "hostile") and a symptom ("hypervigilant") are
+// out; so is the duplicate "contemptuous" under Anger (Plutchik files
+// contempt as anger plus disgust, and one home keeps Patterns counts clean).
+// Entries saved with a retired word still show it; see _variantOptions.
 const EMOTION_FAMILIES = {
-  Anger: ["irritated", "frustrated", "resentful", "bitter", "furious", "hostile", "contemptuous"],
-  Anxiety: ["nervous", "worried", "apprehensive", "panicked", "dread", "hypervigilant"],
-  Sadness: ["disappointed", "hurt", "dejected", "grief", "hopeless", "lonely", "abandoned"],
-  Shame: ["embarrassed", "humiliated", "inadequate", "exposed", "self-conscious"],
-  Guilt: ["remorseful", "regretful", "blameworthy", "self-reproachful"],
-  Fear: ["scared", "threatened", "insecure", "vulnerable", "helpless"],
-  Jealousy: ["envious", "possessive", "excluded", "inferior"],
-  Disgust: ["repulsed", "contemptuous", "revolted"],
+  Anger: ["angry", "irritated", "frustrated", "resentful", "bitter", "furious", "enraged"],
+  Anxiety: ["anxious", "nervous", "worried", "apprehensive", "tense", "uneasy", "panicked", "dread"],
+  Sadness: ["sad", "down", "depressed", "disappointed", "hurt", "dejected", "grief", "hopeless", "lonely", "abandoned"],
+  Shame: ["ashamed", "embarrassed", "humiliated", "inadequate", "exposed", "self-conscious"],
+  Guilt: ["guilty", "remorseful", "regretful", "self-reproachful"],
+  Fear: ["afraid", "scared", "frightened", "terrified", "insecure", "vulnerable", "helpless"],
+  // Envy and jealousy are different feelings (Parrott & Smith, 1993): envy
+  // wants what someone has, jealousy fears losing what you have.
+  "Jealousy & envy": ["jealous", "possessive", "envious", "inferior"],
+  Disgust: ["disgusted", "repulsed", "contemptuous"],
 };
+// Variant <option>s for a mood row. A word saved before it was retired from
+// the list stays selectable, so re-opening an old entry doesn't blank it.
+function _variantOptions(m) {
+  const list = m.family ? (EMOTION_FAMILIES[m.family] || []) : [];
+  const all = (m.variant && !list.includes(m.variant)) ? [...list, m.variant] : list;
+  return all.map(v => `<option value="${esc(v)}" ${m.variant === v ? "selected" : ""}>${esc(v)}</option>`).join("");
+}
 
+// What each band feels like from the inside. This is a self-report scale:
+// the person rating is the person feeling it, so the cues describe felt
+// experience, not how the feeling sounds or looks to someone listening
+// (the old "raised voice", "vocal frustration" wording was an observer's
+// checklist and made no sense for rating your own mood).
+//
+// SUDS (Wolpe) anchors only the ends: 0 is none at all, 100 the most you
+// have ever felt it; Mind Over Mood anchors to the person's own range the
+// same way. The named bands are this app's, so there is a real 0 (a re-rate
+// to nothing used to read "Mild: noticeable"), and Severe starts at 80 to
+// match the grounding note that appears there and Wolpe & Wolpe's (1981)
+// 80–100 "very severe" anchor.
 const INTENSITY_BANDS = [
-  { max: 20, label: "Mild",     signals: "Matter-of-fact tone, no vocal tension" },
-  { max: 40, label: "Moderate", signals: "Slight edge, lingering on the topic" },
-  { max: 60, label: "Strong",   signals: "Repeating the issue, vocal frustration" },
-  { max: 80, label: "High",     signals: "Raised voice, spiraling, hard to drop" },
-  { max: 100, label: "Severe",  signals: "Shutdown, crying, yelling, physical distress" },
+  { max: 0,   label: "None",     signals: "Not there right now" },
+  { max: 20,  label: "Mild",     signals: "Noticeable, easy to set aside" },
+  { max: 40,  label: "Moderate", signals: "Tugging at you, still manageable" },
+  { max: 60,  label: "Strong",   signals: "Hard to think about much else" },
+  { max: 79,  label: "High",     signals: "Hard to step back from" },
+  { max: 100, label: "Severe",   signals: "Overwhelming, hard to function" },
 ];
 
 const BODY_REGIONS = [
@@ -91,28 +139,46 @@ const BODY_REGIONS = [
   { region: "Energy",     examples: "fatigue, heaviness, jittery, unable to sit still" },
 ];
 
+// Question types and their wording follow J. Beck's "Testing Your Thoughts"
+// questions (2020), Burns's techniques (Feeling Good Handbook, 1989),
+// Padesky's continuum (1994) and Salkovskis's responsibility pie (1999).
+// Templates avoid dropping the whole hot thought into the middle of a
+// sentence ("How likely is I ruined everything...") and ask the question
+// the technique actually asks.
 const SOCRATIC_TYPES = [
-  { type: "Evidence examination",   when: "Thought stated as fact without proof",        template: "What evidence do I actually have that [thought] is true?" },
-  { type: "Alternative explanation", when: "Locked into one interpretation",             template: "Is there another way to explain why [person] did that?" },
-  { type: "Probability testing",    when: "Catastrophizing / fortune telling",           template: "How likely is [worst case] on a scale of 0–100%?" },
-  { type: "Historical test",        when: "Treating this as a pattern",                  template: "How many times has [feared outcome] actually happened vs not?" },
-  { type: "Double standard",        when: "Harsher on self than on others",              template: "If a friend told me they did this, what would I say?" },
-  { type: "Decatastrophizing",      when: "Worst-case thinking",                         template: "If the worst case happened, what would I realistically do?" },
-  { type: "Cost-benefit",           when: "Should statements / rigid rules",             template: "What does holding this belief cost me vs give me?" },
-  { type: "Zoom out (pie chart)",   when: "Tunnel vision / mental filter / sole-blame",  template: "If I drew a pie chart of every factor that contributed, how big would my slice actually be? What else fills the circle?" },
+  { type: "Evidence examination",   when: "A feeling or assumption treated as fact",            template: "Looking at both lists, what do the facts actually show? Which parts are facts, and which are my interpretation?" },
+  { type: "Alternative explanation", when: "Locked into one reading of what someone did",       template: "Is there another way to explain why [person] did that?" },
+  { type: "Probability testing",    when: "Predicting the bad outcome as certain",              template: "Realistically, how likely is it that this actually happens, from 0 to 100%? What makes me pick that number?" },
+  // Not "Historical test": in the literature that names a life review of a
+  // core belief (Young; Padesky 1994), not a count of past occurrences.
+  { type: "Track record",           when: "One event treated as a pattern",                     template: "Looking back, how many times has this actually happened, and how many times hasn't it?" },
+  { type: "Double standard",        when: "Harder on yourself than on a friend, or waving off your own wins", template: "If a friend were in my spot, would I say this to them? What would I say instead?" },
+  { type: "Decatastrophizing",      when: "Worst-case thinking",                                template: "What's the worst that could happen, the best, and the most likely? If the worst did happen, how would I cope?" },
+  { type: "Cost-benefit",           when: "Should statements / rigid rules",                    template: "What does holding this belief cost me vs give me?" },
+  { type: "Shades of gray",         when: "All-or-nothing words: always, never, total, ruined", template: "Is this really all or nothing? On a scale from 0 to 100, where does it actually sit? What would a true 0 and a true 100 look like?" },
+  { type: "Full picture",           when: "One detail blotting out everything else",            template: "What am I leaving out? If I zoomed out to the whole day or week, what else happened that I'm not counting?" },
+  // Salkovskis: list every factor first and fill in your own slice last, so
+  // your share is whatever is honestly left, not the first thing you grab.
+  { type: "Responsibility pie",     when: "Taking all the blame, or loading it on one person",  template: "List everyone and everything that played a part, with me last. Give each a slice of the pie and fill in my slice only at the end. How big is it really?" },
 ];
 
 const REFRAME_METHODS = [
   { method: "Coping/encouraging thought",  when: "Self-criticism about ability", does: "A kinder, more accurate line you can actually use as encouragement",
     template: "I haven't figured this out yet, and that's not the same as never being able to. One rough attempt isn't the verdict." },
-  { method: "Realism",                     when: "Catastrophizing",              does: "Replaces extreme prediction with most probable outcome",
+  { method: "Realism",                     when: "Catastrophizing / fortune telling", does: "Replaces extreme prediction with most probable outcome",
     template: "The worst case isn't the most likely case. The realistic outcome is more like [X], and I'd handle that the way I've handled similar things." },
-  { method: "Continuum thinking",          when: "All-or-nothing language",      does: "Places this on a 0–100 line instead of a binary; finds where it really sits",
+  { method: "Continuum thinking",          when: "All-or-nothing or always/never language", does: "Places this on a 0–100 line instead of a binary; finds where it really sits",
     template: "On a line from 0 to 100, this isn't at either end — it's around [X]. Naming where it actually sits is more honest than the absolute." },
-  { method: "Compassionate reattribution", when: "Personalized blame",           does: "Redistributes responsibility fairly",
-    template: "This wasn't all on me. A fair split of responsibility looks more like [X]. I'd never apply this label to a friend in the same spot." },
-  { method: "Behavioral experiment",       when: "Untested assumptions",         does: "Reframes as hypothesis to test",
-    template: "I'm treating this prediction as fact, but I haven't tested it. The honest version: 'I expect [X] — let me see if that's actually what happens.'" },
+  { method: "Compassionate reattribution", when: "Responsibility piled on one person, you or them", does: "Redistributes responsibility fairly",
+    template: "This wasn't all on one person. A fair split of responsibility looks more like [X]. I can own my share without carrying all of it, or handing all of it away." },
+  { method: "Behavioral experiment",       when: "Untested predictions about people or outcomes", does: "Turns the prediction into a small test you can actually run",
+    template: "My prediction is [X]. To test it, I'll [do Y] by [when], and write down what actually happens." },
+  { method: "Balanced thought",            when: "One detail or one feeling crowding out the rest", does: "Holds the hard part and what you were leaving out in the same sentence",
+    template: "[The hard part] is real, and so is [what I was leaving out]. I don't have to pick one; both belong in the picture." },
+  { method: "Flexible preference",         when: "Shoulds, musts, and it's-not-fair rules", does: "Turns a rigid rule into a preference you can miss without it being a verdict",
+    template: "I'd prefer [X], and it's disappointing when that doesn't happen. It's a preference, not a rule that I or anyone else has to obey." },
+  { method: "Behavior, not identity",      when: "A label pinned on you from one action", does: "Describes what happened instead of passing a verdict on who you are",
+    template: "I [did X], and I'm not happy about it. That's something I did, not who I am." },
 ];
 
 // Worked before→after reframe examples, keyed by distortion name (must match
@@ -140,13 +206,13 @@ const REFRAME_EXAMPLES = {
   ],
   "Disqualifying the Positive": [
     { before: "They thanked me, but they were just being polite.",
-      after:  "I'm explaining away the thanks to avoid feeling good. It's at least as likely they meant it — I can let it count." },
+      after:  "I'm explaining away the thanks. They may well have meant it, and I can let it count." },
     { before: "I did well, but that one was easy, so it doesn't count.",
       after:  "I keep moving the goalposts so nothing I do qualifies. Done is done — this one counts." },
   ],
   "Mind Reading": [
     { before: "She didn't text back, so she's annoyed with me.",
-      after:  "I don't actually know why she hasn't replied. Busy, tired, or distracted are all just as likely as annoyed." },
+      after:  "I don't actually know why she hasn't replied. Busy, tired, or distracted are all possible too." },
     { before: "Everyone in that meeting thought my idea was stupid.",
       after:  "I can't read the room's mind. Nobody said that — I'm filling the silence with the worst guess." },
   ],
@@ -160,13 +226,13 @@ const REFRAME_EXAMPLES = {
     { before: "If I fail this exam, my whole career is over.",
       after:  "Failing one exam would be a setback, not the end. I could retake it or adjust — I've handled setbacks before." },
     { before: "This headache means something is seriously wrong with me.",
-      after:  "The most likely explanation is the ordinary one. If it persists I can check it — jumping to disaster doesn't help me decide." },
+      after:  "The most likely explanation is the ordinary one. If it's sudden, severe, or unlike my usual headaches, I get it checked today; otherwise jumping to disaster doesn't help me decide." },
   ],
-  "Minimization": [
-    { before: "Finishing that project was no big deal, anyone could have done it.",
-      after:  "It took real effort and follow-through to finish. Shrinking it doesn't make it less true that I did something hard." },
-    { before: "Sure I helped, but it barely mattered.",
-      after:  "I'm downplaying my part to stay safe from feeling proud. It mattered to the person I helped — that's enough." },
+  "Magnification and Minimization": [
+    { before: "I've stuck with it for a month, but that's tiny next to how far I have to go.",
+      after:  "A month is real progress. It can be small and still count." },
+    { before: "I stumbled over one line in the toast. Everyone will remember that.",
+      after:  "I'm blowing up the one stumble and shrinking the rest. Most people will remember that I gave a warm toast." },
   ],
   "Emotional Reasoning": [
     { before: "I feel like a failure, so I must be one.",
@@ -178,7 +244,7 @@ const REFRAME_EXAMPLES = {
     { before: "I should always have it together. I shouldn't be struggling.",
       after:  "There's no rule that I must always cope perfectly. Struggling sometimes is human, not a failure of duty." },
     { before: "I have to say yes or I'm letting everyone down.",
-      after:  "\"Have to\" is a rule I made up. I can choose what I take on, and a kind no is allowed." },
+      after:  "\"Have to\" is a rule I picked up, not a law. I can choose what I take on, and a kind no is allowed." },
   ],
   "Labeling": [
     { before: "I snapped at my partner. I'm a terrible person.",
@@ -194,13 +260,13 @@ const REFRAME_EXAMPLES = {
   ],
   "Blame": [
     { before: "This is entirely their fault. I had nothing to do with it.",
-      after:  "Responsibility is usually shared. Naming my own part — even a small one — gives me something I can actually act on." },
+      after:  "Their choices mattered a lot here. If I honestly had a part, naming it gives me something to act on. If I didn't, I can focus on what I need next." },
     { before: "If they hadn't done that, I wouldn't be stuck like this.",
       after:  "Their choice played a role, and so do mine from here. Where I focus is on the next move that's actually in my hands." },
   ],
   "Fallacy of Fairness": [
     { before: "It's not fair that I work this hard and get passed over.",
-      after:  "Fair isn't guaranteed, and measuring everything against it keeps me stuck. The useful question is what I want to do next, fair or not." },
+      after:  "It may really be unfair, and I can say so. Stewing on it keeps me stuck, so what's my next move: ask why, push back, or look elsewhere?" },
     { before: "I do more than they do, so it's unfair I'm not appreciated.",
       after:  "The scorecard hurts more than it helps. I can ask directly for what I need instead of waiting for fairness to arrive." },
   ],
@@ -273,9 +339,10 @@ function reframeExamplesHTML(d) {
   `;
 }
 
-// PR 6: Challenge now comes BEFORE Distortion — Padesky's order (evidence-
-// first, label-after) prevents the "you already told me my thought is
-// distorted" priming effect that comes from labeling before examining.
+// Distortion (3) comes before Challenge (4), as in Burns's triple-column
+// technique and Daily Mood Log and J. Beck's thought record (2020), where
+// naming the distortion (optional there, and here) comes before composing
+// the response. Mind Over Mood's 7-column record has no labeling step.
 const STEP_TITLES = ["Trigger", "Initial Reaction", "Distortion", "Challenge", "Reframe", "Pivot", "Review"];
 const STEP_PROMPTS = [
   "What's setting this off?",
@@ -304,7 +371,7 @@ const TRIGGER_CAPTURE_CHIPS = [
   { label: "The body",       seed: "Where this sits in my body: " },
 ];
 const PIVOT_STARTER_CHIPS = [
-  { label: "Reach out",    seed: "Text a friend: one honest sentence to check in or apologize." },
+  { label: "Reach out",    seed: "Text a friend one honest sentence to check in." },
   { label: "Move the body", seed: "Go for a 15-minute walk outside — no phone." },
   { label: "Tiny task",    seed: "Do one small thing I've been avoiding, for under 10 minutes." },
 ];
@@ -728,7 +795,7 @@ const REMINDER_MS = {
 // Fields added after v1 shipped. Existing JSON exports won't carry them, so
 // we normalize on read to a stable shape. null (not 0) means "not rated" —
 // that distinction matters for the before/after delta display.
-// Schema v2 (Mind Over Mood–aligned): moods and thoughts are arrays so a
+// Schema v2 (built on the Mind Over Mood thought record): moods and thoughts are arrays so a
 // single triggering moment can carry the multiple feelings and competing
 // automatic thoughts canonical thought-records capture. One thought is
 // marked `isHot` — that's the one Steps 4 and 5 challenge and reframe.
@@ -736,7 +803,8 @@ const REMINDER_MS = {
 // converted on read; the v1 scalar fields are dropped from the output so
 // we never have stale duplicates to keep in sync.
 // Valid entry kinds. The default — for backward-read and new captures —
-// is the full Mind Over Mood thought record. Each non-default kind has
+// is the thought record (Mind Over Mood's columns plus a distortion check,
+// a Socratic question and a follow-up action). Each non-default kind has
 // its own narrower field set, captured by its own UI flow. Fields not
 // relevant to a kind stay at their default ("" / 0 / null / false) so
 // renderers can simply check kind first and pick the relevant fields.
@@ -749,10 +817,20 @@ const WORRY_RESOLUTIONS = ["dissolved", "escalated", "postponed"];
 // rename keep their old labels in localStorage; remap on read so dropdowns
 // can re-select them and reference views show the new wording. Empty / new
 // values pass through unchanged.
-const DISTORTION_RENAME = { "Mental Filtering": "Mental Filter" };
+const DISTORTION_RENAME = {
+  "Mental Filtering": "Mental Filter",
+  // Burns's item is two-way (blow up the bad, shrink the good); "Minimization"
+  // alone was half of it.
+  "Minimization": "Magnification and Minimization",
+};
 const SOCRATIC_RENAME = {
-  "Historical testing": "Historical test",
-  "Perspective broadening": "Zoom out (pie chart)",
+  "Historical testing": "Track record",
+  "Historical test": "Track record",
+  // Perspective broadening asked "what would this look like zoomed out to
+  // the full week?", which is what Full picture asks now. The pie question
+  // that later took over its name is Responsibility pie.
+  "Perspective broadening": "Full picture",
+  "Zoom out (pie chart)": "Responsibility pie",
 };
 const REFRAME_RENAME = {
   "Growth-Oriented": "Coping/encouraging thought",
@@ -806,18 +884,32 @@ function normalizeEntry(e) {
     evidenceAgainst: e.evidenceAgainst || "",
     socraticType: SOCRATIC_RENAME[e.socraticType] || e.socraticType || "",
     socraticQuestion: e.socraticQuestion || "",
+    // What the user found when they asked it. A question with no answer is
+    // a prompt, not Socratic questioning (Padesky: questions, listening,
+    // summary, then a synthesizing question).
+    socraticAnswer: e.socraticAnswer || "",
 
     reframeMethod: REFRAME_RENAME[e.reframeMethod] || e.reframeMethod || "",
     newThought: e.newThought || "",
-    // Padesky re-rates belief in both the original hot thought (lives on the
-    // thought row as beliefAfter) and the NEW balanced thought. We add the
-    // latter as a separate scalar so it survives multi-thought edits.
+    // Belief is re-rated in both the original hot thought (Beck's Outcome
+    // column; lives on the thought row as beliefAfter) and the NEW balanced
+    // thought (Mind Over Mood's alternative-thought rating). The latter is a
+    // separate scalar so it survives multi-thought edits.
     newThoughtBelief: typeof e.newThoughtBelief === "number" ? e.newThoughtBelief : null,
+    // Feelings that showed up after the reframe (relief, calm, hope).
+    // Mind Over Mood's last column re-rates the original moods "as well as
+    // any new moods". Kept as words, not rated rows: every mood statistic
+    // treats a falling number as progress, which a rising "relief" is not.
+    newFeelings: e.newFeelings || "",
 
     pivot: e.pivot || "",
     pivotDone: !!e.pivotDone,
     pivotDoneAt: e.pivotDoneAt || "",
     pivotReflection: e.pivotReflection || "",
+    // Written before acting, so the outcome has something to be checked
+    // against: the prediction that turns the pivot into a small behavioral
+    // experiment (Mind Over Mood, ch. 11).
+    pivotPrediction: e.pivotPrediction || "",
     outcomeRecorded: !!e.outcomeRecorded,
 
     // Free-form (kind: "freeform") fields — title is optional, body is the
@@ -825,9 +917,10 @@ function normalizeEntry(e) {
     body: e.body || "",
 
     // Behavioral-activation (kind: "activity") fields. Pleasure + Mastery
-    // are rated 0–10 — the canonical Lejuez scale. predicted* are set when
+    // are rated 0–10, as in Beck et al.'s (1979) activity scheduling and the
+    // Beck Institute worksheets ("predict, then measure"). predicted* are set when
     // planning; actual* + completedAt are set on log-completion.
-    category: e.category || "",          // connection|movement|creation|self-care|chore|rest|other
+    category: e.category || "",          // connection|movement|creation|work|meaning|self-care|chore|rest|other
     plannedFor: e.plannedFor || "",      // ISO datetime
     predictedP: typeof e.predictedP === "number" ? e.predictedP : null,
     predictedM: typeof e.predictedM === "number" ? e.predictedM : null,
@@ -849,6 +942,9 @@ function normalizeEntry(e) {
     // peer must not reach the markup.
     resolution: WORRY_RESOLUTIONS.includes(e.resolution) ? e.resolution : null,
     resolvedAt: e.resolvedAt || "",
+    // How many times this worry has been pushed to another window. Past two,
+    // postponing has stopped being postponement and started being avoidance.
+    postponeCount: Number.isInteger(e.postponeCount) && e.postponeCount > 0 ? Math.min(e.postponeCount, 999) : 0,
     linkedEntryId: e.linkedEntryId || "",
 
     isQuick: !!e.isQuick,
@@ -898,11 +994,12 @@ function normalizeEntry(e) {
   return out;
 }
 
+const MOOD_FAMILY_RENAME = { Jealousy: "Jealousy & envy" };
 function normalizeMood(m) {
   m = m || {};
   return {
     id: safeId(m.id),
-    family: m.family || "",
+    family: MOOD_FAMILY_RENAME[m.family] || m.family || "",
     variant: m.variant || "",
     intensity: typeof m.intensity === "number" ? m.intensity : 40,
     estimated: !!m.estimated,
@@ -955,7 +1052,7 @@ function templatePlaceholderContext(d) {
   let person = "";
   const mTrig = trig.match(/^([\w'-]+(?:\s+[\w'-]+){0,2})\s+(?:said|says|told|thought|thinks)\b/i);
   if (mTrig) person = (mTrig[1] || "").trim();
-  if (!person) person = "they/them";
+  if (!person) person = "they";
 
   const snippet = trigger || thought;
   const worstCase = thought;
@@ -985,6 +1082,13 @@ function applyTemplate(template, d) {
 /**
  * Seeds Socratic/reframe from DISTORTION_DEFAULTS[primary].
  * Empty-only so user text is never overwritten. Returns true if any field changed.
+ *
+ * The reframe method is pre-selected but its template is never written into
+ * newThought: it shows as the textarea's placeholder instead. Writing it in
+ * saved a stock sentence (with a literal "[X]" in it) as the user's balanced
+ * thought whenever they tapped through, which is the "unsupported thought
+ * replacement" the Reference tab tells people to avoid. The question type's
+ * template does pre-fill, because a question commits the user to nothing.
  */
 function seedDraftFromPrimaryDistortion(d) {
   const primary = (d.distortions || [])[0];
@@ -1004,13 +1108,6 @@ function seedDraftFromPrimaryDistortion(d) {
     const t = SOCRATIC_TYPES.find(s => s.type === defaults.socratic);
     if (t && t.template) {
       d.socraticQuestion = applyTemplate(t.template, d);
-      changed = true;
-    }
-  }
-  if (!(d.newThought || "").trim()) {
-    const r = REFRAME_METHODS.find(m => m.method === defaults.reframe);
-    if (r && r.template) {
-      d.newThought = applyTemplate(r.template, d);
       changed = true;
     }
   }
@@ -1159,6 +1256,8 @@ const ICONS = {
   creation:   '<path d="M11 20.5h9"/><path d="M16.4 4a1.9 1.9 0 0 1 2.7 2.7L8.4 17.4 4 18.5l1.1-4.4z"/>',
   selfcare:   '<path d="M12 20.3 4.8 13a4.4 4.4 0 0 1 6.2-6.2l1 1 1-1A4.4 4.4 0 0 1 20.2 13z"/>',
   chore:      '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M8 12l2.8 2.8L16.4 9"/>',
+  work:       '<rect x="3.5" y="7.5" width="17" height="12" rx="2.5"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5"/><path d="M3.5 12.5h17"/>',
+  meaning:    '<circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
   rest:       '<path d="M20.4 13.4A8 8 0 1 1 10.6 3.6a6.3 6.3 0 0 0 9.8 9.8z"/>',
   other:      '<circle cx="5.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
   // Entry / state marks
@@ -1191,7 +1290,7 @@ function clampDate(iso) {
   const now = Date.now();
   return t > now + 60000 ? new Date(now).toISOString() : iso;
 }
-const band = n => INTENSITY_BANDS.find(b => n <= b.max) || INTENSITY_BANDS[4];
+const band = n => INTENSITY_BANDS.find(b => n <= b.max) || INTENSITY_BANDS[INTENSITY_BANDS.length - 1];
 
 // Format a Date as a LOCAL "YYYY-MM-DDTHH:MM" string — the value shape
 // <input type="datetime-local"> and `new Date(str)` both interpret as local
@@ -1215,7 +1314,7 @@ function toDatetimeLocalInputValue(v) {
 }
 
 function emptyEntry() {
-  // Default: full Mind Over Mood thought record (kind: "thought-record").
+  // Default: the thought record (kind: "thought-record").
   // Other kinds use the dedicated factories below.
   return normalizeEntry({
     kind: "thought-record",
@@ -1292,7 +1391,7 @@ function dateGroupLabel(iso) {
 
 function entryToMd(e, idx) {
   // Dispatch by kind — each kind has a different shape so it gets its
-  // own render. Thought-record stays the canonical Mind Over Mood layout.
+  // own render. Thought-record keeps the full step layout.
   if (e.kind === "freeform") return freeformToMd(e, idx);
   if (e.kind === "activity") return activityToMd(e, idx);
   if (e.kind === "worry")    return worryToMd(e, idx);
@@ -1400,7 +1499,7 @@ function thoughtRecordToMd(e, idx) {
   }
 
   if (e.bodyCheck) {
-    const infTag = e.bodyInferred ? " *(inferred from speech)*" : "";
+    const infTag = e.bodyInferred ? " *(pieced together later)*" : "";
     L.push("- **Body Check:** " + e.bodyCheck + infTag, "");
   }
 
@@ -1419,13 +1518,14 @@ function thoughtRecordToMd(e, idx) {
     if (e.distortionNote) L.push(e.distortionNote, "");
   }
 
-  const hasChallenge = e.evidenceFor || e.evidenceAgainst || e.socraticQuestion;
+  const hasChallenge = e.evidenceFor || e.evidenceAgainst || e.socraticQuestion || e.socraticAnswer;
   if (!e.thoughtsAccurate || hasChallenge) {
     L.push("**4. Challenge (The Trial)**", "");
     L.push("- **Evidence FOR:** " + (e.evidenceFor || "—"), "");
     L.push("- **Evidence AGAINST:** " + (e.evidenceAgainst || "—"), "");
     if (e.socraticQuestion) L.push('- **Socratic Question:** "' + e.socraticQuestion + '"', "");
-    else L.push("");
+    if (e.socraticAnswer) L.push("- **Answer:** " + e.socraticAnswer, "");
+    if (!e.socraticQuestion && !e.socraticAnswer) L.push("");
   }
 
   const hasReframe = e.reframeMethod || e.newThought;
@@ -1442,8 +1542,10 @@ function thoughtRecordToMd(e, idx) {
   if (typeof e.newThoughtBelief === "number") {
     L.push("- **Belief in new thought:** " + e.newThoughtBelief + "%", "");
   }
+  if (e.newFeelings) L.push("- **New feelings:** " + e.newFeelings, "");
 
   L.push("**6. The Pivot**", "", e.pivot || "—", "");
+  if (e.pivotPrediction) L.push("- **Expected:** " + e.pivotPrediction, "");
   if (e.pivotDone) {
     L.push("", "*Pivot completed" + (e.pivotDoneAt ? " — " + fmtDateTime(e.pivotDoneAt) : "") + ".*", "");
     if (e.pivotReflection) {
@@ -1704,6 +1806,100 @@ function smoothScrollIntoView(node, opts) {
   else node.scrollIntoView(opts);
 }
 
+// Screen chrome that page content slides underneath. The browser's own
+// focus scrolling (and scrollIntoView) knows nothing about any of it, so a
+// field it "reveals" can land right behind the capture step's sticky
+// Back / Continue bar or the bottom nav, which together cover ~150px just
+// above an Android keyboard. revealInView() measures around them instead.
+const _BOTTOM_CHROME_SEL = ".bottom-nav, .capture-footer";
+const _TOP_CHROME_SEL = ".sync-incoming-bar, .sw-update-banner";
+
+function _nearestScrollBox(el) {
+  for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight + 1) return p;
+  }
+  return null;
+}
+
+// The slice of the screen where `el` can actually be seen, in client coords:
+// the visual viewport (which already excludes an iOS keyboard), minus chrome
+// pinned over either edge, clipped to the scrolling dialog `box` if any.
+function _visibleBandFor(el, box) {
+  const vv = window.visualViewport;
+  let top = (vv && vv.offsetTop) || 0;
+  let bottom = top + ((vv && vv.height) || window.innerHeight);
+  const rects = sel => Array.from(document.querySelectorAll(sel))
+    .filter(c => !c.contains(el))
+    .map(c => c.getBoundingClientRect())
+    .filter(r => r.height > 0);
+  // A dialog or the lock screen sits above the page's own chrome.
+  if (!el.closest(".modal-overlay, .lock-screen")) {
+    // Walk up from the bottom edge. Chrome only covers content while it is
+    // anchored there (or stacked on chrome that is): the capture footer back
+    // in normal flow at the end of a step is just part of the page, and the
+    // nav slid away under .kb-open, or a footer behind an iOS keyboard,
+    // starts below the band and covers nothing.
+    for (const r of rects(_BOTTOM_CHROME_SEL).sort((a, b) => b.bottom - a.bottom)) {
+      if (r.top >= bottom) continue;
+      if (r.bottom < bottom - 4) break;
+      bottom = r.top;
+    }
+  }
+  for (const r of rects(_TOP_CHROME_SEL)) {
+    if (r.top <= top + 16 && r.bottom > top) top = Math.max(top, r.bottom);
+  }
+  if (box) {
+    const b = box.getBoundingClientRect();
+    top = Math.max(top, b.top);
+    bottom = Math.min(bottom, b.bottom);
+  }
+  return { top, bottom };
+}
+
+// Scroll just far enough that `el` sits fully inside the visible band, or,
+// with block "center", centre it there (a field about to be typed into).
+// Anything taller than the band gets its top edge shown, since that's where
+// reading starts. Scrolls the enclosing dialog first and the page with
+// whatever is left over. No-op when `el` is already fully in view.
+function revealInView(el, { block = "nearest" } = {}) {
+  if (!el || !el.isConnected) return false;
+  const r = el.getBoundingClientRect();
+  if (!r.height && !r.width) return false;
+  const box = _nearestScrollBox(el);
+  const { top, bottom } = _visibleBandFor(el, box);
+  const pad = 12;
+  const room = bottom - top - 2 * pad;
+  if (room <= 0) return false;
+  if (r.top >= top + pad && r.bottom <= bottom - pad) return false;
+  let delta;
+  if (r.height > room)              delta = r.top - (top + pad);
+  else if (block === "center")      delta = (r.top + r.bottom) / 2 - (top + bottom) / 2;
+  else if (r.bottom > bottom - pad) delta = r.bottom - (bottom - pad);
+  else                              delta = r.top - (top + pad);
+  const behavior = _prefersReducedMotion() ? "auto" : "smooth";
+  if (box) {
+    const target = Math.max(0, Math.min(box.scrollHeight - box.clientHeight, box.scrollTop + delta));
+    delta -= target - box.scrollTop;
+    box.scrollTo({ top: target, behavior });
+  }
+  if (Math.abs(delta) >= 1) window.scrollBy({ top: delta, behavior });
+  return true;
+}
+
+// Focus a field because the user asked for it indirectly (tapped "Add
+// another thought", or a starter chip that writes into the box). Keyboard
+// avoidance only moves the page for focus the user caused, and this marks
+// the focus as theirs so the field is brought clear of the keyboard and the
+// sticky footer like a direct tap would be.
+let _focusRequestedFor = null;
+function focusForUser(el) {
+  if (!el || typeof el.focus !== "function") return;
+  _focusRequestedFor = el;
+  try { el.focus({ preventScroll: true }); } catch (_) { try { el.focus(); } catch (__) {} }
+  _focusRequestedFor = null;
+}
+
 function humanDuration(ms) {
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return "moments";
@@ -1739,6 +1935,9 @@ function hasDraftContent(d) {
       !!d.thoughtsAccurate ||
       String(d.socraticType || "").trim() ||
       String(d.socraticQuestion || "").trim() ||
+      String(d.socraticAnswer || "").trim() ||
+      String(d.newFeelings || "").trim() ||
+      String(d.pivotPrediction || "").trim() ||
       String(d.evidenceFor || "").trim() ||
       String(d.evidenceAgainst || "").trim() ||
       String(d.bodyCheck || "").trim() ||
@@ -2106,7 +2305,7 @@ function entryMatchesSearch(e, q) {
   const blob = [
     e.trigger, thoughtText, moodText, e.newThought, e.pivot,
     e.pivotReflection, e.distortionNote, e.evidenceFor, e.evidenceAgainst,
-    e.socraticQuestion, e.bodyCheck,
+    e.socraticQuestion, e.socraticAnswer, e.bodyCheck, e.newFeelings, e.pivotPrediction,
     e.body, e.worryText, e.activityNotes,
     (e.distortions || []).join(" ")
   ].join(" ").toLowerCase();
@@ -2393,6 +2592,15 @@ function shouldShowWorryWindow() {
 
 function renderWorryWindowBanner() {
   const parked = (state.entries || []).filter(e => e.kind === "worry" && !e.resolution);
+  // Postponement works by tying worry to one time of day (Borkovec et al.,
+  // 1983). A worry that fell due while the app was closed still surfaces,
+  // but outside the window the banner points at worry time instead of
+  // announcing it, so a 2am visit isn't an invitation to start.
+  const [wh, wm] = _parseHHMM((state.settings || {}).worryWindowTime);
+  const winStart = new Date(); winStart.setHours(wh, wm, 0, 0);
+  const inWindow = Date.now() >= winStart.getTime() && Date.now() <= winStart.getTime() + 20 * 60 * 1000;
+  const when = String(wh).padStart(2, "0") + ":" + String(wm).padStart(2, "0");
+  const count = parked.length + " parked worr" + (parked.length === 1 ? "y" : "ies");
   return `
     <div class="nudge-banner worry-banner" role="status">
       <div class="nudge-banner-info">
@@ -2400,8 +2608,8 @@ function renderWorryWindowBanner() {
           <circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/>
         </svg>
         <div class="nudge-banner-text">
-          <strong>It's worry time.</strong>
-          <span class="preview">${parked.length} parked worr${parked.length === 1 ? "y" : "ies"} — ready to look at?</span>
+          <strong>${inWindow ? "It's worry time." : "Worry time is at " + when + "."}</strong>
+          <span class="preview">${inWindow ? count + ". Ready to look?" : count + " waiting for it. You can leave them until then."}</span>
         </div>
       </div>
       <div class="nudge-banner-actions">
@@ -2715,7 +2923,7 @@ function renderEntryDetails(entry) {
         ` : ""}
         ${entry.bodyCheck ? `
           <div class="detail-label" style="font-size: 13px; margin: 14px 0 6px; opacity: 0.85;">Body check</div>
-          <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(inferred from speech)</span>` : ""}</p>
+          <p class="detail-text">${esc(entry.bodyCheck)}${entry.bodyInferred ? ` <span class="muted italic">(pieced together later)</span>` : ""}</p>
         ` : ""}
       </div>
       ${entry.thoughtsAccurate ? `
@@ -2742,13 +2950,14 @@ function renderEntryDetails(entry) {
             <p class="detail-text">${esc(entry.evidenceAgainst) || "—"}</p>
           </div>
         </div>
-        ${entry.socraticQuestion ? `
+        ${(entry.socraticQuestion || entry.socraticAnswer) ? `
           <div class="socratic-quote">
             <div class="detail-label" style="color: var(--copper-deep); margin-bottom: 2px;">
               Socratic${entry.socraticType ? " · " + esc(entry.socraticType) : ""}
               ${draftedSocraticMatchesBuiltInTemplate(entry) ? ` <span class="suggested-pill" title="Still matches the app starter — customize anytime">Starter text</span>` : ""}
             </div>
-            <p class="detail-text italic">"${esc(entry.socraticQuestion)}"</p>
+            ${entry.socraticQuestion ? `<p class="detail-text italic">"${esc(entry.socraticQuestion)}"</p>` : ""}
+            ${entry.socraticAnswer ? `<p class="detail-text" style="margin-top: 6px;">${esc(entry.socraticAnswer)}</p>` : ""}
           </div>
         ` : ""}
       </div>
@@ -2759,11 +2968,13 @@ function renderEntryDetails(entry) {
         </div>
         <p class="detail-text italic">${entry.newThought ? `"${esc(entry.newThought)}"` : "—"}</p>
         ${typeof entry.newThoughtBelief === "number" ? `<p class="detail-text" style="margin-top: 4px; color: var(--on-paper-mute);">Belief in this thought: <strong>${entry.newThoughtBelief}%</strong></p>` : ""}
+        ${entry.newFeelings ? `<p class="detail-text" style="margin-top: 4px; color: var(--on-paper-mute);">New feelings: ${esc(entry.newFeelings)}</p>` : ""}
       </div>
       <div class="detail-row entry-pivot">
         <div class="entry-pivot-content">
           <div class="detail-label" style="color: var(--copper);">6 · The Pivot</div>
           <p class="detail-text entry-pivot-text ${entry.pivotDone ? "done" : ""}">${esc(entry.pivot) || "—"}</p>
+          ${entry.pivotPrediction ? `<p class="detail-text" style="margin-top: 4px; color: var(--on-paper-mute);">Expected: ${esc(entry.pivotPrediction)}</p>` : ""}
         </div>
         <label class="pivot-toggle-large">
           <input type="checkbox" data-action="toggle-pivot" data-id="${entry.id}" ${entry.pivotDone ? "checked" : ""}>
@@ -2776,7 +2987,7 @@ function renderEntryDetails(entry) {
             <span>What happened?</span>
             ${entry.pivotDoneAt ? `<span class="pivot-followup-when">marked done ${esc(fmtDateTime(entry.pivotDoneAt))}</span>` : ""}
           </div>
-          <textarea class="textarea pivot-reflection-input" data-action="edit-reflection" data-id="${entry.id}" rows="3" placeholder="A line on how it went. The dread vs. the actual outcome is the part to write down — that's what teaches you the next time.">${esc(entry.pivotReflection)}</textarea>
+          <textarea class="textarea pivot-reflection-input" data-action="edit-reflection" data-id="${entry.id}" rows="3" placeholder="${entry.pivotPrediction ? "How did it compare with what you expected? That gap is what teaches you next time." : "A line on how it went. The dread vs. the actual outcome is the part to write down; that's what teaches you next time."}">${esc(entry.pivotReflection)}</textarea>
           ${!entry.outcomeRecorded ? `
             <button class="btn btn-primary outcome-cta" data-action="open-outcome" data-id="${entry.id}">
               Step 8 · Re-rate moods after acting
@@ -2909,9 +3120,12 @@ function renderWorryDetails(entry) {
           </div>
           <div class="worry-actions">
             <button class="action-btn primary" data-action="worry-dissolve" data-id="${entry.id}">Dissolved on its own</button>
-            <button class="action-btn" data-action="worry-escalate" data-id="${entry.id}">Open as thought record</button>
+            <button class="action-btn" data-action="worry-escalate" data-id="${entry.id}">Work it through or make a plan</button>
             <button class="action-btn ghost" data-action="worry-postpone" data-id="${entry.id}">Postpone again</button>
           </div>
+          ${entry.postponeCount >= 2 ? `
+            <p class="field-help-paper" style="margin-top: 8px;">This one has been postponed ${entry.postponeCount} times. Worry time is for dealing with it, so working it through, or making a plan (the thought record ends with one concrete step), will likely help more than another postponement.</p>
+          ` : ""}
         </div>
       ` : ""}
     </div>
@@ -3056,11 +3270,11 @@ function renderFreeformCapture(d) {
                     <div class="field-row-split">
                       <select class="select" data-action="edit-mood-family" data-id="${esc(m.id)}">
                         <option value="">— family —</option>
-                        ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${f}" ${m.family === f ? "selected" : ""}>${f}</option>`).join("")}
+                        ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${esc(f)}" ${m.family === f ? "selected" : ""}>${esc(f)}</option>`).join("")}
                       </select>
                       <select class="select" data-action="edit-mood-variant" data-id="${esc(m.id)}" ${!m.family ? "disabled" : ""}>
                         <option value="">— variant —</option>
-                        ${(m.family ? (EMOTION_FAMILIES[m.family] || []) : []).map(v => `<option value="${v}" ${m.variant === v ? "selected" : ""}>${v}</option>`).join("")}
+                        ${_variantOptions(m)}
                       </select>
                     </div>
                     <button type="button" class="row-remove" data-action="remove-mood" data-id="${esc(m.id)}" aria-label="Remove this mood">${svgIcon("close")}</button>
@@ -3101,7 +3315,7 @@ function renderActivityCapture(d) {
       <div class="capture-screen">
         <div class="step-header">
           <h2 class="step-prompt display">Plan one thing</h2>
-          <p class="step-hint">Behavioral activation in one move: pick something concrete, predict how good it'll feel and how competent you'll feel doing it, then come back after to compare. The gap between predicted and actual is most of the lesson.</p>
+          <p class="step-hint">Behavioral activation in one move: pick something concrete, predict how much you'll enjoy it and how much of a sense of accomplishment it'll give you, then come back after to compare. Low mood often underestimates how things will go, but doing the activity is what matters most.</p>
         </div>
 
         <div class="field-group">
@@ -3145,7 +3359,7 @@ function renderActivityCapture(d) {
           <div class="belief-control">
             <div class="belief-head">
               <span class="belief-num display"><span data-slider-display="predM">${d.predictedM ?? 5}</span><span class="belief-num-suffix">/10</span></span>
-              <span class="belief-hint">How competent / accomplished do you predict you'll feel?</span>
+              <span class="belief-hint">How much of a sense of accomplishment do you expect, given how you feel today? On a hard day, just getting it done can score high.</span>
             </div>
             <input type="range" min="0" max="10" step="1" value="${d.predictedM ?? 5}" data-field="predictedM" class="intensity-slider" aria-label="Predicted mastery, 0 to 10">
             <div class="intensity-bands">
@@ -3175,7 +3389,7 @@ function renderWorryCapture(d) {
       <div class="capture-screen">
         <div class="step-header">
           <h2 class="step-prompt display">Park it</h2>
-          <p class="step-hint">Worry postponement: write it down, set it aside, look at it later at your worry-window time. Most worries dissolve before you get back to them — that's the lesson.</p>
+          <p class="step-hint">Worry postponement: write it down, set it aside, and come back to it at worry time. Many worries feel smaller by then, and either way you practise showing that worry can wait. If it's about a symptom that's new, severe or not going away, get it checked: postpone the worry, not the doctor.</p>
         </div>
 
         <div class="field-group">
@@ -3206,7 +3420,7 @@ function renderWorryCapture(d) {
         <div class="worry-window-note">
           <span class="worry-window-eyebrow">Next worry window</span>
           <span class="worry-window-time">${esc(fmtDateTime(nextWindow))}</span>
-          <p class="worry-window-help">You can change the worry-window time in Settings → Reminders.</p>
+          <p class="worry-window-help">You can change the worry-window time in Settings → Worry window.</p>
         </div>
       </div>
 
@@ -3235,8 +3449,13 @@ const ACTIVITY_CATEGORIES = [
   { value: "connection", label: "Connection", icon: "connection" },
   { value: "movement",   label: "Movement",   icon: "movement" },
   { value: "creation",   label: "Creation",   icon: "creation" },
+  // Behavioral activation is organised around life areas and values
+  // (Martell et al.; Lejuez et al.'s BATD-R), and work or study and
+  // meaning (helping, faith, learning, values) had nowhere to go.
+  { value: "work",       label: "Work or study", icon: "work" },
+  { value: "meaning",    label: "Meaning",    icon: "meaning" },
   { value: "self-care",  label: "Self-care",  icon: "selfcare" },
-  { value: "chore",      label: "Chore",      icon: "chore" },
+  { value: "chore",      label: "Responsibilities", icon: "chore" },
   { value: "rest",       label: "Rest",       icon: "rest" },
   { value: "other",      label: "Other",      icon: "other" },
 ];
@@ -3303,7 +3522,7 @@ function renderCaptureStep(step, d) {
         <div class="step2-section-head">
           <span class="step2-eyebrow">A · Thoughts</span>
           <h3 class="step2-title display">What thoughts came up?</h3>
-          <p class="step2-sub">List every automatic thought, not just one. Mark the one that's hottest — the most distressing or believable — and we'll put that one on trial in Step 4.</p>
+          <p class="step2-sub">List every automatic thought, not just one. Mark the hot thought: the one with the most emotional charge, most tied to your strongest feeling. That's the one we'll put on trial in Step 4.</p>
         </div>
         <div class="row-list" data-list="thoughts">
           ${thoughts.map((t, idx) => `
@@ -3318,7 +3537,7 @@ function renderCaptureStep(step, d) {
               <textarea class="textarea row-textarea" data-action="edit-thought-text" data-id="${esc(t.id)}" rows="3"
                 placeholder="${idx === 0 ? "They're ignoring me — I must have said something wrong." : "Another thought that came up…"}">${esc(t.text)}</textarea>
               <div class="row-belief">
-                <span class="row-belief-label">Belief, right now</span>
+                <span class="row-belief-label">Belief at the time</span>
                 <span class="row-belief-num"><span data-slider-display="belief-${esc(t.id)}">${t.beliefBefore ?? 70}</span><span class="belief-num-suffix">%</span></span>
               </div>
               <input type="range" min="0" max="100" value="${t.beliefBefore ?? 70}" data-action="edit-thought-belief" data-id="${esc(t.id)}" class="intensity-slider" aria-label="Belief in this thought, 0 to 100 percent">
@@ -3344,11 +3563,11 @@ function renderCaptureStep(step, d) {
                 <div class="field-row-split">
                   <select class="select" data-action="edit-mood-family" data-id="${esc(m.id)}">
                     <option value="">— family —</option>
-                    ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${f}" ${m.family === f ? "selected" : ""}>${f}</option>`).join("")}
+                    ${Object.keys(EMOTION_FAMILIES).map(f => `<option value="${esc(f)}" ${m.family === f ? "selected" : ""}>${esc(f)}</option>`).join("")}
                   </select>
                   <select class="select" data-action="edit-mood-variant" data-id="${esc(m.id)}" ${!m.family ? "disabled" : ""}>
                     <option value="">— variant —</option>
-                    ${(m.family ? (EMOTION_FAMILIES[m.family] || []) : []).map(v => `<option value="${v}" ${m.variant === v ? "selected" : ""}>${v}</option>`).join("")}
+                    ${_variantOptions(m)}
                   </select>
                 </div>
                 ${moods.length > 1 ? `<button type="button" class="row-remove" data-action="remove-mood" data-id="${esc(m.id)}" aria-label="Remove this mood">${svgIcon("close")}</button>` : ""}
@@ -3380,13 +3599,13 @@ function renderCaptureStep(step, d) {
         <div class="step2-section-head">
           <span class="step2-eyebrow">C · Body</span>
           <h3 class="step2-title display">Where did it land in the body?</h3>
-          <p class="step2-sub">Optional. Names the somatic signal — useful as an early-warning sign for the next time this pattern shows up.</p>
+          <p class="step2-sub">Optional. Body sensations can help you name the feeling, and they make a useful early-warning sign for the next time this pattern shows up.</p>
         </div>
         <div class="field-group">
           <textarea class="textarea" data-field="bodyCheck" rows="2" placeholder="Face flushing, urge to flee…">${esc(d.bodyCheck)}</textarea>
           <label class="checkbox-flag">
             <input type="checkbox" data-field="bodyInferred" ${d.bodyInferred ? "checked" : ""}>
-            <span>Inferred from speech, not directly felt</span>
+            <span>Pieced together later, not felt at the time</span>
           </label>
           <details class="ref-inline">
             <summary><span class="chev">▸</span> Body region reference</summary>
@@ -3405,10 +3624,10 @@ function renderCaptureStep(step, d) {
       <div class="field-group">
         <button class="accurate-tile ${d.thoughtsAccurate ? "active" : ""}" data-action="toggle-accurate">
           <div class="accurate-tile-name">
-            <span>These thoughts feel accurate, not distorted</span>
+            <span>The facts seem to back these thoughts up</span>
             <span class="distortion-tile-check">${svgIcon("check")}</span>
           </div>
-          <div class="accurate-tile-desc">Not every painful thought is a distortion. Grief, valid anger, and accurate self-criticism are real — they don't need to be "fixed." Pick this and skip ahead; the rest of the entry still helps you sit with what's true.</div>
+          <div class="accurate-tile-desc">Not every painful thought is distorted. Grief, real anger, and an honest look at a real mistake don't need to be argued away. Distorted thoughts can feel true too, so still weigh the evidence next, and check whether what you're concluding goes further than the facts.</div>
         </button>
       </div>
 
@@ -3428,14 +3647,14 @@ function renderCaptureStep(step, d) {
               `;
             }).join("")}
           </div>
-          <p class="step-hint" style="margin-top: 10px;">Pick any that apply. Zero is also fine — the question is whether you notice these patterns, not whether you must find one.</p>
+          <p class="step-hint" style="margin-top: 10px;">Pick the one or two closest; the patterns overlap, so there's rarely a single right answer. Zero is also fine. The question is whether you notice these patterns, not whether you must find one.</p>
           ${(d.distortions && d.distortions[0] && DISTORTION_DEFAULTS[d.distortions[0]]) ? `
             <div class="auto-suggest-note" role="note">
               <strong>You picked ${esc(d.distortions[0])}.</strong> The next steps come pre-set with a question type and a reframe style that usually fit — adapt or swap if a different angle lands better for you.
             </div>
           ` : ""}
           <details class="ref-inline">
-            <summary><span class="chev">▸</span> Common pairs</summary>
+            <summary><span class="chev">▸</span> Patterns that often overlap</summary>
             <div class="ref-inline-body">
               <ul>${COMMON_PAIRS.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
             </div>
@@ -3486,10 +3705,22 @@ function renderCaptureStep(step, d) {
         <p class="field-help-paper" style="margin: -4px 0 8px 0;">What facts or past experiences would push back? Often the strongest counter-evidence is "I've thought this before and was wrong" or "I'd never apply this label to a friend in the same spot."</p>
         <textarea class="textarea" data-field="evidenceAgainst" rows="3" placeholder="Facts that complicate the thought. Times the predicted bad thing didn't happen. What you'd tell a friend.">${esc(d.evidenceAgainst)}</textarea>
       </div>
+      <!-- Whether a thought is accurate is settled by the evidence, not by how
+           true it feels (distorted thoughts feel true too), so the choice
+           offered on Step 3 comes back here, once both lists are written. -->
+      <div class="field-group">
+        <button class="accurate-tile ${d.thoughtsAccurate ? "active" : ""}" data-action="toggle-accurate">
+          <div class="accurate-tile-name">
+            <span>Having weighed it, the facts back this thought up</span>
+            <span class="distortion-tile-check">${svgIcon("check")}</span>
+          </div>
+          <div class="accurate-tile-desc">Pick this if the evidence supports the thought; the next step then helps you hold what's true instead of arguing with it. If the facts hold but your conclusion goes further ("so I'm a terrible partner"), leave this off and reframe the conclusion.</div>
+        </button>
+      </div>
 
       <div class="explainer-card explainer-card--socratic">
         <div class="explainer-eyebrow">What a Socratic question is</div>
-        <p class="explainer-body">Named after Socrates, who taught by asking — never by lecturing. A <strong>Socratic question</strong> is one that invites you to examine the thought from a new angle rather than agreeing or arguing with it. It's not rhetorical and it's not loaded. You ask it of yourself, in good faith, and then answer it honestly.</p>
+        <p class="explainer-body">Named after Socrates, who taught by asking questions. A <strong>Socratic question</strong> is one you don't already know the answer to. It points you at facts you might be missing, so you reach your own conclusion instead of being handed one. Ask it of yourself in good faith, then write down your honest answer.</p>
         <p class="explainer-body" style="margin-top: 8px;">Pick a question <em>type</em> below based on what the thought is doing (catastrophizing, mind-reading, etc.) — the template gives you a starting line you can customize.</p>
       </div>
       <div class="field-group">
@@ -3512,7 +3743,7 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group">
         <label class="field-label-paper">Your Socratic question</label>
-        <textarea class="textarea" data-field="socraticQuestion" rows="2" placeholder="${esc((() => { const st = SOCRATIC_TYPES.find(s => s.type === d.socraticType); return (st && st.template) ? applyTemplate(st.template, d) : "Pick a type above and a starting question will fill in — then make it your own."; })())}">${esc(d.socraticQuestion)}</textarea>
+        <textarea class="textarea" data-field="socraticQuestion" rows="3" placeholder="${esc((() => { const st = SOCRATIC_TYPES.find(s => s.type === d.socraticType); return (st && st.template) ? applyTemplate(st.template, d) : "Pick a type above and a starting question will fill in — then make it your own."; })())}">${esc(d.socraticQuestion)}</textarea>
         <p class="field-help-paper" style="margin-top: 8px;">Picking a type above pre-fills a starting question — feel free to rewrite it in your own words. The point is to <em>genuinely consider</em> the answer, so the wording has to be one you can take seriously.</p>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All question types</summary>
@@ -3526,6 +3757,10 @@ function renderCaptureStep(step, d) {
             `).join("")}
           </div>
         </details>
+      </div>
+      <div class="field-group">
+        <label class="field-label-paper">Your answer</label>
+        <textarea class="textarea" data-field="socraticAnswer" rows="3" placeholder="Answer it honestly, in your own words. Then ask: how does that fit with the thought I started with?">${esc(d.socraticAnswer)}</textarea>
       </div>
     `;
     }
@@ -3568,8 +3803,8 @@ function renderCaptureStep(step, d) {
       </div>
       <div class="field-group reframe-new-thought">
         <label class="field-label-paper">${d.thoughtsAccurate ? "Acknowledgment, or skip" : "Your new thought — write the reframe here"}</label>
-        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (() => { const rm = REFRAME_METHODS.find(r => r.method === d.reframeMethod); return (rm && rm.template) ? applyTemplate(rm.template, d) : "Write a more balanced, reasonable thought you'd actually accept — the one to replace the hot thought. (Optional: pick a method above for a starter.)"; })())}">${esc(d.newThought)}</textarea>
-        <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands.`}</div>
+        <textarea class="textarea input-large" data-field="newThought" rows="4" placeholder="${esc(d.thoughtsAccurate ? "This is real and it's hard. Naming it is enough work for now." : (() => { const rm = REFRAME_METHODS.find(r => r.method === d.reframeMethod); return (rm && rm.template) ? applyTemplate(rm.template, d) : "Write a more balanced, reasonable thought you'd actually accept, in your own words. (Pick a method above to see an example of the shape.)"; })())}">${esc(d.newThought)}</textarea>
+        <div class="field-help-paper">${d.thoughtsAccurate ? "Optional. If something kinder fits without contradicting the truth, write it. If not, leave it blank — that's a valid record too." : `Would you actually nod and say "yeah, that's fair," or would you roll your eyes? Tune until it lands. Often the facts are true and the conclusion is the distortion ("I snapped at them" is true; "so I'm a terrible partner" isn't): keep the true part and rewrite the conclusion.`}</div>
         <details class="ref-inline">
           <summary><span class="chev">▸</span> All reframe methods</summary>
           <div class="ref-inline-body">
@@ -3610,7 +3845,7 @@ function renderCaptureStep(step, d) {
           <div class="belief-control">
             <div class="belief-head">
               <span class="belief-num display"><span data-slider-display="newThoughtBelief">${d.newThoughtBelief ?? 50}</span><span class="belief-num-suffix">%</span></span>
-              <span class="belief-hint">Padesky asks for both — how much you believed the hot thought after, and how much you actually buy the new one. A weak "yeah, kind of" is honest data.</span>
+              <span class="belief-hint">Thought records often ask for both: how much you still believe the hot thought, and how much you believe the new one. A weak "yeah, kind of" is honest data.</span>
             </div>
             <input type="range" min="0" max="100" value="${d.newThoughtBelief ?? 50}" data-field="newThoughtBelief" class="intensity-slider" aria-label="Belief in the new thought, 0 to 100 percent">
           </div>
@@ -3634,6 +3869,9 @@ function renderCaptureStep(step, d) {
             </div>
           `;
         }).join("")}
+
+        <label class="field-label-paper" style="margin-top: 18px;">Anything new showing up?</label>
+        <textarea class="textarea" data-field="newFeelings" rows="2" placeholder="Relief, calm, hope, sadness underneath the anger… a word or two, optional.">${esc(d.newFeelings)}</textarea>
       </div>
     `;
     }
@@ -3648,6 +3886,11 @@ function renderCaptureStep(step, d) {
             <button type="button" class="quick-prompt-chip" data-action="insert-capture-starter" data-insert-field="pivot" data-seed="${esc(p.seed)}">${esc(p.label)}</button>
           `).join("")}
         </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label-paper">What do you expect will happen? (optional)</label>
+        <textarea class="textarea" data-field="pivotPrediction" rows="2" placeholder="They'll ignore it. / It'll feel awkward but fine. / I won't be able to finish.">${esc(d.pivotPrediction)}</textarea>
+        <div class="field-help-paper">Writing the prediction down before you act turns the action into a small experiment: afterward you can check what actually happened against it.</div>
       </div>
     `;
 
@@ -3693,7 +3936,7 @@ function renderReview(d) {
           }).join("")}
         </div>
       ` : ""}
-      ${d.bodyCheck ? `<div class="review-meta-row" style="margin-top: 8px;"><div class="review-meta-item">Body: ${esc(d.bodyCheck)}${d.bodyInferred ? " (inferred)" : ""}</div></div>` : ""}
+      ${d.bodyCheck ? `<div class="review-meta-row" style="margin-top: 8px;"><div class="review-meta-item">Body: ${esc(d.bodyCheck)}${d.bodyInferred ? " (pieced together later)" : ""}</div></div>` : ""}
     </div>
 
     <div class="review-card">
@@ -3719,6 +3962,7 @@ function renderReview(d) {
         <div class="review-meta-item"><strong>For:</strong> ${d.evidenceFor ? esc(d.evidenceFor) : '<span class="empty">—</span>'}</div>
         <div class="review-meta-item" style="margin-top: 4px;"><strong>Against:</strong> ${d.evidenceAgainst ? esc(d.evidenceAgainst) : '<span class="empty">—</span>'}</div>
         ${d.socraticQuestion ? `<div class="italic" style="margin-top: 8px; color: var(--on-paper-soft);">"${esc(d.socraticQuestion)}"</div>` : ""}
+        ${d.socraticAnswer ? `<div class="review-meta-item" style="margin-top: 4px;"><strong>Answer:</strong> ${esc(d.socraticAnswer)}</div>` : ""}
       </div>
     </div>
 
@@ -3734,11 +3978,12 @@ function renderReview(d) {
         const bD = hasHotB ? (hot.beliefAfter - hot.beliefBefore) : null;
         const hasNewB = typeof d.newThoughtBelief === "number";
         const ratedMoods = moods.filter(m => typeof m.intensityAfterReframe === "number");
-        if (!hasHotB && !hasNewB && ratedMoods.length === 0) return "";
+        if (!hasHotB && !hasNewB && ratedMoods.length === 0 && !d.newFeelings) return "";
         return `
           <div class="review-rerate">
             ${hasHotB ? `<div class="review-meta-item"><strong>Belief in hot thought:</strong> ${hot.beliefBefore}% ${svgIcon("arrowRight", "ico--xs")} ${hot.beliefAfter}% <span class="delta-tag ${bD < 0 ? "good" : "flat"}">${bD > 0 ? "+" : ""}${bD}</span></div>` : ""}
             ${hasNewB ? `<div class="review-meta-item" style="margin-top: 4px;"><strong>Belief in new thought:</strong> ${d.newThoughtBelief}%</div>` : ""}
+            ${d.newFeelings ? `<div class="review-meta-item" style="margin-top: 4px;"><strong>New feelings:</strong> ${esc(d.newFeelings)}</div>` : ""}
             ${ratedMoods.map(m => {
               const label = m.variant ? cap(m.variant) : (m.family || "Mood");
               const delta = m.intensityAfterReframe - m.intensity;
@@ -3755,6 +4000,7 @@ function renderReview(d) {
         <button class="review-edit-btn" data-action="goto-step" data-step="6">Edit</button>
       </div>
       <div class="review-card-content">${d.pivot ? esc(d.pivot) : '<span class="empty">missing</span>'}</div>
+      ${d.pivotPrediction ? `<div class="review-meta-item" style="margin-top: 6px;"><strong>Expected:</strong> ${esc(d.pivotPrediction)}</div>` : ""}
     </div>
   `;
 }
@@ -3784,7 +4030,7 @@ function renderOutcomeView() {
     <div class="page-header">
       <div class="page-eyebrow">Step 8 · Outcome</div>
       <h1 class="page-title display">How did the pivot go?</h1>
-      <p class="page-sub">A return visit — log what actually happened so the next time this pattern shows up, your prediction has data behind it. Skip what doesn't apply.</p>
+      <p class="page-sub">A return visit. Log what actually happened, so the next time this pattern shows up you have your own record to check against. Skip what doesn't apply.</p>
     </div>
 
     <div class="capture-shell">
@@ -3810,11 +4056,17 @@ function renderOutcomeView() {
             <span class="outcome-context-label">Pivot</span>
             <p class="outcome-context-text">${esc(entry.pivot) || "—"}</p>
           </div>
+          ${entry.pivotPrediction ? `
+            <div class="outcome-context-row">
+              <span class="outcome-context-label">Expected</span>
+              <p class="outcome-context-text">${esc(entry.pivotPrediction)}</p>
+            </div>
+          ` : ""}
         </div>
 
         <div class="field-group">
           <label class="field-label-paper">What happened?</label>
-          <textarea class="textarea" id="outcomeReflection" rows="4" placeholder="A line on how it went. The dread vs. the actual outcome is the part to write down — that's what teaches you next time.">${esc(entry.pivotReflection)}</textarea>
+          <textarea class="textarea" id="outcomeReflection" rows="4" placeholder="${entry.pivotPrediction ? "How did it compare with what you expected? That gap is what teaches you next time." : "A line on how it went. The dread vs. the actual outcome is the part to write down; that's what teaches you next time."}">${esc(entry.pivotReflection)}</textarea>
         </div>
 
         ${moods.filter(m => m.family).length ? `
@@ -3822,7 +4074,7 @@ function renderOutcomeView() {
             <div class="rerate-head">
               <span class="rerate-eyebrow">After acting</span>
               <h3 class="rerate-title display">Where are the moods now?</h3>
-              <p class="rerate-sub">Re-rate each mood after you actually did the pivot. The gap between predicted and actual is the most useful number in this whole record.</p>
+              <p class="rerate-sub">Re-rate each mood now that you've done the pivot. Compare it with how you felt before: any change, or none, is useful information.</p>
             </div>
 
             ${moods.filter(m => m.family).map(m => {
@@ -4205,7 +4457,7 @@ function renderPatterns() {
       ${activityCatRanked.length > 0 ? `
         <div class="pattern-card span-2">
           <div class="pattern-card-head">
-            <span class="pattern-card-title">What lifts the mood</span>
+            <span class="pattern-card-title">Highest-rated activity types</span>
             <span class="pattern-card-meta">${completedActivities.length} ${completedActivities.length === 1 ? "activity" : "activities"} logged</span>
           </div>
           <div class="bar-list">
@@ -4221,7 +4473,7 @@ function renderPatterns() {
               `;
             }).join("")}
           </div>
-          <p class="pattern-card-foot">Mean of pleasure + mastery, out of 10. The category at the top is the one your data says is most worth the time.</p>
+          <p class="pattern-card-foot">Average of your pleasure and mastery ratings (0 to 10) per type; the small number is how many you've logged. Early numbers are rough, and mood can lag behind action, so keep doing things that matter to you even if they don't score high yet.</p>
         </div>
       ` : ""}
 
@@ -4232,7 +4484,7 @@ function renderPatterns() {
             <span class="pattern-card-meta">last 30 days · ${resolvedWorries.length} resolved</span>
           </div>
           <div class="pattern-stat-big display">${dissolvedPct}<span class="pattern-stat-pct">%</span></div>
-          <div class="pattern-stat-label">went away on their own. Most worries didn't need the work.</div>
+          <div class="pattern-stat-label">${dissolvedPct > 50 ? "went away on their own. More than half didn't need extra work." : "went away on their own, without extra work."}</div>
         </div>
       ` : ""}
 
@@ -4313,21 +4565,21 @@ function renderReference() {
     <div class="ref-section ref-section--scope">
       <div class="ref-section-head">
         <span class="ref-section-num">?</span>
-        <h2 class="ref-section-title display">When CBT is the right tool</h2>
+        <h2 class="ref-section-title display">When a thought record is the right tool</h2>
         <span class="ref-section-step">Read first</span>
       </div>
       <p class="ref-section-intro">A thought record helps when there's a thought to record — a specific moment of distress where slowing down and looking at the thinking can shift something. It's not a universal solvent.</p>
       <div class="ref-item">
-        <div class="ref-item-name">CBT tends to help with</div>
-        <div class="ref-item-desc">Ordinary anxiety, frustration, embarrassment, self-criticism, low mood that comes and goes, social worries, perfectionism, catastrophic thinking, post-event rumination. Anything where there's a thought you can name and examine.</div>
+        <div class="ref-item-name">A thought record tends to help with</div>
+        <div class="ref-item-desc">Ordinary anxiety, frustration, embarrassment, self-criticism, low mood that comes and goes, social worries, perfectionism, catastrophic thinking, post-event rumination. Anything where there's a thought you can name and examine. For worry and anxiety, testing the prediction with a small real-world experiment often helps more than weighing evidence on paper.</div>
       </div>
       <div class="ref-item">
-        <div class="ref-item-name">CBT alone tends to fall short for</div>
-        <div class="ref-item-desc"><strong>Active trauma processing</strong> (intrusive memories, flashbacks, dissociation) — needs trauma-specialized care, not solo cognitive work. <strong>Severe depression</strong> where motivation is collapsed and the cognitive frame itself is suspect. <strong>Psychosis or thought disorders.</strong> <strong>Acute suicidal ideation</strong> — please reach for the resources below first. <strong>Grief</strong> — grief usually doesn't want fixing, just witness; the "accurate, not distorted" tile on Step 3 is for exactly this.</div>
+        <div class="ref-item-name">A self-help journal isn't enough on its own for</div>
+        <div class="ref-item-desc"><strong>Trauma memories that keep intruding</strong> (flashbacks, nightmares, feeling unreal). Trauma-focused CBT and EMDR work well, with a trained therapist. <strong>Severe depression</strong>, when even small tasks feel impossible. A clinician can help, often starting with small planned activities, sometimes with medication. <strong>Psychosis.</strong> A specialised form of CBT helps, alongside medication and a care team. <strong>Thoughts of suicide.</strong> Please reach for the resources below first. <strong>Grief.</strong> Painful thoughts after a loss usually aren't errors to fix, and the "facts seem to back these thoughts up" tile on Step 3 is for exactly this. If grief stays intense and gets in the way of life for many months, grief-focused therapy can help.</div>
       </div>
       <div class="ref-item">
         <div class="ref-item-name">If a thought turns out to be accurate</div>
-        <div class="ref-item-desc">Not every painful thought is distorted. "I hurt them," "I'm out of my depth," "this relationship is over" — sometimes those are true. The work then is sitting with what's true, not arguing with it. Use the "These thoughts feel accurate" tile and let the rest of the entry hold what's real.</div>
+        <div class="ref-item-desc">Not every painful thought is distorted. "I hurt them," "I'm out of my depth," "this relationship is over" — sometimes those are true. The work then is sitting with what's true, not arguing with it. Use the "The facts seem to back these thoughts up" tile on Step 3, weigh the evidence anyway, and let the rest of the entry hold what's real.</div>
       </div>
       <div class="ref-item">
         <div class="ref-item-name">Pace</div>
@@ -4342,25 +4594,32 @@ function renderReference() {
         <span class="ref-section-step">Always</span>
       </div>
       <p class="ref-section-intro">A thought record is for ordinary distress — moments where you can still pause and write. If you can't, please reach out to one of these now. They're free, confidential, and answer 24/7.</p>
+      <!-- Checked against each service's own site, Sep 2026. The US Lifeline
+           and Canada's 9-8-8 share a number but are separate services, and
+           each country's text line has its own operator and keyword. -->
       <div class="ref-item">
-        <div class="ref-item-name">988 Suicide &amp; Crisis Lifeline · US / Canada</div>
-        <div class="ref-item-desc">Call or text <strong>988</strong>. Online chat at <a href="https://988lifeline.org/chat" rel="noopener noreferrer" target="_blank"><strong>988lifeline.org/chat</strong></a>.</div>
+        <div class="ref-item-name">988 Suicide &amp; Crisis Lifeline · US</div>
+        <div class="ref-item-desc">Call or text <strong>988</strong>. Online chat at <a href="https://chat.988lifeline.org" rel="noopener noreferrer" target="_blank"><strong>chat.988lifeline.org</strong></a>.</div>
       </div>
       <div class="ref-item">
-        <div class="ref-item-name">Crisis Text Line · US / UK / Canada / Ireland</div>
-        <div class="ref-item-desc">Text <strong>HOME</strong> to <strong>741741</strong> (US) · <strong>85258</strong> (UK) · <strong>686868</strong> (Canada) · <strong>50808</strong> (Ireland).</div>
+        <div class="ref-item-name">9-8-8: Suicide Crisis Helpline · Canada</div>
+        <div class="ref-item-desc">Call or text <strong>988</strong>, in English or French. <a href="https://988.ca" rel="noopener noreferrer" target="_blank"><strong>988.ca</strong></a></div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-item-name">Text lines</div>
+        <div class="ref-item-desc">US: text <strong>HOME</strong> to <strong>741741</strong> (Crisis Text Line). UK: text <strong>SHOUT</strong> to <strong>85258</strong> (Shout). Ireland: text <strong>50808</strong> (Text About It). Canada, young people: text <strong>CONNECT</strong> to <strong>686868</strong> (Kids Help Phone).</div>
       </div>
       <div class="ref-item">
         <div class="ref-item-name">Samaritans · UK / Ireland</div>
-        <div class="ref-item-desc">Call <strong>116 123</strong>. Free, anonymous.</div>
+        <div class="ref-item-desc">Call <strong>116 123</strong>. Free, day or night.</div>
       </div>
       <div class="ref-item">
-        <div class="ref-item-name">International directory</div>
-        <div class="ref-item-desc">Crisis centres in 100+ countries at <a href="https://www.iasp.info/resources/Crisis_Centres/" rel="noopener noreferrer" target="_blank"><strong>iasp.info/resources/Crisis_Centres</strong></a> and <a href="https://findahelpline.com" rel="noopener noreferrer" target="_blank"><strong>findahelpline.com</strong></a>.</div>
+        <div class="ref-item-name">Other countries</div>
+        <div class="ref-item-desc"><a href="https://findahelpline.com" rel="noopener noreferrer" target="_blank"><strong>findahelpline.com</strong></a> lists free, confidential helplines by country.</div>
       </div>
       <div class="ref-item">
         <div class="ref-item-name">Emergency</div>
-        <div class="ref-item-desc">If you or someone near you is in immediate danger, call your local emergency number — <strong>911</strong> (US), <strong>112</strong> (EU), <strong>999</strong> (UK).</div>
+        <div class="ref-item-desc">If you or someone near you is in immediate danger, call your local emergency number: <strong>911</strong> (US, Canada), <strong>112</strong> (EU, Ireland), <strong>999</strong> (UK, Ireland).</div>
       </div>
       <p class="ref-section-intro" style="margin-top: 16px; font-style: italic;">Rephrame is a journaling tool, not a substitute for therapy or crisis care. If you have a clinician, exporting your journal as Markdown for a session is a good use of the data.</p>
     </div>
@@ -4380,7 +4639,7 @@ function renderReference() {
         </div>
       `).join("")}
       <div class="ref-pairs">
-        <div class="ref-pairs-head">Common pairs</div>
+        <div class="ref-pairs-head">Patterns that often overlap (examples)</div>
         <ul>${COMMON_PAIRS.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
       </div>
     </div>
@@ -4394,8 +4653,8 @@ function renderReference() {
       <p class="ref-section-intro">Eight families, with more precise variants. Use the closest match.</p>
       ${Object.entries(EMOTION_FAMILIES).map(([fam, variants]) => `
         <div class="ref-item ref-table-emotion">
-          <div class="ref-item-name">${fam}</div>
-          <div class="ref-item-desc">${variants.join(" · ")}</div>
+          <div class="ref-item-name">${esc(fam)}</div>
+          <div class="ref-item-desc">${esc(variants.join(" · "))}</div>
         </div>
       `).join("")}
     </div>
@@ -4406,13 +4665,13 @@ function renderReference() {
         <h2 class="ref-section-title display">Intensity Scale</h2>
         <span class="ref-section-step">Step 2</span>
       </div>
-      <p class="ref-section-intro">If uncertain, estimate conservatively and mark as estimated.</p>
+      <p class="ref-section-intro">Rate how strong it feels to you, not how it looks from outside. 0 means not there at all; 100 means the most you have ever felt it. If it's hard to pin a number on it, give your best guess and tick <em>Mark as estimated</em>.</p>
       <div class="ref-table-intensity">
         ${INTENSITY_BANDS.map((b, i) => {
           const minR = i === 0 ? 0 : INTENSITY_BANDS[i - 1].max + 1;
           return `
             <div class="ref-band-row">
-              <div class="ref-band-range">${minR}–${b.max}</div>
+              <div class="ref-band-range">${minR === b.max ? b.max : minR + "–" + b.max}</div>
               <div>
                 <div class="ref-band-label">${b.label}</div>
                 <div class="ref-band-signals">${esc(b.signals)}</div>
@@ -4429,7 +4688,7 @@ function renderReference() {
         <h2 class="ref-section-title display">Body Check</h2>
         <span class="ref-section-step">Step 2</span>
       </div>
-      <p class="ref-section-intro">Where emotion lives in the body. If you don't directly feel it but speech patterns suggest it, mark as <em>inferred from speech</em>.</p>
+      <p class="ref-section-intro">Where emotions are often felt in the body. The same feeling can land differently for different people, so treat these as prompts, not rules. If you didn't notice it in the moment and are working it out afterward, say so with the checkbox under the body field.</p>
       ${BODY_REGIONS.map(b => `
         <div class="ref-item">
           <div class="ref-item-name">${esc(b.region)}</div>
@@ -4945,7 +5204,7 @@ function renderSettingsModal() {
 
     <div class="settings-section">
       <div class="settings-section-title">Worry window</div>
-      <p class="settings-section-help">When parked worries reappear for review. The window stays open for 20 minutes around this time. If the time has already passed today, parking a new worry schedules it for tomorrow.</p>
+      <p class="settings-section-help">When parked worries reappear for review. Worry time starts at this time and lasts 20 minutes. Keep it the same every day, and not close to bedtime. If the time has already passed today, parking a new worry schedules it for tomorrow.</p>
       <label class="settings-time-row">
         <span class="settings-time-label">Time of day</span>
         <input type="time" class="settings-time-input" data-action="set-worry-window-time" value="${esc(s.worryWindowTime || "18:00")}">
@@ -5149,24 +5408,28 @@ function renderSafetyModal() {
     <p class="modal-sub">A thought record is for ordinary distress — moments where you can still pause and write. If you can't, please reach out to one of these now. They're free, confidential, and answer 24/7.</p>
     <div class="safety-list">
       <div class="safety-item">
-        <div class="safety-name">988 Suicide &amp; Crisis Lifeline <span class="safety-country">US / Canada</span></div>
-        <div class="safety-detail">Call or text <strong>988</strong>. Chat at <strong>988lifeline.org/chat</strong>.</div>
+        <div class="safety-name">988 Suicide &amp; Crisis Lifeline <span class="safety-country">US</span></div>
+        <div class="safety-detail">Call or text <strong>988</strong>. Chat at <strong>chat.988lifeline.org</strong>.</div>
       </div>
       <div class="safety-item">
-        <div class="safety-name">Crisis Text Line <span class="safety-country">US / UK / Canada / Ireland</span></div>
-        <div class="safety-detail">Text <strong>HOME</strong> to <strong>741741</strong> (US) · <strong>85258</strong> (UK) · <strong>686868</strong> (Canada) · <strong>50808</strong> (Ireland).</div>
+        <div class="safety-name">9-8-8: Suicide Crisis Helpline <span class="safety-country">Canada</span></div>
+        <div class="safety-detail">Call or text <strong>988</strong>, in English or French.</div>
+      </div>
+      <div class="safety-item">
+        <div class="safety-name">Text lines</div>
+        <div class="safety-detail">US: <strong>HOME</strong> to <strong>741741</strong>. UK: <strong>SHOUT</strong> to <strong>85258</strong>. Ireland: text <strong>50808</strong>. Canada, young people: <strong>CONNECT</strong> to <strong>686868</strong>.</div>
       </div>
       <div class="safety-item">
         <div class="safety-name">Samaritans <span class="safety-country">UK / Ireland</span></div>
-        <div class="safety-detail">Call <strong>116 123</strong>. Free, anonymous.</div>
+        <div class="safety-detail">Call <strong>116 123</strong>. Free, day or night.</div>
       </div>
       <div class="safety-item">
-        <div class="safety-name">International directory</div>
-        <div class="safety-detail">A list of crisis centres in 100+ countries is maintained at <strong>iasp.info/resources/Crisis_Centres</strong> and <strong>findahelpline.com</strong>.</div>
+        <div class="safety-name">Other countries</div>
+        <div class="safety-detail"><strong>findahelpline.com</strong> lists free, confidential helplines by country.</div>
       </div>
       <div class="safety-item">
         <div class="safety-name">Emergency</div>
-        <div class="safety-detail">If you or someone near you is in immediate danger, call your local emergency number (<strong>911</strong> US, <strong>112</strong> EU, <strong>999</strong> UK).</div>
+        <div class="safety-detail">If you or someone near you is in immediate danger, call your local emergency number (<strong>911</strong> US and Canada, <strong>112</strong> EU and Ireland, <strong>999</strong> UK and Ireland).</div>
       </div>
     </div>
     <p class="modal-sub" style="margin-top: 16px;">Rephrame stores everything on this device — no clinician sees it. If you have one, exporting your journal as Markdown for a session is a good use of the data.</p>
@@ -5208,6 +5471,10 @@ function bindJournal() {
         if (wasExpanded) body.setAttribute("inert", "");
         else body.removeAttribute("inert");
       }
+      // Opening a card near the bottom of the screen unfolds its body under
+      // the bottom nav. Bring it up once the 320ms grid-row reveal is done,
+      // so the measurement sees the full height.
+      if (!wasExpanded && card) setTimeout(() => revealInView(card), 340);
     };
     el.addEventListener("click", toggle);
     // The card head is a div acting as a button; give keyboard users the
@@ -5660,6 +5927,7 @@ function bindJournal() {
       // (resolution stays null) so it reappears in the next worry-window
       // banner — that's the whole point of postponement.
       entry.scheduledFor = computeNextWorryWindow();
+      entry.postponeCount = (entry.postponeCount || 0) + 1;
       touchEntry(entry);
       persist();
       render();
@@ -5799,7 +6067,7 @@ function bindCapture() {
         : seed;
       el.value = next;
       el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.focus();
+      focusForUser(el);
       el.setSelectionRange(next.length, next.length);
       refreshNextButton();
     });
@@ -5889,13 +6157,10 @@ function bindCapture() {
         const prevMeta = prevMethod ? REFRAME_METHODS.find(r => r.method === prevMethod) : null;
         const stillPrevStarter =
           !!(prevMeta && prevMeta.template && applyTemplate(prevMeta.template, state.draft).trim() === ntTrim);
-        if (!v) {
-          if (!ntTrim || stillPrevStarter) state.draft.newThought = "";
-        }
-        else if (!ntTrim || stillPrevStarter) {
-          const rNew = REFRAME_METHODS.find(r => r.method === v);
-          if (rNew && rNew.template) state.draft.newThought = applyTemplate(rNew.template, state.draft);
-        }
+        // The new method's template shows as the placeholder on the render
+        // below. Only clear text that is still an old starter (drafts saved
+        // before starters stopped being written in); never write one.
+        if (stillPrevStarter) state.draft.newThought = "";
       }
       else {
         state.draft[field] = v;
@@ -5992,9 +6257,14 @@ function bindCapture() {
   document.querySelectorAll('[data-action="add-thought"]').forEach(el => {
     el.addEventListener("click", () => {
       state.draft.thoughts = state.draft.thoughts || [];
-      state.draft.thoughts.push(normalizeThought({}));
+      const added = normalizeThought({});
+      state.draft.thoughts.push(added);
       saveDraft(state.draft);
       render();
+      // The new row lands where the button was, often right at the sticky
+      // footer. Put the caret in it; focusForUser also lifts it into view.
+      const ta = document.querySelector(`[data-action="edit-thought-text"][data-id="${added.id}"]`);
+      if (ta) focusForUser(ta);
     });
   });
   document.querySelectorAll('[data-action="remove-thought"]').forEach(el => {
@@ -6057,9 +6327,14 @@ function bindCapture() {
   document.querySelectorAll('[data-action="add-mood"]').forEach(el => {
     el.addEventListener("click", () => {
       state.draft.moods = state.draft.moods || [];
-      state.draft.moods.push(normalizeMood({}));
+      const added = normalizeMood({});
+      state.draft.moods.push(added);
       saveDraft(state.draft);
       render();
+      // Nothing to type into (the row opens on a select), so just make sure
+      // the new row isn't sitting under the sticky footer.
+      const row = document.querySelector(`[data-list="moods"] [data-row-id="${added.id}"]`);
+      if (row) requestAnimationFrame(() => revealInView(row));
     });
   });
   document.querySelectorAll('[data-action="remove-mood"]').forEach(el => {
@@ -6140,9 +6415,9 @@ function bindCapture() {
       if (primarySwappedOrSet) {
         const seeded = seedDraftFromPrimaryDistortion(state.draft);
         if (seeded && state.captureStep <= 3) {
-          toast("Starters ready for Challenge and Reframe ahead — pre-filled where they were empty.");
+          toast("Challenge and Reframe are pre-set to fit this pattern. Change either anytime.");
         } else if (seeded) {
-          toast("Starters filled in for Challenge and Reframe where they were empty.");
+          toast("Challenge and Reframe are pre-set to fit this pattern. Change either anytime.");
         }
       }
       saveDraft(state.draft);
@@ -6211,10 +6486,6 @@ function bindCapture() {
     if (state.captureStep === 4 && state.draft.socraticType && !String(state.draft.socraticQuestion || "").trim()) {
       const t = SOCRATIC_TYPES.find(s => s.type === state.draft.socraticType);
       if (t && t.template) state.draft.socraticQuestion = applyTemplate(t.template, state.draft);
-    }
-    if (state.captureStep === 5 && state.draft.reframeMethod && !(state.draft.newThought || "").trim()) {
-      const r = REFRAME_METHODS.find(m => m.method === state.draft.reframeMethod);
-      if (r && r.template) state.draft.newThought = applyTemplate(r.template, state.draft);
     }
     if (state.captureStep === 2) persistDefaultBeliefsForFilledThoughts(state.draft);
     state.captureStep++;
@@ -6585,7 +6856,7 @@ function bindModal() {
       qt.value = next;
       state.quickDraft = state.quickDraft || { thought: "", intensity: 60, ventOnly: false };
       state.quickDraft.thought = next;
-      qt.focus();
+      focusForUser(qt);
       qt.setSelectionRange(next.length, next.length);
     });
   });
@@ -7108,82 +7379,123 @@ document.addEventListener("keydown", e => {
 // Keyboard avoidance: a three-layer fix. The viewport meta tag handles
 // Chromium/Firefox by shrinking the layout viewport when the VK rises;
 // the .kb-open CSS slides bottom-nav off so it can't occlude focused
-// fields; this IIFE handles iOS (which ignores interactive-widget) and
-// lifts a focused field clear of the keyboard when the VK opens.
+// fields; this IIFE detects the keyboard on both platforms and lifts a
+// field the user tapped clear of the keyboard and the sticky chrome.
 //
 // The scrolling here is deliberately conservative. An earlier version
 // re-centred the focused field on *every* visualViewport event, including
 // the `scroll` events the user's own panning produces — so scrolling away
 // from a textarea you hadn't blurred yanked the page straight back to it,
-// over and over. Two rules prevent that now:
-//   1. Only a keyboard-height *change* (a resize) may scroll. Panning the
-//      visual viewport updates the CSS bits and nothing else.
-//   2. A hand-driven scroll (touch or wheel) switches auto-scrolling off
-//      until the next focusin, so the app never fights the user for the
-//      scroll position.
+// over and over. Three rules prevent that now:
+//   1. Only focus the user caused (a tap on the field or its label, a Tab,
+//      focusForUser()) may scroll. Code that restores or seeds focus does
+//      it with preventScroll on purpose.
+//   2. After that first reveal, only a keyboard-height *change* (a resize)
+//      may scroll. Panning the visual viewport updates the CSS and nothing
+//      else.
+//   3. A hand-driven scroll (touch or wheel) switches auto-scrolling off
+//      until the next tap on a field, so the app never fights the user for
+//      the scroll position.
 // A field that's already fully visible is never scrolled at all.
 (function initKeyboardAvoidance(){
   const vv = window.visualViewport;
-  const FIELD = 'input, textarea, [contenteditable="true"]';
+  // Fields that raise a soft keyboard. Checkboxes, radios and sliders take
+  // focus too, but revealing a slider as it's grabbed would scroll the page
+  // out from under the finger dragging it.
+  const TEXT_FIELD = 'textarea, [contenteditable="true"], input:not([type="checkbox"]):not([type="radio"])' +
+    ':not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"])' +
+    ':not([type="file"]):not([type="color"]):not([type="image"])';
+  const isTextField = el => !!(el && el.matches && el.matches(TEXT_FIELD));
   let lastFocused = null;
-  // Permission to move the page on the user's behalf. Granted on focusin,
-  // revoked the moment they scroll by hand or leave the field.
+  // Permission to move the page on the user's behalf. Granted when they
+  // tap a field, revoked the moment they scroll by hand or leave it.
   let mayAutoScroll = false;
   let lastKbH = 0;
 
-  const kbHeight = () =>
-    vv ? Math.max(0, window.innerHeight - vv.height) : 0;
-
-  // The slice of the screen not covered by the keyboard, in client coords.
-  const visibleBand = () => {
-    const top = (vv && vv.offsetTop) || 0;
-    return { top, bottom: top + ((vv && vv.height) || window.innerHeight) };
+  // What the user last pressed, and when: tells a tap on the field apart
+  // from code focusing it (a step's first field, a dialog re-rendered in
+  // place, a sync merge restoring the caret).
+  let pressTarget = null, pressAt = 0, tabAt = 0;
+  document.addEventListener('pointerdown', e => { pressTarget = e.target; pressAt = Date.now(); }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Tab') tabAt = Date.now(); }, true);
+  const userCausedFocus = el => {
+    if (el === _focusRequestedFor) return true;
+    const now = Date.now();
+    if (now - tabAt < 600) return true;
+    if (!pressTarget || now - pressAt > 1200) return false;
+    if (el === pressTarget || el.contains(pressTarget)) return true;
+    const label = pressTarget.closest && pressTarget.closest('label');
+    return !!(label && label.control === el);
   };
 
-  // Only scroll a field that actually needs it. Centring one that's already
-  // comfortably in view is pure motion — and it's what made a tap in a
-  // mid-screen textarea jump the page for no reason.
-  const isObscured = (el) => {
-    let r;
-    try { r = el.getBoundingClientRect(); } catch (_) { return false; }
-    if (!r || (!r.height && !r.width)) return false;
-    const { top, bottom } = visibleBand();
-    const pad = 8;
-    return r.top < top + pad || r.bottom > bottom - pad;
+  // Keyboard height. iOS lays the keyboard over the page, so the visual
+  // viewport shrinks and the window doesn't. Android with
+  // interactive-widget=resizes-content shrinks both, so innerHeight minus
+  // vv.height read ~0 there: .kb-open never switched on, and the bottom nav
+  // plus the Continue bar stayed parked above the keyboard with the field
+  // behind them. Measure against the tallest height seen at this width
+  // instead, and only while a text field has focus — nothing else raises a
+  // keyboard, and a desktop window resized mid-typing shouldn't count.
+  let fullW = window.innerWidth;
+  let fullH = window.innerHeight;
+  const kbHeight = () => {
+    if (!vv) return 0;
+    const typing = isTextField(document.activeElement);
+    if (window.innerWidth !== fullW) { fullW = window.innerWidth; fullH = window.innerHeight; }
+    else if (!typing) fullH = window.innerHeight;
+    else fullH = Math.max(fullH, window.innerHeight);
+    return typing ? Math.max(0, fullH - vv.height) : 0;
   };
 
-  const revealField = (el) => {
-    if (!el || !el.isConnected || !isObscured(el)) return;
-    smoothScrollIntoView(el, { block: 'center' });
+  const reveal = () => {
+    if (mayAutoScroll && lastFocused && document.activeElement === lastFocused) {
+      revealInView(lastFocused, { block: 'center' });
+    }
+  };
+  // Look twice: once the focus ring has painted, and again after the
+  // keyboard and the chrome sliding out of its way (180–200ms transitions)
+  // have settled. The second look is free when the first one sufficed.
+  let settleTimer = 0;
+  const scheduleReveal = settleMs => {
+    requestAnimationFrame(() => requestAnimationFrame(reveal));
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(reveal, settleMs);
   };
 
   document.addEventListener('focusin', e => {
     const t = e.target;
-    if (!t || !t.matches || !t.matches(FIELD)) return;
+    if (!isTextField(t)) return;
+    lastFocused = t;
+    mayAutoScroll = userCausedFocus(t);
+    if (mayAutoScroll) scheduleReveal(450);
+  });
+  // A tap on the field that already has focus: on Android the back button
+  // hides the keyboard without blurring, and tapping the field again brings
+  // the keyboard back with no focusin to react to. Capture phase: dialogs
+  // stop click propagation at .modal, so a bubbling listener never hears
+  // taps inside Settings or quick capture.
+  document.addEventListener('click', e => {
+    const t = e.target;
+    if (!isTextField(t) || document.activeElement !== t) return;
     lastFocused = t;
     mayAutoScroll = true;
-    // Two rAFs: first lets the browser paint the focus state, second
-    // gives the VK a moment to start rising so the post-VK viewport
-    // height is what the visibility check sees.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (mayAutoScroll && document.activeElement === lastFocused) revealField(lastFocused);
-    }));
-  });
+    scheduleReveal(450);
+  }, true);
   document.addEventListener('focusout', e => {
     if (e.target === lastFocused) { lastFocused = null; mayAutoScroll = false; }
   });
 
-  // Hand-driven scrolling wins, permanently, until the next focus. Listening
-  // for touchmove/wheel rather than `scroll` keeps this unambiguous: our own
-  // programmatic scrolls fire `scroll`, but never these.
+  // Hand-driven scrolling wins, permanently, until the next tap on a field.
+  // Listening for touchmove/wheel rather than `scroll` keeps this
+  // unambiguous: our own programmatic scrolls fire `scroll`, never these.
   const yieldToUser = () => { mayAutoScroll = false; };
   window.addEventListener('touchmove', yieldToUser, { passive: true });
   window.addEventListener('wheel', yieldToUser, { passive: true });
 
   if (vv) {
     const syncKbCss = () => {
-      // 150px threshold to ignore URL-bar chrome shifts on iOS. A real
-      // keyboard is always at least ~250px tall.
+      // 150px threshold to ignore URL-bar chrome shifts. A real keyboard is
+      // always at least ~250px tall.
       const h = kbHeight();
       const kbUp = h > 150;
       document.body.classList.toggle('kb-open', kbUp);
@@ -7197,14 +7509,33 @@ document.addEventListener("keydown", e => {
       const { h, kbUp } = syncKbCss();
       const changed = Math.abs(h - lastKbH) > 24;
       lastKbH = h;
-      if (!changed || !kbUp) return;
-      if (mayAutoScroll && lastFocused && document.activeElement === lastFocused) {
-        revealField(lastFocused);
-      }
+      if (changed && kbUp) scheduleReveal(300);
     });
     // scroll = the viewport was panned. Keep the CSS in sync; never scroll.
     vv.addEventListener('scroll', syncKbCss);
   }
+})();
+
+// Something the user opened that grows downward: a <details> expander (the
+// body region reference, "All question types") or a journal entry. Near the
+// bottom of the screen its new content unfolds straight under the sticky
+// Continue bar or the bottom nav, and the user had to scroll to find what
+// they'd just opened. Bring it into view, keeping its heading on screen.
+(function initRevealOnExpand(){
+  // `toggle` also fires for a <details> rendered already open, so only react
+  // to one the user just clicked open.
+  let opening = null;
+  document.addEventListener('click', e => {
+    const s = e.target.closest && e.target.closest('summary');
+    const d = s && s.parentElement;
+    opening = (d && d.tagName === 'DETAILS' && !d.open) ? d : null;
+  }, true);
+  document.addEventListener('toggle', e => {
+    const d = e.target;
+    if (d !== opening) return;
+    opening = null;
+    if (d.open) requestAnimationFrame(() => revealInView(d));
+  }, true);
 })();
 
 // Last-resort safety net. The app swallows expected failures locally (best-

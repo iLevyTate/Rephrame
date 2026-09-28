@@ -24,10 +24,10 @@ and export your entries as JSON for backup.
 
 **Four ways to capture.** Pick whichever fits the moment:
 
-- **Thought record** — the full Mind Over Mood walk: situation, multi-thought + multi-mood capture, body-sensation tagging, distortion check, evidence for/against, Socratic prompt, balanced reframe, behavioral pivot, then a re-rate after both reframe and pivot. The shift in mood intensity + belief % is the work showing up.
+- **Thought record** — built on the Mind Over Mood 7-column thought record (Greenberger & Padesky), with a distortion check from Burns and Beck, a guided Socratic question you answer, a follow-up action, and mood re-ratings after the reframe and after you act. Captures situation, multiple thoughts and moods, body sensations, evidence for/against, and a balanced reframe in your own words. The shift in mood intensity + belief % is the work showing up.
 - **Free write** — open page, no structure. For moments without a clear thought to challenge. Optional title + optional mood tag.
-- **Plan activity** — behavioral activation: pick something concrete (a category + a datetime), predict pleasure + mastery on a 0–10 scale, then come back after to log actual values. The gap between predicted and actual is the lesson.
-- **Park a worry** — worry postponement (Borkovec): write the worry, set urgency, schedule it for your worry-window time. A calm banner surfaces in-window with three resolutions: dissolved on its own, work it through (escalates to a thought record), or postpone again.
+- **Plan activity** — behavioral activation: pick something concrete (a category + a datetime), predict pleasure + mastery on a 0–10 scale (Beck's activity scheduling), then come back after to log actual values. Comparing the two can show that low mood underestimates how things go; doing the activity is what matters most.
+- **Park a worry** — worry postponement (Borkovec): write the worry, set urgency, schedule it for your worry-window time. A calm banner surfaces in-window with three resolutions: dissolved on its own, work it through or make a plan (opens a thought record, which ends in one concrete step), or postpone again. After two postponements the worry suggests working it through instead.
 
 The "Patterns" tab surfaces recurring distortions, the average mood intensity drop across re-rated entries, the activity categories that lift the mood most, the % of worries that dissolved without action, and a 30-day activity heatmap. The "Reference" tab is an in-app primer plus a crisis-resources block.
 
@@ -65,7 +65,8 @@ with the right mode preselected.
   older than the chosen interval. No notifications go out. "Not
   today" snoozes the banner for 18 hours.
 - **Worry window** — the time of day parked worries reappear for review.
-  Defaults to 18:00 (6pm). The window stays open for 20 minutes. If the
+  Defaults to 18:00 (6pm). Worry time lasts 20 minutes from that time; keep
+  it the same every day and away from bedtime. If the
   time has already passed today, parking a new worry schedules it for
   tomorrow.
 
@@ -216,12 +217,13 @@ them now.
 
 Three deliberate concessions to make the tool helpful rather than harmful:
 
-- **"These thoughts feel accurate" tile** on Step 4 — opts out of the
-  distortion frame entirely. Grief, valid anger, accurate self-criticism
-  are real; the rest of the entry holds them rather than arguing.
-- **Grounding gate at intensity ≥80** — surfaces a 5-4-3-2-1 prompt before
-  Step 3 and inside quick-capture, because cognitive work tends to land
-  better after the body has settled.
+- **"The facts seem to back these thoughts up" tile** on Step 3 — opts out
+  of the distortion frame. Grief, real anger and an honest look at a real
+  mistake don't need arguing away; the evidence step still follows, since
+  distorted thoughts can feel true too.
+- **Grounding gate at intensity ≥80** (the Severe band) — surfaces a
+  5-4-3-2-1 prompt at the top of Step 4 and inside quick-capture, because
+  cognitive work tends to land better after the body has settled.
 - **"Just venting" checkbox** in quick-capture — sometimes naming what's
   there *is* the intervention; no obligation to finish a 7-step entry
   later.
@@ -235,11 +237,13 @@ same way — "each one is information, whether followed or not."
 Rephrame is a journaling tool, not a substitute for therapy or crisis care. If
 you can't pause and write, please reach out:
 
-- **988 Suicide & Crisis Lifeline** (US / Canada) — call or text 988
-- **Crisis Text Line** — text HOME to 741741 (US) / 85258 (UK) / 686868 (Canada)
-- **Samaritans** (UK / Ireland) — 116 123
-- International directory: iasp.info/resources/Crisis_Centres ·
-  findahelpline.com
+- **988 Suicide & Crisis Lifeline** (US): call or text 988, chat at chat.988lifeline.org
+- **9-8-8: Suicide Crisis Helpline** (Canada): call or text 988
+- **Text lines**: HOME to 741741 (US, Crisis Text Line) · SHOUT to 85258 (UK,
+  Shout) · 50808 (Ireland, Text About It) · CONNECT to 686868 (Canada, Kids
+  Help Phone, for young people)
+- **Samaritans** (UK / Ireland): 116 123
+- Other countries: findahelpline.com
 
 The full list is also inside the app under **Reference → If you're in
 crisis**, and reachable from a link in every empty-state and capture modal.
