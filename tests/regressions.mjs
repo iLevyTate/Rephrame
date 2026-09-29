@@ -106,9 +106,9 @@
 //      of dropping a whole toast-height in one frame.
 //  37. Pinning the first coping card (or unpinning the last) holds the tapped
 //      card still while the ~300px strip appears or goes above it.
-//  38. A view change lands at the top of the new view under its fade-in,
-//      instead of smooth-scrolling through it; re-tapping the current tab
-//      still scrolls up smoothly.
+//  38. A view change lands at the top of the new view, straight from where
+//      the page was, instead of smooth-scrolling through the new view as it
+//      appears; re-tapping the current tab still scrolls up smoothly.
 //  39. Patterns charts draw in when the view opens, and a background
 //      re-render doesn't replay them.
 //  40. The PIN field shakes once per failed try (not again on "Forgot PIN?"),
@@ -116,6 +116,17 @@
 //      findable.
 //  41. Deleting an entry holds its space with a placeholder that closes, so
 //      the entries below move up instead of snapping.
+//  42. Changing view or capture step cross-fades the old screen into the new
+//      one (where View Transitions exist) instead of cutting to an empty
+//      page and fading up, and the cross-fade stays short.
+//  43. A dialog that closes itself after an action (quick capture Save)
+//      fades out like a dismissed one, instead of vanishing on the tap.
+//  44. A control rebuilt by a re-render (a Settings choice) transitions to
+//      its new state instead of snapping to it.
+//  45. A card opened near the bottom of the screen scrolls into view while
+//      it opens, not after.
+//  46. The shared easing curves don't front-load the motion or stop at
+//      speed (the old ones did both, which is what made it feel abrupt).
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -1676,13 +1687,24 @@ try {
     await loadSamples(page);
     await page.evaluate(() => window.scrollTo(0, 1200));
     await page.waitForTimeout(100);
-    const jumped = await page.evaluate(() => {
+    const seen = await page.evaluate(async () => {
+      const ys = [];
+      const t0 = performance.now();
       document.querySelector('[data-nav="patterns"]').click();
-      return window.scrollY;
+      await new Promise(res => {
+        const tick = () => { ys.push(Math.round(window.scrollY)); if (performance.now() - t0 < 600) requestAnimationFrame(tick); else res(); };
+        requestAnimationFrame(tick);
+      });
+      return ys;
     });
     // It used to smooth-scroll from 1200 up through the new view while that
-    // view was still fading in.
-    assert.equal(jumped, 0, 'Switching view lands at the top in the same frame');
+    // view was still fading in. The new view may land a frame or two after
+    // the tap (a cross-fade snapshots the old screen first), but the scroll
+    // goes straight from where it was to the top, never through the middle.
+    const start = seen[0];
+    assert.ok(start > 300, 'The journal was scrolled down (precondition)');
+    assert.equal(seen[seen.length - 1], 0, 'Switching view ends at the top of the new view');
+    assert.ok(seen.every(y => y === start || y === 0), 'No scroll positions in between: ' + JSON.stringify([...new Set(seen)]));
     await page.waitForTimeout(500);
     await page.evaluate(() => window.scrollTo(0, 600));
     await page.waitForTimeout(100);
@@ -1705,7 +1727,8 @@ try {
     const { ctx, page, errors } = await openApp();
     await loadSamples(page);
     await page.locator('[data-nav="patterns"]').click();
-    await page.waitForTimeout(60);
+    // The new view lands a frame or two after the tap when it cross-fades.
+    await page.waitForSelector('.bar-fill', { timeout: 5000 });
     const entering = await page.evaluate(() => getComputedStyle(document.querySelector('.bar-fill')).animationName);
     assert.equal(entering, 'barGrow', 'Bars grow in when Patterns opens');
     await page.waitForTimeout(1300);
@@ -1772,6 +1795,159 @@ try {
     assert.equal(r.ghostsLeft, 0, 'The placeholder removes itself');
     noErrors(errors, 'delete gap');
     log('PASS — a deleted entry\'s space closes smoothly.');
+    await ctx.close();
+  }
+
+  // ── 42. Screen changes cross-fade rather than cut ──────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    const hasVT = await page.evaluate(() => typeof document.startViewTransition === 'function');
+    if (hasVT) {
+      const fades = async (trigger) => page.evaluate(async (trigger) => {
+        const seen = new Set();
+        const t0 = performance.now();
+        document.querySelector(trigger).click();
+        await new Promise(res => {
+          const tick = () => {
+            document.documentElement.getAnimations({ subtree: true }).forEach(a => {
+              const p = a.effect && a.effect.pseudoElement;
+              if (p === '::view-transition-old(root)') seen.add(Math.round(a.effect.getTiming().duration));
+            });
+            if (performance.now() - t0 < 200) requestAnimationFrame(tick); else res();
+          };
+          requestAnimationFrame(tick);
+        });
+        return [...seen];
+      }, trigger);
+      const token = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-crossfade')));
+      // The old screen used to vanish in one frame while the new one faded
+      // up from an empty page.
+      assert.deepEqual(await fades('[data-nav="reference"]'), [token], 'Changing view fades the old screen out as the new one fades in');
+      await page.waitForTimeout(500);
+      await page.locator('[data-nav="capture"]').click();
+      await page.waitForSelector('textarea[data-field="trigger"]', { timeout: 5000 });
+      await page.waitForTimeout(500);
+      await page.locator('textarea[data-field="trigger"]').fill('A thing happened at work today');
+      assert.deepEqual(await fades('[data-action="next-step"]'), [token], 'Moving to the next capture step cross-fades too');
+      assert.ok(token <= 320, 'The cross-fade stays short (' + token + 'ms): the page takes no taps while it runs');
+    }
+    noErrors(errors, 'cross-fade');
+    log('PASS — screen changes cross-fade' + (hasVT ? '.' : ' (no View Transitions here; skipped).'));
+    await ctx.close();
+  }
+
+  // ── 43. Every dialog close fades out, including after an action ───────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.locator('[data-action="open-quick"]').first().click();
+    await page.waitForSelector('#quickThought', { timeout: 5000 });
+    await page.waitForTimeout(500);
+    await page.locator('#quickThought').fill('racing thoughts about tomorrow');
+    const r = await page.evaluate(() => {
+      document.querySelector('[data-action="save-quick"]').click();
+      const o = document.querySelector('.modal-overlay');
+      return {
+        modal: state.modal,
+        present: !!o,
+        closing: !!(o && o.classList.contains('is-closing')),
+        idsLeft: o ? o.querySelectorAll('[id]').length : -1,
+        passesTaps: o ? getComputedStyle(o).pointerEvents === 'none' : false,
+      };
+    });
+    assert.equal(r.modal, null, 'Saving closes the quick capture (precondition)');
+    // It used to vanish in the same frame as the tap on Save.
+    assert.equal(r.present && r.closing, true, 'The dialog fades out after Save instead of vanishing');
+    assert.equal(r.idsLeft, 0, 'Nothing can find a field inside the closing dialog');
+    assert.equal(r.passesTaps, true, 'The fading dialog lets taps through to the page');
+    await page.waitForFunction(() => !document.querySelector('.modal-overlay'), null, { timeout: 2000 });
+    noErrors(errors, 'after-action close');
+    log('PASS — dialogs fade out after an action too.');
+    await ctx.close();
+  }
+
+  // ── 44. A rebuilt control transitions to its new state ─────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.locator('[data-action="open-settings"]').first().click();
+    await page.waitForSelector('.modal-overlay [data-action="set-reminder"]', { timeout: 5000 });
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => {
+      const current = document.querySelector('[data-action="set-reminder"].active').dataset.value;
+      const target = current === 'weekly' ? 'daily' : 'weekly';
+      document.querySelector('[data-action="set-reminder"][data-value="' + target + '"]').click();
+      const props = el => el.getAnimations().map(a => a.transitionProperty);
+      return {
+        rebuilt: true,
+        now: props(document.querySelector('[data-action="set-reminder"][data-value="' + target + '"]')),
+        before: props(document.querySelector('[data-action="set-reminder"][data-value="' + current + '"]')),
+      };
+    });
+    // Tapping a choice re-renders the dialog, and a freshly built element
+    // has no "before" state to transition from: the highlight snapped.
+    assert.ok(r.now.includes('background-color'), 'The newly picked choice fades into its selected look: ' + JSON.stringify(r.now));
+    assert.ok(r.before.includes('background-color'), 'The previous choice fades out of it: ' + JSON.stringify(r.before));
+    noErrors(errors, 'state class carry');
+    log('PASS — a rebuilt control transitions to its new state.');
+    await ctx.close();
+  }
+
+  // ── 45. A card opened near the bottom scrolls into view as it opens ────
+  {
+    const { ctx, page, errors } = await openApp();
+    await loadSamples(page);
+    const r = await page.evaluate(async () => {
+      const cards = [...document.querySelectorAll('.entry-card')];
+      const card = cards[3];
+      card.scrollIntoView({ block: 'end' });
+      await new Promise(res => setTimeout(res, 300));
+      const y0 = window.scrollY;
+      const samples = [];
+      const t0 = performance.now();
+      card.querySelector('.entry-card-head').click();
+      await new Promise(res => {
+        const tick = () => {
+          samples.push({ t: performance.now() - t0, dy: window.scrollY - y0, h: card.querySelector('.entry-body-wrap').getBoundingClientRect().height });
+          if (performance.now() - t0 < 900) requestAnimationFrame(tick); else res();
+        };
+        requestAnimationFrame(tick);
+      });
+      const fullH = samples[samples.length - 1].h;
+      const firstMove = samples.find(s => s.dy > 2);
+      return { fullH, moved: samples[samples.length - 1].dy, firstMove, hWhenScrollStarted: firstMove ? firstMove.h : null };
+    });
+    assert.ok(r.moved > 20, 'Opening a card at the bottom brings it into view (precondition)');
+    // It used to open fully and only then jolt the page up.
+    assert.ok(r.hWhenScrollStarted !== null && r.hWhenScrollStarted < r.fullH * 0.5,
+      'The page starts scrolling while the card is still opening (' + Math.round(r.hWhenScrollStarted) + ' of ' + Math.round(r.fullH) + 'px open)');
+    noErrors(errors, 'reveal while opening');
+    log('PASS — a card near the bottom scrolls into view as it opens.');
+    await ctx.close();
+  }
+
+  // ── 46. The motion curves start and land softly ────────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    const curves = await page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement);
+      return ['--ease', '--ease-out', '--ease-exit'].map(t => [t, cs.getPropertyValue(t).trim()]);
+    });
+    const bezier = (x1, y1, x2, y2) => {
+      const X = t => 3 * x1 * t * (1 - t) ** 2 + 3 * x2 * t * t * (1 - t) + t ** 3;
+      const Y = t => 3 * y1 * t * (1 - t) ** 2 + 3 * y2 * t * t * (1 - t) + t ** 3;
+      return x => { let lo = 0, hi = 1; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (X(m) < x) lo = m; else hi = m; } return Y((lo + hi) / 2); };
+    };
+    for (const [token, value] of curves) {
+      const m = /cubic-bezier\(([^)]+)\)/.exec(value);
+      assert.ok(m, token + ' is a cubic-bezier (' + value + ')');
+      const f = bezier(...m[1].split(',').map(Number));
+      // The old expo curves covered ~half the travel in the first tenth of
+      // the time (two frames of a fade), so motion read as a jump; the old
+      // exit curve was still accelerating when it stopped.
+      assert.ok(f(0.1) < 0.25, token + ' does not front-load the motion (' + Math.round(f(0.1) * 100) + '% done after 10% of the time)');
+      assert.ok((1 - f(0.98)) / 0.02 < 0.5, token + ' lands softly rather than stopping at speed');
+    }
+    noErrors(errors, 'motion curves');
+    log('PASS — the motion curves start and land softly.');
     await ctx.close();
   }
 
