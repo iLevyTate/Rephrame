@@ -1541,13 +1541,20 @@ try {
   // several days, enough for the list to scroll and for Patterns to chart.
   // Page-side names used inside page.evaluate below:
   /* global makeSampleEntries, DOMMatrix */
-  const loadSamples = (page) => page.evaluate(() => {
-    state.entries = makeSampleEntries()
-      .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
-    state.entries.forEach(e => { e.isFavorite = false; });
-    persist();
-    render();
-  });
+  const loadSamples = async (page) => {
+    await page.evaluate(() => {
+      state.entries = makeSampleEntries()
+        .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+      state.entries.forEach(e => { e.isFavorite = false; });
+      persist();
+      render();
+    });
+    // Start from a settled screen. The journal's entrance (a short rise on
+    // #view) is still running right after boot, and a position read during
+    // it carries the leftover offset: block 37 took its baseline 233ms into
+    // the 400ms rise, 0.96px off, which a slower CI runner pushed past 1px.
+    await page.waitForFunction(() => !document.getElementById('view').classList.contains('view-entering'), null, { timeout: 5000 });
+  };
 
   // ── 33. A collapsed entry card shows only its head ─────────────────────
   {
