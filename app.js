@@ -1818,13 +1818,43 @@ function applyTheme() {
     override.setAttribute("content", resolved === "light" ? "#f5efe6" : "#1a1715");
   }
 }
-// Change the theme with a short cross-fade where the browser has View
-// Transitions (Chromium 111+, Safari 18+). Every colour in the app flips in
-// the same frame, and ink ↔ paper read as a flash. Elsewhere, and under
-// reduced motion, it swaps at once as before.
+// Run `update` (a render that replaces what's on screen) as a cross-fade
+// from the old screen to the new one, where the browser has View Transitions
+// (Chromium 111+, Safari 18+). Without it a view or step change was a hard
+// cut: the old screen vanished in one frame and the new one faded up from an
+// empty page. Elsewhere, under reduced motion and in a hidden tab, `update`
+// just runs.
+//
+// The DOM changes a frame or two later than the call (the browser snapshots
+// the old screen first), so callers change state synchronously and pass only
+// the render. Inside `update`, _crossFading tells render() and callers that
+// the cross-fade is covering the change, so they skip their own fade-in.
+let _crossFading = false;
+function crossFade(update) {
+  if (typeof document.startViewTransition !== "function" || _prefersReducedMotion() ||
+      document.visibilityState === "hidden") {
+    update();
+    return;
+  }
+  let t;
+  try {
+    t = document.startViewTransition(() => {
+      _crossFading = true;
+      // Rethrow outside the transition so the global error net still sees
+      // a render failure, as it would a synchronous one.
+      try { update(); } catch (e) { setTimeout(() => { throw e; }); }
+      finally { _crossFading = false; }
+    });
+  } catch (_) { update(); return; }
+  // A transition cut short by the next one (a quick second tap) rejects
+  // `ready`. That's expected, not an error to report.
+  t.ready.catch(() => {});
+  t.finished.catch(() => {});
+}
+// The theme cross-fades too: every colour in the app flips in the same frame,
+// and ink ↔ paper read as a flash.
 function switchThemeSmoothly(update) {
-  if (typeof document.startViewTransition !== "function" || _prefersReducedMotion()) { update(); return; }
-  try { document.startViewTransition(update); } catch (_) { update(); }
+  crossFade(update);
 }
 // Print always renders as light-on-white: the print stylesheet only resets
 // html/body, so dark-theme tokens (muted kickers, near-invisible rules)
@@ -1949,9 +1979,10 @@ function _visibleBandFor(el, box) {
 // Anything taller than the band gets its top edge shown, since that's where
 // reading starts. Scrolls the enclosing dialog first and the page with
 // whatever is left over. No-op when `el` is already fully in view.
-function revealInView(el, { block = "nearest" } = {}) {
+function revealInView(el, { block = "nearest", rect = null } = {}) {
   if (!el || !el.isConnected) return false;
-  const r = el.getBoundingClientRect();
+  // `rect` stands in for where `el` is about to be (a card still opening).
+  const r = rect || el.getBoundingClientRect();
   if (!r.height && !r.width) return false;
   const box = _nearestScrollBox(el);
   const { top, bottom } = _visibleBandFor(el, box);
@@ -2006,11 +2037,13 @@ function setState(patch) {
 }
 
 function setView(v) {
+  const changed = state.view !== v;
   state.view = v;
   if (v === "capture" && state.editingId === null && !hasDraftContent(state.draft)) {
     state.captureStep = 1;
   }
-  render();
+  if (changed) crossFade(render);
+  else render();
 }
 
 function hasDraftContent(d) {
@@ -2176,6 +2209,45 @@ function markArrival(node) {
   if (node) retriggerAnimation(node, "is-arriving", motionMs("--dur-medium") + 80);
 }
 
+// Controls whose look follows a state class: the selected chip, the active
+// Settings choice, the pinned star, the current step. render() rebuilds them
+// from scratch, so a new state snapped in even though each one declares a
+// transition: a freshly created element has no "before" to transition from.
+// snapshotStateClasses() notes each control's classes before a rebuild;
+// carryStateClasses() gives a changed control its old classes back for one
+// style pass, then its new ones, so its own CSS transition plays.
+const _CARRY_SEL = ".view-chip, .filter-chip, .settings-choice, .capture-mode-chip, " +
+  ".activity-cat-chip, .accurate-tile, .entry-fav-btn, .progress-dot";
+// One-shot animation classes aren't state; never replay them.
+const _TRANSIENT_CLS = /\s*\bis-(arriving|moving|spotlit|swapping|leaving|shaking)\b/g;
+function snapshotStateClasses(root) {
+  const m = new Map();
+  if (!root) return m;
+  root.querySelectorAll(_CARRY_SEL).forEach(el => {
+    const k = _openerSelector(el);
+    if (k && !m.has(k)) m.set(k, el.className.replace(_TRANSIENT_CLS, ""));
+  });
+  return m;
+}
+function carryStateClasses(root, before) {
+  // Nothing here may read a computed style before the old classes go back
+  // on (motionMs() does): that styles the new elements in their new state
+  // first, and the replay then runs new → old → new, which cancels itself.
+  if (!root || !before || !before.size || _prefersReducedMotion()) return;
+  const changed = [];
+  root.querySelectorAll(_CARRY_SEL).forEach(el => {
+    const k = _openerSelector(el);
+    const was = k ? before.get(k) : undefined;
+    if (was !== undefined && was !== el.className.replace(_TRANSIENT_CLS, "")) {
+      changed.push([el, el.className]);
+      el.className = was;
+    }
+  });
+  if (!changed.length) return;
+  void root.offsetWidth;
+  changed.forEach(([el, cls]) => { el.className = cls; });
+}
+
 // The whole journal changed at once (samples loaded or removed, a backup
 // imported): replay the view's entrance so the new list arrives instead of
 // snapping in under the user.
@@ -2317,23 +2389,25 @@ function render() {
   });
 
   const view = document.getElementById("view");
+  const stateClasses = snapshotStateClasses(view);
   if (state.view === "journal")        view.innerHTML = renderJournal();
   else if (state.view === "capture")   view.innerHTML = renderCapture();
   else if (state.view === "patterns")  view.innerHTML = renderPatterns();
   else if (state.view === "reference") view.innerHTML = renderReference();
   else if (state.view === "outcome")   view.innerHTML = renderOutcomeView();
+  carryStateClasses(view, stateClasses);
 
   if (state.view === "journal")      bindJournal();
   else if (state.view === "capture") bindCapture();
   else if (state.view === "outcome") bindOutcome();
 
   // New content starts at the top of the page. Jump there in the same frame
-  // the content swaps, under the fade-in, rather than smooth-scrolling
-  // afterwards: that scrolled the freshly rendered view past the reader
-  // while it was still fading in (two motions fighting), and saving an entry
-  // from the bottom of Step 7 used to land mid-journal, nowhere near it.
-  // The first render is left alone so the browser's own scroll restoration
-  // on reload still applies.
+  // the content swaps, under the cross-fade (or fade-in), rather than
+  // smooth-scrolling afterwards: that scrolled the freshly rendered view
+  // past the reader while it was still fading in (two motions fighting), and
+  // saving an entry from the bottom of Step 7 used to land mid-journal,
+  // nowhere near it. The first render is left alone so the browser's own
+  // scroll restoration on reload still applies.
   const viewChanged = state.view !== lastRenderedView;
   const stepChanged = state.view === "capture" && state.captureStep !== lastRenderedStep;
   if ((viewChanged || stepChanged) && lastRenderedView !== null && window.scrollY > 0) {
@@ -2342,20 +2416,22 @@ function render() {
 
   // View transition: fire only when state.view actually changed.
   if (viewChanged) {
-    retriggerAnimation(view, "view-entering", motionMs("--dur-medium") + 60);
+    // The cross-fade already covers the change where it runs.
+    if (!_crossFading) retriggerAnimation(view, "view-entering", motionMs("--dur-medium") + 60);
     // "Just opened" window for things that draw themselves in on arrival
     // (the Patterns charts). Scoped to the view change so a background
     // re-render — a sync merge, another tab's write — doesn't replay them.
     view.classList.add("is-fresh");
     clearTimeout(_viewFreshTimer);
-    _viewFreshTimer = setTimeout(() => view.classList.remove("is-fresh"), motionMs("--dur-long") * 2 + 200);
+    // Long enough for the slowest chart draw (the sparkline, 1.5× --dur-long).
+    _viewFreshTimer = setTimeout(() => view.classList.remove("is-fresh"), motionMs("--dur-long") * 1.5 + 200);
     lastRenderedView = state.view;
     // Reset step tracking so re-entering the capture view animates step 1.
     lastRenderedStep = null;
   }
   // Capture step transition: fire only when the step number changed.
   if (state.view === "capture" && state.captureStep !== lastRenderedStep) {
-    retriggerAnimation(view.querySelector(".capture-screen"), "step-entering", motionMs("--dur-medium") + 60);
+    if (!_crossFading) retriggerAnimation(view.querySelector(".capture-screen"), "step-entering", motionMs("--dur-medium") + 60);
     // Stepping forward fills the step's bar in the progress track rather
     // than snapping it copper.
     if (lastRenderedStep !== null && state.captureStep > lastRenderedStep) {
@@ -4984,10 +5060,19 @@ function renderReference() {
 function renderModal() {
   const root = document.getElementById("modal-root");
   if (!state.modal) {
-    root.innerHTML = "";
+    // Every close fades out, whether the user dismissed the dialog or it
+    // closed itself after an action (Save, Delete, Import). After an action
+    // it used to vanish in a single frame. An overlay already on its way out
+    // is left to finish.
+    const leaving = root.querySelector(".modal-overlay");
+    if (leaving && !leaving.classList.contains("is-closing") && motionMs("--dur-short")) {
+      _fadeOutOverlay(root, leaving);
+    } else if (!leaving || !leaving.classList.contains("is-closing")) {
+      root.innerHTML = "";
+    }
     _renderedModal = null;
-    // Modal closed — even by an after-action setState({modal:null}) that
-    // bypassed closeModal() — so release focus back to whatever opened it.
+    // Release focus back to whatever opened the dialog now, while it fades,
+    // not after.
     _releaseModalFocus();
     return;
   }
@@ -5179,7 +5264,9 @@ function renderModal() {
       !openOverlay.classList.contains('is-closing')) {
     const scrollTop = openModal.scrollTop;
     const field = _captureModalField(openModal);
+    const stateClasses = snapshotStateClasses(openModal);
     openModal.innerHTML = inner;
+    carryStateClasses(openModal, stateClasses);
     _labelModal(openModal);
     // The focus trap's keydown handler closes over this same element, which
     // is still mounted, and initial focus belongs to the open — not to every
@@ -5252,6 +5339,26 @@ function renderModal() {
     _trapModalFocus(modalEl);
   }
   bindModal();
+}
+
+// Play the dialog's exit, then remove it. The leaving overlay goes inert,
+// sheds its ids (nothing may find a field in a closed dialog) and lets taps
+// through to the page. A dialog opening meanwhile rebuilds #modal-root and
+// simply replaces it.
+function _fadeOutOverlay(root, overlay) {
+  overlay.classList.add("is-closing");
+  overlay.setAttribute("inert", "");
+  overlay.querySelectorAll("[id]").forEach(n => n.removeAttribute("id"));
+  let gone = false;
+  const done = () => {
+    if (gone) return;
+    gone = true;
+    if (overlay.parentNode === root) overlay.remove();
+  };
+  // animationend bubbles up from the dialog's own exit too; wait for the
+  // overlay's. The timer is the net for a browser that never fires it.
+  overlay.addEventListener("animationend", e => { if (e.target === overlay) done(); });
+  setTimeout(done, motionMs("--dur-short") + 80);
 }
 
 // Which modal kind is currently mounted in #modal-root. Distinguishes "the
@@ -5752,9 +5859,15 @@ function bindJournal() {
         else body.removeAttribute("inert");
       }
       // Opening a card near the bottom of the screen unfolds its body under
-      // the bottom nav. Bring it up once the grid-row reveal is done, so the
-      // measurement sees the full height.
-      if (!wasExpanded && card) setTimeout(() => revealInView(card), motionMs("--dur-medium") + 20);
+      // the bottom nav. Scroll it into view while it opens, as one motion,
+      // instead of opening it and then jolting the page once it had: work out
+      // where its bottom edge is going to land and reveal that now.
+      if (!wasExpanded && card) {
+        const r = card.getBoundingClientRect();
+        const clip = card.querySelector(".entry-body-clip");
+        const bottom = r.bottom + (clip ? clip.scrollHeight : 0);
+        revealInView(card, { rect: { top: r.top, bottom, width: r.width, height: bottom - r.top } });
+      }
     };
     el.addEventListener("click", toggle);
     // The card head is a div acting as a button; give keyboard users the
@@ -5891,8 +6004,9 @@ function bindJournal() {
     // button — leaving an invisible, unclearable filter that also made the
     // empty state claim the scope itself was empty.
     el.addEventListener("click", () => {
-      setState({ viewFilter: el.dataset.value, filter: "" });
-      markArrival(document.querySelector(".journal-list"));
+      state.viewFilter = el.dataset.value;
+      state.filter = "";
+      crossFadeJournalList();
     });
   });
   document.querySelectorAll('[data-action="reset-filters"]').forEach(el => {
@@ -5900,8 +6014,7 @@ function bindJournal() {
       state.search = "";
       state.filter = "";
       state.viewFilter = "all";
-      render();
-      markArrival(document.querySelector(".journal-list"));
+      crossFadeJournalList();
     });
   });
   // "From a parked worry → / Worked through here →" cross-link buttons
@@ -6048,8 +6161,8 @@ function bindJournal() {
   });
   document.querySelectorAll('[data-action="filter"]').forEach(el => {
     el.addEventListener("click", () => {
-      setState({ filter: el.dataset.value });
-      markArrival(document.querySelector(".journal-list"));
+      state.filter = el.dataset.value;
+      crossFadeJournalList();
     });
   });
   const search = document.querySelector('[data-action="search"]');
@@ -6103,8 +6216,8 @@ function bindJournal() {
         persist();
       }
       markOnboarded();
-      render();
-      if (!exists) fadeViewIn();
+      if (exists) render();
+      else crossFade(() => { render(); if (!_crossFading) fadeViewIn(); });
       toast(exists ? "Sample entries already loaded" : "Sample entries loaded — tap any to expand");
     });
   });
@@ -6153,8 +6266,7 @@ function bindJournal() {
         removed.forEach(x => syncRecordEntryDeletion(x.entry.id));
       }
       persist();
-      render();
-      fadeViewIn();
+      crossFade(() => { render(); if (!_crossFading) fadeViewIn(); });
       toast("Sample entries removed", {
         ms: 6000,
         countdown: true,
@@ -6182,8 +6294,7 @@ function bindJournal() {
               }
             });
             persist();
-            render();
-            fadeViewIn();
+            crossFade(() => { render(); if (!_crossFading) fadeViewIn(); });
             toast("Restored");
           },
         },
@@ -6282,6 +6393,15 @@ function bindJournal() {
   });
 }
 
+// A scope or distortion filter swapped the list: cross-fade old list to new,
+// or where that isn't available, fade the new list in.
+function crossFadeJournalList() {
+  crossFade(() => {
+    render();
+    if (!_crossFading) markArrival(document.querySelector(".journal-list"));
+  });
+}
+
 function renderJournalListOnly() {
   // Called from the 150ms search-input debounce — the user may have navigated
   // away before the timer fires, and painting journal HTML over another view
@@ -6315,7 +6435,7 @@ function applyCaptureModeSwitch(kind) {
   state.captureStep = 1;
   state.pendingEscalateFromWorryId = null;
   saveDraft(state.draft);
-  render();
+  crossFade(render);
 }
 
 // Guard every "start a brand-new capture" entry point so it can't silently
@@ -6811,7 +6931,7 @@ function bindCapture() {
       }
       state.captureStep = step;
       flushDraft();
-      render();
+      crossFade(render);
     });
   });
 
@@ -6828,14 +6948,14 @@ function bindCapture() {
     state.captureStep++;
     saveDraft(state.draft);
     flushDraft();
-    render();
+    crossFade(render);
   });
 
   const prev = document.querySelector('[data-action="prev-step"]');
   if (prev) prev.addEventListener("click", () => {
     state.captureStep--;
     flushDraft();
-    render();
+    crossFade(render);
   });
 
   const save = document.querySelector('[data-action="save-entry"]');
@@ -6928,13 +7048,9 @@ function bindCapture() {
   });
 }
 
-// Animated modal close — adds `.is-closing` to the overlay so the
-// modalOut / overlayOut keyframes play, then setStates `modal: null` so
-// the next render() unmounts. Used by every user-triggered close path
-// (X / Cancel / Done buttons, overlay backdrop click, Escape key). After-
-// action closes (post-save, post-import, post-delete) still use bare
-// setState({modal: null}) because the modal disappearing instantly there
-// feels confirming rather than abrupt.
+// User-triggered close: X / Cancel / Done, a backdrop tap, Escape. The exit
+// animation and the return of focus to the opener happen in renderModal(),
+// which every close goes through, including the ones that follow an action.
 function closeModal() {
   if (!state.modal) return;
   // Dismissing the Import dialog without importing must also forget a file
@@ -6946,32 +7062,7 @@ function closeModal() {
   // explicit Cancel button already clears this; doing it here too
   // keeps the state clean for every close path.
   state.pendingModeSwitch = null;
-  // Drop the Tab trap now (the overlay lingers for its exit animation)
-  // but leave the opener bookkeeping for renderModal(): it returns focus
-  // AFTER render() has rebuilt #view, so an opener inside the view is
-  // re-resolved instead of being focused and then destroyed.
-  _untrapModalKeys();
-  const overlay = document.querySelector(".modal-overlay");
-  if (!overlay || _prefersReducedMotion()) {
-    setState({ modal: null });
-    return;
-  }
-  if (overlay.classList.contains("is-closing")) return; // double-tap guard
-  overlay.classList.add("is-closing");
-  // Unmount when the overlay's own exit animation ends (animationend bubbles
-  // up from the dialog's modalOut too, hence the target check), with a timer
-  // one frame past the token as the net for a detached overlay or a browser
-  // that never fires the event.
-  let done = false;
-  const finish = () => {
-    if (done) return;
-    done = true;
-    overlay.removeEventListener("animationend", onEnd);
-    setState({ modal: null });
-  };
-  const onEnd = (e) => { if (e.target === overlay) finish(); };
-  overlay.addEventListener("animationend", onEnd);
-  setTimeout(finish, motionMs("--dur-short") + 50);
+  setState({ modal: null });
 }
 
 function bindModal() {
