@@ -4,7 +4,7 @@
 // The deploy workflow (.github/workflows/pages.yml) stamps a unique version
 // over this value at deploy time; the committed value only matters for
 // local/self-hosted use.
-const CACHE_NAME = 'reframe-v39';
+const CACHE_NAME = 'reframe-v40';
 
 // Fonts are self-hosted under fonts/ (they used to come from Google Fonts,
 // which meant a third-party request on every visit). They precache with the

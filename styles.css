@@ -346,7 +346,7 @@ main {
   /* Slide off when the virtual keyboard is up so it can't overlap a focused
      field. `translateY(100%)` is cheaper than `display:none` and keeps the
      element in flow for predictable layout when the kb dismisses. */
-  transition: transform 180ms var(--ease);
+  transition: transform var(--dur-short) var(--ease);
 }
 body.kb-open .bottom-nav {
   transform: translateY(100%);
@@ -414,14 +414,22 @@ body.kb-open .bottom-nav {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
+  /* box-shadow is listed so .btn-primary's hover shadow eases in with the
+     lift instead of snapping on a frame ahead of it. */
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), box-shadow var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   white-space: nowrap;
 }
 .btn-primary {
   background: var(--copper);
   color: var(--paper);
 }
-.btn-primary:hover { background: var(--copper-light); transform: translateY(-1px); box-shadow: var(--shadow-2); }
+.btn-primary:hover { background: var(--copper-light); }
+/* Lifts (translate + shadow) only where hover is real. On a touchscreen a tap
+   leaves :hover applied until the next tap somewhere else, so buttons and
+   cards stayed raised after being pressed. Colour changes stay unguarded. */
+@media (hover: hover) {
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-2); }
+}
 .btn-primary:active { transform: translateY(0); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
 
@@ -477,7 +485,7 @@ body.kb-open .bottom-nav {
   /* 16px font-size to dodge iOS Safari's focus auto-zoom. */
   font-size: 16px;
   outline: none;
-  transition: border-color 0.15s var(--ease);
+  transition: border-color var(--dur-short) var(--ease), background var(--dur-short) var(--ease);
 }
 .search-input:focus { border-color: var(--copper-line); }
 .search-input::placeholder { color: var(--on-ink-faint); }
@@ -538,9 +546,11 @@ body.kb-open .bottom-nav {
   transition: box-shadow var(--dur-short) var(--ease), transform var(--dur-short) var(--ease);
   position: relative;
 }
-.entry-card:hover {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 12px 32px rgba(0, 0, 0, 0.28);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  .entry-card:hover {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 12px 32px rgba(0, 0, 0, 0.28);
+    transform: translateY(-1px);
+  }
 }
 .entry-card.expanded {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.14), 0 16px 40px rgba(0, 0, 0, 0.32);
@@ -644,17 +654,29 @@ body.kb-open .bottom-nav {
 
 /* Entry-body-wrap: the collapsible region uses the modern
    grid-template-rows: 0fr ↔ 1fr trick (Chrome 117+, Safari 17.4+,
-   Firefox 121+). Older Safari falls back to instant toggle. The inner
-   .entry-body needs `min-height: 0` so the grid row can collapse to 0. */
+   Firefox 121+). Older Safari falls back to instant toggle.
+   The trick only collapses ONE grid child, and only one with no padding or
+   border of its own (those can't shrink below their own size). The body
+   used to sit in the grid as two padded children, .entry-body and
+   .entry-card-actions, so a "collapsed" card still showed a 35px strip of
+   body plus the whole 57px Edit / Copy / Delete bar, inert and dead to
+   taps. .entry-body-clip is that single unpadded child. Its content fades
+   with the height so text isn't sliced by the closing edge. */
 .entry-body-wrap {
   display: grid;
   grid-template-rows: 0fr;
   transition: grid-template-rows var(--dur-medium) var(--ease);
 }
 .entry-card.expanded .entry-body-wrap { grid-template-rows: 1fr; }
-.entry-body-wrap > .entry-body {
+.entry-body-clip {
   overflow: hidden;
   min-height: 0;
+  opacity: 0;
+  transition: opacity var(--dur-short) var(--ease);
+}
+.entry-card.expanded .entry-body-clip {
+  opacity: 1;
+  transition-duration: var(--dur-medium);
 }
 .entry-body {
   padding: 16px 18px 18px 18px;
@@ -739,7 +761,7 @@ body.kb-open .bottom-nav {
   align-items: flex-start;
 }
 .entry-pivot-content { flex: 1; min-width: 0; }
-.entry-pivot-text { transition: opacity 0.2s, text-decoration-color 0.2s; }
+.entry-pivot-text { transition: opacity var(--dur-short) var(--ease), text-decoration-color var(--dur-short) var(--ease); }
 .entry-pivot-text.done { text-decoration: line-through; opacity: 0.55; }
 .pivot-toggle-large {
   display: flex;
@@ -749,7 +771,7 @@ body.kb-open .bottom-nav {
   border-radius: var(--r-full);
   background: var(--paper-2);
   cursor: pointer;
-  transition: background 0.15s var(--ease);
+  transition: background var(--dur-short) var(--ease);
   flex-shrink: 0;
 }
 .pivot-toggle-large:hover { background: var(--paper-3); }
@@ -786,7 +808,7 @@ body.kb-open .bottom-nav {
   text-transform: uppercase;
   font-weight: 500;
   color: var(--on-paper-mute);
-  transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.1s var(--ease);
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
   min-height: 32px;
 }
 .action-btn:hover { background: rgba(0,0,0,0.06); color: var(--on-paper); }
@@ -997,7 +1019,7 @@ html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copp
   border-radius: var(--r-full);
   position: relative;
   cursor: pointer;
-  transition: background 0.25s var(--ease);
+  transition: background var(--dur-short) var(--ease);
 }
 /* These bars are goto-step buttons, and a 3px-tall button is not something
    you can hit with a thumb. The pseudo-element carries the touch target —
@@ -1160,7 +1182,7 @@ html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copp
   font-size: 16px;
   font-family: var(--body);
   outline: none;
-  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+  transition: border-color var(--dur-short) var(--ease), background var(--dur-short) var(--ease);
 }
 .input:hover, .textarea:hover, .select:hover { background: var(--paper-3); }
 .input:focus, .textarea:focus, .select:focus {
@@ -1295,7 +1317,10 @@ html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copp
   border: 3px solid var(--paper);
   transition: transform var(--dur-micro) var(--ease), box-shadow var(--dur-short) var(--ease);
 }
-.intensity-slider::-webkit-slider-thumb:hover  { transform: scale(1.08); }
+@media (hover: hover) {
+  .intensity-slider::-webkit-slider-thumb:hover { transform: scale(1.08); }
+  .intensity-slider::-moz-range-thumb:hover { transform: scale(1.08); }
+}
 .intensity-slider::-webkit-slider-thumb:active { transform: scale(1.15); }
 .intensity-slider:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 0 0 4px var(--copper-glow);
@@ -1309,7 +1334,6 @@ html[data-theme="light"] .sync-incoming-bar .btn-ghost:hover { color: var(--copp
   border: 3px solid var(--paper);
   transition: transform var(--dur-micro) var(--ease), box-shadow var(--dur-short) var(--ease);
 }
-.intensity-slider::-moz-range-thumb:hover  { transform: scale(1.08); }
 .intensity-slider::-moz-range-thumb:active { transform: scale(1.15); }
 .intensity-slider:focus-visible::-moz-range-thumb {
   box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 0 0 4px var(--copper-glow);
@@ -1407,7 +1431,7 @@ details.ref-inline summary {
   padding: 6px 0;
 }
 details.ref-inline summary::-webkit-details-marker { display: none; }
-details.ref-inline summary .chev { transition: transform 0.2s var(--ease); display: inline-block; font-size: 8px; }
+details.ref-inline summary .chev { transition: transform var(--dur-short) var(--ease); display: inline-block; font-size: 8px; }
 details.ref-inline[open] summary .chev { transform: rotate(90deg); }
 .ref-inline-body {
   margin-top: 8px;
@@ -1533,6 +1557,7 @@ body.kb-open .capture-footer { bottom: 0; }
   padding: 10px 12px;
   border-radius: var(--r-2);
   font-weight: 500;
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease);
 }
 .capture-footer .btn-back:hover { color: var(--on-paper); background: rgba(0,0,0,0.04); }
 .capture-footer .btn-discard {
@@ -1543,6 +1568,7 @@ body.kb-open .capture-footer { bottom: 0; }
   color: var(--on-paper-faint);
   padding: 10px 12px;
   font-weight: 500;
+  transition: color var(--dur-short) var(--ease);
 }
 .capture-footer .btn-discard:hover { color: var(--copper-deep); }
 
@@ -1672,7 +1698,7 @@ body.kb-open .capture-footer { bottom: 0; }
   height: 100%;
   background: linear-gradient(90deg, var(--copper) 0%, var(--copper-light) 100%);
   border-radius: 2px;
-  transition: width 0.4s var(--ease-out);
+  transform-origin: left center;
 }
 .bar-row-value {
   flex: 0 0 auto;
@@ -1706,7 +1732,6 @@ body.kb-open .capture-footer { bottom: 0; }
   inset: 0;
   background: var(--copper);
   opacity: var(--intensity, 0);
-  transition: opacity 0.4s var(--ease-out);
 }
 .emo-tile > * { position: relative; }
 .emo-tile-name {
@@ -1737,10 +1762,33 @@ body.kb-open .capture-footer { bottom: 0; }
 }
 .pivot-ring svg { transform: rotate(-90deg); }
 .pivot-ring-track { stroke: var(--paper-2); }
-.pivot-ring-fill {
-  stroke: var(--copper);
-  transition: stroke-dashoffset 0.5s var(--ease-out);
+.pivot-ring-fill { stroke: var(--copper); }
+
+/* Patterns charts draw themselves in when the view opens. The width /
+   opacity / dashoffset transitions these used to carry could never run:
+   every render builds the chart at its final values, so there was no
+   "before" to transition from. #view.is-fresh is set by render() for a
+   moment after a view change only, so a background re-render (a sync
+   merge, another tab's write) doesn't replay them. */
+#view.is-fresh .bar-fill { animation: barGrow var(--dur-long) var(--ease-out) backwards; }
+#view.is-fresh .bar-row:nth-child(2) .bar-fill { animation-delay: 40ms; }
+#view.is-fresh .bar-row:nth-child(3) .bar-fill { animation-delay: 80ms; }
+#view.is-fresh .bar-row:nth-child(4) .bar-fill { animation-delay: 120ms; }
+#view.is-fresh .bar-row:nth-child(n+5) .bar-fill { animation-delay: 160ms; }
+@keyframes barGrow { from { transform: scaleX(0); } }
+#view.is-fresh .emo-tile::before { animation: tintIn var(--dur-long) var(--ease-out) backwards; }
+#view.is-fresh .pivot-ring-fill { animation: ringDraw var(--dur-long) var(--ease-out) backwards; }
+@keyframes ringDraw { from { stroke-dashoffset: var(--ring-c); } }
+#view.is-fresh .spark-line {
+  stroke-dasharray: 1;
+  animation: sparkDraw calc(var(--dur-long) * 1.5) var(--ease-out) backwards;
 }
+@keyframes sparkDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+#view.is-fresh .spark-area,
+#view.is-fresh .spark-dot { animation: tintIn var(--dur-long) var(--ease-out) var(--dur-short) backwards; }
+/* From transparent to whatever opacity the element already has (the emo
+   tiles' wash is a per-tile --intensity, so fadeIn's "to 1" won't do). */
+@keyframes tintIn { from { opacity: 0; } }
 .pivot-ring-label {
   position: absolute;
   inset: 0;
@@ -1924,7 +1972,7 @@ body.kb-open .capture-footer { bottom: 0; }
      notch / home indicator. */
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   z-index: 50;
-  animation: fadeIn 0.2s var(--ease-out);
+  animation: fadeIn var(--dur-short) var(--ease-out);
   overscroll-behavior: contain;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -1943,12 +1991,19 @@ body.kb-open .capture-footer { bottom: 0; }
   -webkit-overflow-scrolling: touch;
   padding: 24px;
   box-shadow: var(--shadow-3);
-  animation: modalIn 0.25s var(--ease-out);
+  animation: modalIn var(--dur-medium) var(--ease-out);
 }
+/* Narrow screens: tighter padding so the text column isn't squeezed. */
 @media (max-width: 480px) {
-  /* On narrow screens, lose the rounded outer chrome and use the full
-     viewport width — a "bottom sheet" feel that lands better one-handed. */
   .modal { padding: 20px; }
+}
+/* One dialog handing over to another (renderModal keeps the overlay and
+   morphs the card's height in JS). Only the incoming content fades; the card
+   itself stays opaque so the backdrop never shows through. */
+.modal.is-swapping > * { animation: modalContentIn var(--dur-medium) var(--ease-out); }
+@keyframes modalContentIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes modalIn {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
@@ -2055,12 +2110,35 @@ body.kb-open .capture-footer { bottom: 0; }
   display: flex;
   align-items: center;
   gap: 8px;
-  animation: toastIn 0.3s var(--ease-out);
+  position: relative;
+  animation: toastIn var(--dur-medium) var(--ease-out);
   border-left: 3px solid var(--copper);
 }
 @keyframes toastIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+/* A leaving toast lets taps through to what's under it (its slot is
+   clipped by the shared .is-moving rule while it closes). */
+.toast.is-leaving { pointer-events: none; }
+/* Countdown for a time-limited action (the 6s Undo). Duration is set inline
+   from the toast's lifespan. Inset from both ends: at full width its square
+   ends poked out past the pill's rounded corners. */
+.toast-countdown {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.35;
+  transform-origin: left center;
+  animation: toastCountdown linear forwards;
+}
+@keyframes toastCountdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 .toast svg { color: var(--copper); width: 16px; height: 16px; }
 .toast--action { padding-right: 6px; }
@@ -2075,6 +2153,7 @@ body.kb-open .capture-footer { bottom: 0; }
   font-weight: 600;
   cursor: pointer;
   margin-left: 4px;
+  transition: background var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
 }
 .toast-action:hover { background: var(--copper-light); }
 .toast-action:active { transform: scale(0.96); }
@@ -2105,15 +2184,89 @@ body.kb-open .capture-footer { bottom: 0; }
 
 .file-input { display: none; }
 
+/* ──────────────────────────────────────────────────────────────────
+   ARRIVALS & DEPARTURES
+   render() rebuilds views with innerHTML, so a CSS transition never sees a
+   "before" state for anything that changed in a re-render. These cover the
+   in-place changes explicitly: markArrival() for a node that just appeared,
+   animateSlot() / growIn() / closeGap() for a slot opening or closing in a
+   stack (the .gap-closer ghost holds a removed element's space while it
+   closes), and spotlight() for the card a link just scrolled to.
+   ────────────────────────────────────────────────────────────────── */
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.is-arriving { animation: arrive var(--dur-medium) var(--ease-out); }
+/* Content is clipped to a slot while its height is animating. */
+.is-moving { overflow: hidden; }
+.gap-closer { pointer-events: none; }
+.gap-closer--card { background: var(--paper); border-radius: var(--r-3); }
+
+/* A freshly pinned star pops rather than rising. */
+.entry-fav-btn.is-arriving { animation: starPop var(--dur-medium) var(--ease-out); }
+@keyframes starPop {
+  0% { transform: scale(0.7); }
+  55% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+/* A list swapping to another filter only fades: nothing on it moved. */
+.journal-list.is-arriving { animation: fadeIn var(--dur-short) var(--ease-out); }
+
+/* Stepping forward fills the new step's bar from its left end; the pulsing
+   marker at its right end lands as the fill reaches it. */
+.progress-dot.is-arriving {
+  background: linear-gradient(var(--copper), var(--copper)) left center / 100% 100% no-repeat var(--paper-3);
+  animation: dotFill var(--dur-medium) var(--ease-out);
+}
+@keyframes dotFill { from { background-size: 0% 100%; } }
+.progress-dot.active.is-arriving::after {
+  animation:
+    dotPop var(--dur-short) var(--ease-out) calc(var(--dur-medium) - var(--dur-short)) backwards,
+    pulse 2s var(--ease) infinite;
+}
+@keyframes dotPop { from { transform: translate(50%, -50%) scale(0); } }
+
+/* A distortion (or "the facts back this up") tick scales in when picked. */
+.distortion-tile.active .distortion-tile-check,
+.accurate-tile.active .distortion-tile-check { animation: checkPop var(--dur-short) var(--ease-out); }
+@keyframes checkPop {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: none; }
+}
+
+/* A <details> expander's body eases in instead of appearing whole. */
+details.ref-inline[open] > .ref-inline-body { animation: arrive var(--dur-short) var(--ease-out); }
+
+/* The card a coping card or a cross-link just scrolled to: a copper ring
+   that holds through the scroll, then fades. */
+.entry-card.is-spotlit { animation: spotlight calc(var(--dur-long) * 3) var(--ease-out); }
+@keyframes spotlight {
+  0%, 40% { outline: 2px solid var(--copper); outline-offset: 3px; }
+  100% { outline: 2px solid transparent; outline-offset: 3px; }
+}
+
+/* Theme change cross-fade (switchThemeSmoothly, where View Transitions
+   exist). Matched to the rest of the app's motion instead of the browser's
+   default 250ms linear-ish fade. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-medium);
+  animation-timing-function: var(--ease-out);
+}
+
 /* Respect the user's motion preference. Smooth scroll, modal fade,
    button press transforms, and hover lifts all become near-instant for
    anyone with vestibular sensitivity or who's just turned reduced
-   motion on. The app's information is the point, not the choreography. */
+   motion on. The app's information is the point, not the choreography.
+   Delays go too, so nothing sits hidden waiting for a start time. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
     scroll-behavior: auto !important;
   }
 }
@@ -2141,9 +2294,17 @@ body.is-locked { overflow: hidden; }
   padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
   background: var(--ink);
   color: var(--on-ink);
-  animation: fadeIn 0.2s var(--ease-out);
+  animation: fadeIn var(--dur-short) var(--ease-out);
 }
 html[data-theme="light"] .lock-screen { background: var(--paper); color: var(--on-paper); }
+/* Unlocked: the lock screen fades off the app (which fades in beneath it)
+   rather than cutting away in one frame. */
+.lock-screen.is-leaving {
+  pointer-events: none;
+  animation: overlayOut var(--dur-medium) var(--ease-in) forwards;
+}
+.lock-screen.is-leaving .lock-card { animation: lockCardOut var(--dur-medium) var(--ease-in) forwards; }
+@keyframes lockCardOut { to { transform: translateY(-8px) scale(0.98); } }
 
 .lock-card {
   width: 100%;
@@ -2180,7 +2341,7 @@ html[data-theme="light"] .lock-help { color: var(--on-paper-mute); }
   border: 1px solid var(--rule-ink);
   border-radius: var(--r-3);
   outline: none;
-  transition: border-color 0.15s var(--ease);
+  transition: border-color var(--dur-short) var(--ease);
 }
 .lock-pin-input:focus { border-color: var(--copper); }
 html[data-theme="light"] .lock-pin-input {
@@ -2189,10 +2350,9 @@ html[data-theme="light"] .lock-pin-input {
   border-color: var(--rule-paper);
 }
 html[data-theme="light"] .lock-pin-input:focus { border-color: var(--copper); }
-.lock-screen.has-error .lock-pin-input {
-  border-color: var(--copper-deep);
-  animation: shake 0.4s var(--ease);
-}
+.lock-screen.has-error .lock-pin-input { border-color: var(--copper-deep); }
+/* Once per failed submit (renderLockScreen adds it on that render only). */
+.lock-pin-input.is-shaking { animation: shake var(--dur-long) var(--ease); }
 @keyframes shake {
   10%, 90% { transform: translateX(-2px); }
   20%, 80% { transform: translateX(3px); }
@@ -2247,7 +2407,7 @@ html[data-theme="light"] .lock-help-panel strong { color: var(--on-paper); }
   border-radius: var(--r-2);
   outline: none;
   width: 100%;
-  transition: border-color 0.15s var(--ease);
+  transition: border-color var(--dur-short) var(--ease);
 }
 .pin-input:focus { border-color: var(--copper); }
 .pin-error {
@@ -2499,10 +2659,6 @@ html[data-theme="light"] .belief-mini { color: var(--on-paper); }
 
 html[data-theme="light"] .pattern-card { /* already paper-themed; no override */ }
 
-html[data-theme="light"] .sw-precache-banner {
-  background: var(--paper-2) !important;
-  color: var(--on-paper) !important;
-}
 
 html[data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--paper-3); }
 html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--paper-4); }
@@ -2559,7 +2715,9 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--pap
   border-radius: var(--r-2);
   color: var(--on-paper);
   cursor: pointer;
+  transition: border-color var(--dur-short) var(--ease);
 }
+.settings-time-input:hover { border-color: var(--copper-line); }
 .settings-time-input:focus-visible {
   outline: 2px solid var(--copper);
   outline-offset: 1px;
@@ -2687,6 +2845,10 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
    black-on-white. Forces light theme regardless of user choice during the
    actual print render. */
 @media print {
+  /* Print / PDF switches to the journal and opens the dialog on the next
+     frame, while the view's fade-in is still near opacity 0. Paper gets the
+     settled state of everything. */
+  *, *::before, *::after { animation: none !important; transition: none !important; }
   html, body { background: white !important; color: black !important; }
   body::before, body::after { display: none !important; }
   /* Gradient-filled marks rely on a transparent text fill; with print
@@ -2701,7 +2863,8 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   .bottom-nav, .topbar-actions, .install-pill, .resume-banner,
   .nudge-banner, .coping-strip, .view-chips, .filter-chips,
   .journal-toolbar, .entry-card-actions, .entry-fav-btn,
-  .modal-overlay, .pivot-toggle-large { display: none !important; }
+  .modal-overlay, .pivot-toggle-large,
+  .toast-stack, .sys-banner, .install-help-panel, .sync-incoming-bar { display: none !important; }
   .app { display: block !important; }
   main { padding-bottom: 0 !important; }
   .topbar { padding: 0 0 16px 0 !important; border-bottom: 1px solid #333 !important; margin-bottom: 16px !important; }
@@ -2788,11 +2951,14 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   display: flex;
   flex-direction: column;
   gap: 10px;
-  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  transition: transform var(--dur-short) var(--ease), box-shadow var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease);
   position: relative;
   text-align: left;
 }
-.coping-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+@media (hover: hover) {
+  .coping-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+}
+.coping-card:active { transform: scale(0.99); }
 .coping-card:focus-visible { outline: 2px solid var(--copper); outline-offset: 3px; }
 .coping-card-head {
   display: flex;
@@ -2962,6 +3128,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   font-size: 16px;
   line-height: 1.55;
   color: var(--on-paper);
+  transition: border-color var(--dur-short) var(--ease);
 }
 .pivot-reflection-input:focus {
   outline: 2px solid var(--copper);
@@ -3264,7 +3431,7 @@ html[data-theme="light"] .action-btn.ghost:hover { color: var(--on-paper-soft); 
   display: flex;
   flex-direction: column;
   gap: 10px;
-  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+  transition: border-color var(--dur-short) var(--ease), background var(--dur-short) var(--ease);
 }
 .row-card.is-hot {
   border-color: var(--copper);
@@ -3689,7 +3856,9 @@ button.entry-flag {
   cursor: pointer;
   transition: background var(--dur-short) var(--ease), transform var(--dur-short) var(--ease);
 }
-button.entry-flag:hover { transform: translateY(-1px); }
+@media (hover: hover) {
+  button.entry-flag:hover { transform: translateY(-1px); }
+}
 button.entry-flag:active { transform: translateY(0); }
 button.entry-flag:focus-visible {
   outline: 2px solid var(--copper);
@@ -3763,6 +3932,7 @@ button.entry-flag:focus-visible {
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+  transition: color var(--dur-short) var(--ease);
 }
 .link-button:hover { color: var(--copper-light); }
 
@@ -3882,6 +4052,7 @@ button.entry-flag:focus-visible {
   flex: 1; min-width: 0; background: var(--paper-2); border: 1px solid var(--rule-paper-2);
   border-radius: var(--r-3); padding: 10px 14px; color: var(--on-paper);
   font-family: var(--mono); letter-spacing: 0.1em; font-size: 14px;
+  transition: border-color var(--dur-short) var(--ease);
 }
 .sync-input-row input:focus { outline: none; border-color: var(--copper); }
 .sync-input-hint { font-size: 11px; color: var(--on-paper-mute); line-height: 1.5; margin-top: 2px; }
@@ -3901,6 +4072,8 @@ button.entry-flag:focus-visible {
   padding: 12px 16px; background: var(--ink-2); border-bottom: 1px solid var(--copper-light);
   font-size: 13px; color: var(--on-ink); box-shadow: var(--shadow-3);
 }
+.sync-incoming-bar { animation: barDown var(--dur-medium) var(--ease-out); }
+@keyframes barDown { from { transform: translateY(-100%); } }
 .sync-incoming-inner code { font-family: var(--mono); font-size: 12px; color: var(--copper-light); }
 .sync-incoming-actions { display: flex; gap: 8px; align-items: center; }
 
@@ -3909,3 +4082,108 @@ button.entry-flag:focus-visible {
    incoming-bar (on the theme-colored <body>) needs a light override. */
 html[data-theme="light"] .sync-incoming-bar { background: var(--paper-2); color: var(--on-paper); }
 html[data-theme="light"] .sync-incoming-inner code { color: var(--copper-deep); }
+
+/* ── System banners (js/pwa.js): "a new version is ready", "offline cache
+   incomplete", and the manual install steps. pwa.js builds them before
+   app.js runs; they used to carry inline styles in system-ui and Georgia
+   with a fixed dark palette, so they ignored the light theme and looked
+   borrowed from another app. Styled here from the same tokens instead. ── */
+.sys-banner {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  z-index: 9998;
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--ink-2);
+  color: var(--on-ink);
+  border: 1px solid var(--copper-line);
+  border-left: 3px solid var(--copper);
+  border-radius: var(--r-4);
+  box-shadow: var(--shadow-3);
+  font: 14px/1.5 var(--body);
+  animation: bannerIn var(--dur-medium) var(--ease-out);
+}
+.sw-precache-banner { z-index: 9999; }
+.sys-banner.is-leaving {
+  pointer-events: none;
+  animation: bannerOut var(--dur-short) var(--ease-in) forwards;
+}
+@keyframes bannerIn { from { opacity: 0; transform: translateY(-12px); } }
+@keyframes bannerOut { to { opacity: 0; transform: translateY(-12px); } }
+.sys-banner-text { flex: 1 1 200px; min-width: 0; }
+.sys-banner-actions { display: flex; gap: 8px; margin-left: auto; }
+.sys-banner-title {
+  display: block;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--copper-light);
+}
+.sys-banner-body { font-size: 13px; color: var(--on-ink-soft); }
+.sys-banner-btn {
+  border-radius: var(--r-2);
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-short) var(--ease), color var(--dur-short) var(--ease), border-color var(--dur-short) var(--ease), transform var(--dur-micro) var(--ease);
+}
+.sys-banner-btn:active { transform: scale(0.97); }
+.sys-banner-btn--primary { background: var(--copper); color: var(--paper); }
+.sys-banner-btn--primary:hover { background: var(--copper-light); }
+.sys-banner-btn--ghost {
+  background: transparent;
+  color: var(--on-ink-soft);
+  border: 1px solid var(--rule-ink-2);
+  font-weight: 500;
+}
+.sys-banner-btn--ghost:hover { color: var(--copper); border-color: var(--copper-line); }
+
+.install-help-panel {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  /* Above the bottom nav, safe area included (was a fixed 88px, which sat
+     under the nav on phones with a home indicator). */
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 20px);
+  z-index: 9999;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 16px;
+  background: var(--ink-2);
+  color: var(--on-ink);
+  border: 1px solid var(--copper-line);
+  border-radius: var(--r-4);
+  box-shadow: var(--shadow-3);
+  font: 14px/1.5 var(--body);
+  animation: panelIn var(--dur-medium) var(--ease-out);
+}
+@keyframes panelIn { from { opacity: 0; transform: translateY(12px); } }
+.install-help-title {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 500;
+  margin-bottom: 10px;
+  color: var(--copper-light);
+}
+.install-help-steps { margin: 0 0 12px 0; padding-left: 20px; }
+.install-help-steps li { margin-bottom: 6px; }
+
+html[data-theme="light"] .sys-banner,
+html[data-theme="light"] .install-help-panel {
+  background: var(--paper-2);
+  color: var(--on-paper);
+  border-color: var(--rule-paper-2);
+}
+html[data-theme="light"] .sys-banner { border-left-color: var(--copper); }
+html[data-theme="light"] .sys-banner-title,
+html[data-theme="light"] .install-help-title { color: var(--copper-deep); }
+html[data-theme="light"] .sys-banner-body { color: var(--on-paper-soft); }
+html[data-theme="light"] .sys-banner-btn--ghost { color: var(--on-paper-mute); border-color: var(--rule-paper-2); }
