@@ -1611,10 +1611,10 @@ function toast(message, opts) {
     btn.type = "button";
     btn.className = "toast-action";
     btn.textContent = opts.action.label;
-    // One-shot: the toast stays clickable through its 300ms fade-out (no
-    // pointer-events:none), so a double-tap (easy on mobile) would run the
-    // action twice — e.g. undo splicing the same restored entry in twice,
-    // creating two cards with one id. Guard so onClick fires at most once.
+    // One-shot: a double-tap (easy on mobile) lands both taps before the
+    // toast starts leaving, and running the action twice would e.g. splice
+    // the same restored entry in twice, creating two cards with one id.
+    // Guard so onClick fires at most once.
     let _fired = false;
     btn.addEventListener("click", () => {
       if (_fired) return;
@@ -1636,37 +1636,100 @@ function toast(message, opts) {
     el.appendChild(close);
   }
   // Optional shrinking countdown bar so a time-limited action (e.g. the 6s
-  // "Undo" on delete) is visibly running out, not a silent deadline. Inline
-  // styles keep this self-contained — no extra CSS rule to maintain. Skipped
+  // "Undo" on delete) is visibly running out, not a silent deadline. A CSS
+  // animation (.toast-countdown) rather than a transition: the transition
+  // version set its end state in a requestAnimationFrame that ran before the
+  // bar's first style pass, so there was no start state to transition from
+  // and the bar sat at scaleX(0), invisible, from the first frame. Skipped
   // for persistent toasts (no deadline) and when reduced-motion is requested.
   if (opts.countdown && !persistent && !_prefersReducedMotion()) {
     const bar = document.createElement("div");
+    bar.className = "toast-countdown";
     bar.setAttribute("aria-hidden", "true");
-    bar.style.cssText =
-      "position:absolute;left:0;bottom:0;height:2px;width:100%;" +
-      "transform-origin:left;background:currentColor;opacity:.35;" +
-      "transform:scaleX(1);";
-    el.style.position = el.style.position || "relative";
+    bar.style.animationDuration = lifespan + "ms";
     el.appendChild(bar);
-    requestAnimationFrame(() => {
-      bar.style.transition = `transform ${lifespan}ms linear`;
-      bar.style.transform = "scaleX(0)";
-    });
   }
   stack.appendChild(el);
+  // The stack is anchored to the bottom of the screen, so a toast arriving
+  // under others pushed them up a whole toast-height in one frame. Grow its
+  // slot from nothing instead; the CSS toastIn handles the fade and rise.
+  if (el.previousElementSibling) animateSlot(el, "in");
   let dismissed = false;
   let autoTimer = null;
   function dismiss() {
     if (dismissed) return;
     dismissed = true;
     if (autoTimer !== null) { clearTimeout(autoTimer); autoTimer = null; }
-    el.style.opacity = "0";
-    el.style.transform = "translateY(8px)";
-    el.style.transition = "opacity var(--dur-medium) var(--ease), transform var(--dur-medium) var(--ease)";
-    setTimeout(() => el.remove(), 300);
+    // Fade out while the slot closes, so the toasts above glide down into
+    // the space instead of dropping into it when the node is removed.
+    el.classList.add("is-leaving");
+    animateSlot(el, "out", () => el.remove());
   }
   if (!persistent) autoTimer = setTimeout(dismiss, lifespan);
   return { dismiss };
+}
+
+// Grow ("in") or close ("out") an element's slot in a vertical stack: its
+// height, vertical padding, borders and margins, plus the flex gap it owns,
+// so its neighbours move smoothly instead of jumping a whole slot in one
+// frame. "out" also fades the element and holds the closed state until
+// `done` runs, which is where callers remove it. `done` runs at once when
+// there's no motion to wait for (reduced motion, no WAAPI).
+function animateSlot(el, dir, done) {
+  const dur = motionMs("--dur-medium");
+  const parent = el && el.parentElement;
+  if (!parent || !dur || typeof el.animate !== "function") { if (done) done(); return; }
+  const cs = getComputedStyle(el);
+  const gap = parseFloat(getComputedStyle(parent).rowGap) || 0;
+  // The gap sits between siblings: absorb the one below when there's a
+  // sibling below, else the one above, else there's none to absorb.
+  const below = !!el.nextElementSibling;
+  const eat = (el.previousElementSibling || below) ? -gap : 0;
+  const open = {
+    height: el.getBoundingClientRect().height + "px",
+    paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom,
+    borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth,
+    marginTop: cs.marginTop, marginBottom: cs.marginBottom,
+  };
+  const shut = {
+    height: "0px", paddingTop: "0px", paddingBottom: "0px",
+    borderTopWidth: "0px", borderBottomWidth: "0px",
+    marginTop: (below ? 0 : eat) + "px", marginBottom: (below ? eat : 0) + "px",
+  };
+  const frames = dir === "in"
+    ? [{ ...shut, opacity: 0 }, { ...open, opacity: 1 }]
+    : [{ ...open, opacity: 1 }, { opacity: 0, offset: 0.6 }, { ...shut, opacity: 0, transform: "translateY(6px) scale(0.97)" }];
+  // Counted, not flagged: a toast dismissed while it's still growing in runs
+  // both motions at once, and the first to end mustn't unclip the second.
+  el._slotRuns = (el._slotRuns || 0) + 1;
+  el.classList.add("is-moving");
+  const anim = el.animate(frames, {
+    duration: dur,
+    easing: motionEase(),
+    // A closed slot must stay closed until the node is removed, or it
+    // reopens for a frame at the end.
+    fill: dir === "out" ? "forwards" : "none",
+  });
+  let finished = false;
+  const end = () => {
+    if (finished) return;
+    finished = true;
+    el._slotRuns -= 1;
+    if (!el._slotRuns) el.classList.remove("is-moving");
+    if (done) done();
+  };
+  anim.onfinish = end;
+  anim.oncancel = end;
+  // Net for a node removed mid-motion (a detached node's animation never
+  // finishes) so `done` still runs.
+  setTimeout(end, dur + 100);
+}
+
+// The app's standard easing (--ease), for Web Animations calls.
+function motionEase() {
+  let v = "";
+  try { v = getComputedStyle(document.documentElement).getPropertyValue("--ease").trim(); } catch (_) {}
+  return v || "ease-out";
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1714,6 +1777,9 @@ const state = {
   // of the journal. Initialized in the boot block below.
   locked: false,
   lockError: "",
+  // One-shot: the next lock-screen render shakes the PIN field (a submit
+  // just failed). Cleared by renderLockScreen.
+  lockShake: false,
   // Inline-toggle for the "Forgot PIN?" explainer on the lock screen.
   // Replaces the old browser alert() with a quieter on-screen panel.
   lockHelpOpen: false,
@@ -1752,6 +1818,14 @@ function applyTheme() {
     override.setAttribute("content", resolved === "light" ? "#f5efe6" : "#1a1715");
   }
 }
+// Change the theme with a short cross-fade where the browser has View
+// Transitions (Chromium 111+, Safari 18+). Every colour in the app flips in
+// the same frame, and ink ↔ paper read as a flash. Elsewhere, and under
+// reduced motion, it swaps at once as before.
+function switchThemeSmoothly(update) {
+  if (typeof document.startViewTransition !== "function" || _prefersReducedMotion()) { update(); return; }
+  try { document.startViewTransition(update); } catch (_) { update(); }
+}
 // Print always renders as light-on-white: the print stylesheet only resets
 // html/body, so dark-theme tokens (muted kickers, near-invisible rules)
 // otherwise carried through to paper. Covers both the in-app Print / PDF
@@ -1764,7 +1838,7 @@ window.addEventListener("afterprint", () => { applyTheme(); });
 if (window.matchMedia) {
   try {
     window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
-      if (state.settings.theme === "auto") applyTheme();
+      if (state.settings.theme === "auto") switchThemeSmoothly(applyTheme);
     });
   } catch(_) { /* older Safari — ignore */ }
 }
@@ -1795,6 +1869,19 @@ function shouldShowNudge() {
 function _prefersReducedMotion() {
   try { return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
   catch { return false; }
+}
+// A motion duration token from styles.css (e.g. "--dur-medium") in ms. JS
+// that waits on a CSS transition reads the token instead of hard-coding a
+// copy of it, so retuning the motion in one place can't leave a timer
+// removing an element mid-fade. Reduced motion is ~0 everywhere, matching
+// the global override at the end of the motion rules.
+function motionMs(token) {
+  if (_prefersReducedMotion()) return 0;
+  let raw = "";
+  try { raw = getComputedStyle(document.documentElement).getPropertyValue(token).trim(); } catch (_) {}
+  const n = parseFloat(raw);
+  if (!isFinite(n)) return 0;
+  return /ms$/i.test(raw) ? n : n * 1000;
 }
 function smoothScrollTo(opts) {
   if (_prefersReducedMotion()) window.scrollTo({ ...opts, behavior: "auto" });
@@ -2046,6 +2133,7 @@ window.addEventListener("storage", (e) => {
 // (search input, slider drag, filter chip toggle).
 let lastRenderedView = null;
 let lastRenderedStep = null;
+let _viewFreshTimer = 0;
 
 // Re-applies an animation class so the same keyframe runs again on a
 // node that's already in the DOM. Without the void-offsetWidth reflow,
@@ -2080,6 +2168,110 @@ function retriggerAnimation(node, cls, fallbackMs) {
   }, fallbackMs || 400);
 }
 
+// One-shot entrance for a node a render just created where there was nothing
+// before: a restored card, a newly pinned coping card, a row the user added.
+// The look lives in CSS (.is-arriving and per-component overrides); this
+// only adds the class and cleans it up.
+function markArrival(node) {
+  if (node) retriggerAnimation(node, "is-arriving", motionMs("--dur-medium") + 80);
+}
+
+// The whole journal changed at once (samples loaded or removed, a backup
+// imported): replay the view's entrance so the new list arrives instead of
+// snapping in under the user.
+function fadeViewIn() {
+  retriggerAnimation(document.getElementById("view"), "view-entering", motionMs("--dur-medium") + 60);
+}
+
+// A brief copper ring on the card a link just took the user to (a coping
+// card, a worry ↔ thought-record cross-link), so the eye finds where it
+// landed after the scroll. Runs about as long as the smooth scroll plus a
+// beat to be seen.
+function spotlight(node) {
+  if (node) retriggerAnimation(node, "is-spotlit", motionMs("--dur-long") * 3 + 80);
+}
+
+// Render while holding `el` still on screen. Views are rebuilt with
+// innerHTML, which leaves the browser's own scroll anchoring nothing to hold
+// on to: pinning the first coping card inserted a ~300px strip above the
+// list and the card the user had just starred dropped out from under their
+// finger (and jumped back up on unpin). Re-find the element after the render
+// and scroll by however far it moved.
+function renderAnchored(el) {
+  const sel = el && el.isConnected ? _openerSelector(el) : null;
+  const before = sel ? el.getBoundingClientRect().top : null;
+  render();
+  if (before === null) return;
+  let now = null;
+  try { now = document.querySelector(sel); } catch (_) {}
+  if (!now) return;
+  const delta = now.getBoundingClientRect().top - before;
+  if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
+}
+
+// Hold the space a removed element occupied, then close it, so whatever sat
+// below glides up instead of jumping. Insert before `before` inside `parent`
+// (null `before` = at the end). Purely visual: the data has already changed
+// and nothing queries .gap-closer. `height` includes the margin the removed
+// element carried; a flex `gap` it owned is absorbed as the slot closes.
+function closeGap(parent, before, height, cls) {
+  if (!parent || !(height >= 1) || !motionMs("--dur-medium")) return;
+  const ghost = document.createElement("div");
+  ghost.className = "gap-closer" + (cls ? " " + cls : "");
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.style.height = height + "px";
+  parent.insertBefore(ghost, before || null);
+  animateSlot(ghost, "out", () => ghost.remove());
+}
+
+// A node a render just created, growing its slot open (the reverse of
+// closeGap) and fading in, so neighbours make room instead of jumping.
+function growIn(node) {
+  if (node) animateSlot(node, "in");
+}
+// growIn for a journal card, or for its whole date group when the card is
+// that day's only entry (the group's label is new too).
+function growEntry(id) {
+  const card = document.getElementById("entry-" + id);
+  const group = card && card.closest(".date-group");
+  growIn(group && group.querySelectorAll(".entry-card").length === 1 ? group : card);
+}
+
+// Measure a node that's about to be removed by a render, for closeGap():
+// its height (plus the bottom margin that goes with it) and where its
+// neighbours are, so the gap can be put back between them afterwards. A
+// neighbour is found again by its own id or row id or, for a date group
+// (which has neither), by the first entry card inside it.
+function measureForGap(node) {
+  if (!node || !node.isConnected) return null;
+  const esc = v => (window.CSS && window.CSS.escape) ? window.CSS.escape(v) : String(v).replace(/["\\]/g, "\\$&");
+  const locate = n => {
+    if (!n) return null;
+    if (n.id) return { sel: "#" + esc(n.id) };
+    if (n.dataset && n.dataset.rowId) return { sel: '[data-row-id="' + esc(n.dataset.rowId) + '"]' };
+    const card = n.querySelector && n.querySelector(".entry-card[id]");
+    return card && n.classList[0] ? { sel: "#" + esc(card.id), up: "." + n.classList[0] } : null;
+  };
+  return {
+    height: node.getBoundingClientRect().height + (parseFloat(getComputedStyle(node).marginBottom) || 0),
+    next: locate(node.nextElementSibling),
+    prev: locate(node.previousElementSibling),
+  };
+}
+function closeGapAfterRender(m, cls) {
+  if (!m) return;
+  const find = loc => {
+    if (!loc) return null;
+    let n = null;
+    try { n = document.querySelector(loc.sel); } catch (_) {}
+    return n && loc.up ? n.closest(loc.up) : n;
+  };
+  const next = find(m.next);
+  if (next) { closeGap(next.parentElement, next, m.height, cls); return; }
+  const prev = find(m.prev);
+  if (prev) closeGap(prev.parentElement, null, m.height, cls);
+}
+
 function render() {
   // Lock gate. When a PIN is set and this session hasn't unlocked yet, we
   // hide the entire app shell behind a lock screen — no journal entries,
@@ -2106,7 +2298,7 @@ function render() {
   }
   document.body.classList.remove("is-locked");
   const existingLock = document.getElementById("lockScreen");
-  if (existingLock) existingLock.remove();
+  if (existingLock) dismissLockScreen(existingLock);
 
   // Capture what opened the modal while it's still in the DOM — the view
   // rebuild below would otherwise destroy an in-view opener (an entry's
@@ -2135,16 +2327,40 @@ function render() {
   else if (state.view === "capture") bindCapture();
   else if (state.view === "outcome") bindOutcome();
 
+  // New content starts at the top of the page. Jump there in the same frame
+  // the content swaps, under the fade-in, rather than smooth-scrolling
+  // afterwards: that scrolled the freshly rendered view past the reader
+  // while it was still fading in (two motions fighting), and saving an entry
+  // from the bottom of Step 7 used to land mid-journal, nowhere near it.
+  // The first render is left alone so the browser's own scroll restoration
+  // on reload still applies.
+  const viewChanged = state.view !== lastRenderedView;
+  const stepChanged = state.view === "capture" && state.captureStep !== lastRenderedStep;
+  if ((viewChanged || stepChanged) && lastRenderedView !== null && window.scrollY > 0) {
+    window.scrollTo(0, 0);
+  }
+
   // View transition: fire only when state.view actually changed.
-  if (state.view !== lastRenderedView) {
-    retriggerAnimation(view, "view-entering", 380);
+  if (viewChanged) {
+    retriggerAnimation(view, "view-entering", motionMs("--dur-medium") + 60);
+    // "Just opened" window for things that draw themselves in on arrival
+    // (the Patterns charts). Scoped to the view change so a background
+    // re-render — a sync merge, another tab's write — doesn't replay them.
+    view.classList.add("is-fresh");
+    clearTimeout(_viewFreshTimer);
+    _viewFreshTimer = setTimeout(() => view.classList.remove("is-fresh"), motionMs("--dur-long") * 2 + 200);
     lastRenderedView = state.view;
     // Reset step tracking so re-entering the capture view animates step 1.
     lastRenderedStep = null;
   }
   // Capture step transition: fire only when the step number changed.
   if (state.view === "capture" && state.captureStep !== lastRenderedStep) {
-    retriggerAnimation(view.querySelector(".capture-screen"), "step-entering", 380);
+    retriggerAnimation(view.querySelector(".capture-screen"), "step-entering", motionMs("--dur-medium") + 60);
+    // Stepping forward fills the step's bar in the progress track rather
+    // than snapping it copper.
+    if (lastRenderedStep !== null && state.captureStep > lastRenderedStep) {
+      markArrival(view.querySelector(".progress-dot.active"));
+    }
     lastRenderedStep = state.captureStep;
     // Focus the step's primary field ONCE on step entry. The fields used to
     // carry the `autofocus` attribute, but Chromium re-focuses a dynamically
@@ -2156,6 +2372,22 @@ function render() {
   }
 
   renderModal();
+}
+
+// Fade the lock screen off the unlocked app instead of cutting to it. The
+// leaving copy sheds its ids (a fresh lock builds its own, and nothing may
+// find the old PIN field), goes inert and lets taps through while it fades.
+function dismissLockScreen(el) {
+  const dur = motionMs("--dur-medium");
+  if (!dur) { el.remove(); return; }
+  el.removeAttribute("id");
+  el.querySelectorAll("[id]").forEach(n => n.removeAttribute("id"));
+  el.setAttribute("inert", "");
+  el.classList.add("is-leaving");
+  let gone = false;
+  const done = () => { if (!gone) { gone = true; el.remove(); } };
+  el.addEventListener("animationend", e => { if (e.target === el) done(); });
+  setTimeout(done, dur + 100);
 }
 
 function renderLockScreen() {
@@ -2172,6 +2404,11 @@ function renderLockScreen() {
   const _prevPinEl = document.getElementById("lockPinInput");
   const _prevPin = (_prevPinEl && state.lockError) ? _prevPinEl.value : "";
   el.className = "lock-screen" + (state.lockError ? " has-error" : "");
+  // Shake once per failed submit. Keyed to the error class it replayed on
+  // every re-render while an error showed — tapping "Forgot PIN?" after a
+  // wrong PIN shook the field again.
+  const shake = !!state.lockShake;
+  state.lockShake = false;
   // Lock card is functionally a modal — block everything else on the
   // page until the PIN is correct — so expose it as a dialog with an
   // accessible name. The first focused control (the PIN input) carries
@@ -2190,7 +2427,7 @@ function renderLockScreen() {
       <form class="lock-form" id="lockForm" autocomplete="off">
         <input
           id="lockPinInput"
-          class="lock-pin-input"
+          class="lock-pin-input${shake ? " is-shaking" : ""}"
           type="password"
           inputmode="numeric"
           pattern="[0-9]*"
@@ -2232,7 +2469,7 @@ function renderLockScreen() {
     // failures for one wrong PIN, reaching the lockout early.
     if (_verifying) return;
     const pin = (input.value || "").trim();
-    if (!pin) { state.lockError = "Enter your PIN to continue."; render(); return; }
+    if (!pin) { state.lockError = "Enter your PIN to continue."; state.lockShake = true; render(); return; }
     // Brute-force throttle. After 5 wrong tries the form refuses to
     // submit until the cool-down expires — defends a stolen device from
     // a script that fires 10,000 PINs in a loop.
@@ -2240,6 +2477,7 @@ function renderLockScreen() {
     if (waitMs > 0) {
       const sec = Math.ceil(waitMs / 1000);
       state.lockError = "Too many tries. Wait " + sec + "s before another attempt.";
+      state.lockShake = true;
       render();
       return;
     }
@@ -2264,6 +2502,7 @@ function renderLockScreen() {
       // Brief shake-feedback via a class the CSS animates, then re-render
       // so the error message lands. Keep the input value so the user can
       // see what they typed and correct it.
+      state.lockShake = true;
       render();
     }
   });
@@ -2521,6 +2760,7 @@ function renderJournal() {
       </div>
     ` : ""}
 
+    <div class="journal-list">
     ${filtered.length === 0 ? renderJournalFilteredEmpty() : (() => {
       // Precompute id → index lookup once. The previous form did
       // entries.indexOf(e) inside the inner map, which made render() O(n²)
@@ -2538,6 +2778,7 @@ function renderJournal() {
         </div>
       `).join("");
     })()}
+    </div>
   `;
 }
 
@@ -2724,7 +2965,7 @@ function renderThoughtRecordCard(entry, index) {
         </div>
       </div>
       <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}"${expanded ? "" : " inert"}>
-        ${renderEntryDetails(entry)}
+        <div class="entry-body-clip">${renderEntryDetails(entry)}</div>
       </div>
     </article>
   `;
@@ -2766,7 +3007,7 @@ function renderFreeformCard(entry, index) {
         ` : ""}
       </div>
       <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}"${expanded ? "" : " inert"}>
-        ${renderFreeformDetails(entry)}
+        <div class="entry-body-clip">${renderFreeformDetails(entry)}</div>
       </div>
     </article>
   `;
@@ -2805,7 +3046,7 @@ function renderActivityCard(entry, index) {
         </div>
       </div>
       <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}"${expanded ? "" : " inert"}>
-        ${renderActivityDetails(entry)}
+        <div class="entry-body-clip">${renderActivityDetails(entry)}</div>
       </div>
     </article>
   `;
@@ -2843,7 +3084,7 @@ function renderWorryCard(entry, index) {
         </div>
       </div>
       <div class="entry-body-wrap" aria-hidden="${expanded ? "false" : "true"}"${expanded ? "" : " inert"}>
-        ${renderWorryDetails(entry)}
+        <div class="entry-body-clip">${renderWorryDetails(entry)}</div>
       </div>
     </article>
   `;
@@ -4392,7 +4633,7 @@ function renderPatterns() {
           <div class="pivot-ring" style="width: 72px; height: 72px;">
             <svg width="72" height="72" viewBox="0 0 72 72">
               <circle class="pivot-ring-track" cx="36" cy="36" r="${R}" fill="none" stroke-width="5"/>
-              <circle class="pivot-ring-fill" cx="36" cy="36" r="${R}" fill="none" stroke-width="5"
+              <circle class="pivot-ring-fill" style="--ring-c: ${C.toFixed(2)}" cx="36" cy="36" r="${R}" fill="none" stroke-width="5"
                 stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" stroke-linecap="round"/>
             </svg>
             <div class="pivot-ring-label">
@@ -4535,12 +4776,12 @@ function renderPatterns() {
                   <stop offset="100%" stop-color="var(--copper)" stop-opacity="0"/>
                 </linearGradient>
               </defs>
-              <path d="${sparkArea}" fill="url(#sparkGrad)"/>
-              <path d="${sparkPath}" fill="none" stroke="var(--copper)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path class="spark-area" d="${sparkArea}" fill="url(#sparkGrad)"/>
+              <path class="spark-line" d="${sparkPath}" pathLength="1" fill="none" stroke="var(--copper)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               ${recent.map((e, i) => {
                 const x = pad + (i / (recent.length - 1)) * (sparkW - 2 * pad);
                 const y = pad + ((100 - peakIntensity(e)) / 100) * (sparkH - 2 * pad);
-                return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="var(--copper)"/>`;
+                return `<circle class="spark-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="var(--copper)"/>`;
               }).join("")}
             </svg>
             <div class="spark-axis-row">
@@ -4949,6 +5190,45 @@ function renderModal() {
     bindModal();
     openModal.scrollTop = scrollTop;
     _restoreModalField(openModal, field);
+    return;
+  }
+
+  // A different dialog replacing an open one (Settings → Set PIN, Settings →
+  // Export, Quick capture → crisis resources). Rebuilding #modal-root here
+  // restarted the overlay's fadeIn from opacity 0, so the page behind blinked
+  // into view unblurred between the two dialogs. Keep the overlay, morph the
+  // card's height from the old dialog to the new one, and fade only the new
+  // content in.
+  if (openModal && !openOverlay.classList.contains('is-closing')) {
+    const fromH = openModal.getBoundingClientRect().height;
+    openModal.classList.remove('is-swapping');
+    void openModal.offsetWidth;
+    openModal.classList.add('is-swapping');
+    openModal.innerHTML = inner;
+    openModal.scrollTop = 0;
+    openModal.removeAttribute('aria-labelledby');
+    _renderedModal = state.modal;
+    _labelModal(openModal);
+    const toH = openModal.getBoundingClientRect().height;
+    const dur = motionMs('--dur-medium');
+    if (dur && Math.abs(toH - fromH) > 1 && typeof openModal.animate === 'function') {
+      // Clip while the box is between sizes: overflow-y:auto would otherwise
+      // flash a scrollbar for the length of the morph.
+      openModal.style.overflowY = 'hidden';
+      const anim = openModal.animate(
+        [{ height: fromH + 'px' }, { height: toH + 'px' }],
+        { duration: dur, easing: motionEase() });
+      const settle = () => { openModal.style.overflowY = ''; };
+      anim.onfinish = settle;
+      anim.oncancel = settle;
+    }
+    setTimeout(() => openModal.classList.remove('is-swapping'), dur + 50);
+    // A new dialog gets the same initial focus as a fresh open. The opener
+    // is left alone, so closing still returns focus to whatever opened the
+    // first dialog.
+    _modalNeedsInitialFocus = true;
+    _trapModalFocus(openModal);
+    bindModal();
     return;
   }
 
@@ -5472,9 +5752,9 @@ function bindJournal() {
         else body.removeAttribute("inert");
       }
       // Opening a card near the bottom of the screen unfolds its body under
-      // the bottom nav. Bring it up once the 320ms grid-row reveal is done,
-      // so the measurement sees the full height.
-      if (!wasExpanded && card) setTimeout(() => revealInView(card), 340);
+      // the bottom nav. Bring it up once the grid-row reveal is done, so the
+      // measurement sees the full height.
+      if (!wasExpanded && card) setTimeout(() => revealInView(card), motionMs("--dur-medium") + 20);
     };
     el.addEventListener("click", toggle);
     // The card head is a div acting as a button; give keyboard users the
@@ -5510,7 +5790,14 @@ function bindJournal() {
         state.expandedIds.add(entry.id);
         touchEntry(entry);
         persist();
-        render();
+        // The "Pivoted" pill and "Step 8 open" flag can wrap the card's
+        // meta row, so hold the checkbox still; the reflection field that
+        // appears under it opens its slot rather than popping in.
+        renderAnchored(el);
+        if (entry.pivotDone) {
+          const card = document.getElementById("entry-" + entry.id);
+          growIn(card && card.querySelector(".pivot-followup"));
+        }
         toast(entry.pivotDone ? "Pivot marked done — add a note on what happened" : "Pivot unmarked");
       }
     });
@@ -5525,7 +5812,17 @@ function bindJournal() {
       entry.isFavorite = !entry.isFavorite;
       touchEntry(entry);
       persist();
-      render();
+      const hadStrip = !!document.querySelector(".coping-strip");
+      // The coping strip above the list appears with the first pin and goes
+      // with the last unpin; hold the tapped card where it is regardless.
+      renderAnchored(document.getElementById("entry-" + entry.id));
+      if (entry.isFavorite) {
+        const card = document.getElementById("entry-" + entry.id);
+        markArrival(card && card.querySelector(".entry-fav-btn"));
+        markArrival(hadStrip
+          ? Array.from(document.querySelectorAll(".coping-card")).find(c => c.dataset.id === entry.id)
+          : document.querySelector(".coping-strip"));
+      }
       toast(entry.isFavorite ? "Pinned as a coping card" : "Unpinned");
     });
   });
@@ -5593,7 +5890,10 @@ function bindJournal() {
     // row — and with it the active chip and the "All distortions" clear
     // button — leaving an invisible, unclearable filter that also made the
     // empty state claim the scope itself was empty.
-    el.addEventListener("click", () => setState({ viewFilter: el.dataset.value, filter: "" }));
+    el.addEventListener("click", () => {
+      setState({ viewFilter: el.dataset.value, filter: "" });
+      markArrival(document.querySelector(".journal-list"));
+    });
   });
   document.querySelectorAll('[data-action="reset-filters"]').forEach(el => {
     el.addEventListener("click", () => {
@@ -5601,6 +5901,7 @@ function bindJournal() {
       state.filter = "";
       state.viewFilter = "all";
       render();
+      markArrival(document.querySelector(".journal-list"));
     });
   });
   // "From a parked worry → / Worked through here →" cross-link buttons
@@ -5624,6 +5925,7 @@ function bindJournal() {
       requestAnimationFrame(() => {
         const node = document.getElementById("entry-" + id);
         if (node) smoothScrollIntoView(node, { block: "start" });
+        spotlight(node);
       });
     });
   });
@@ -5650,10 +5952,15 @@ function bindJournal() {
   // can dismiss without permanently turning the feature off.
   document.querySelectorAll('[data-action="snooze-nudge"]').forEach(el => {
     el.addEventListener("click", () => {
+      const banner = el.closest(".nudge-banner");
+      if (banner && banner.classList.contains("is-moving")) return; // already leaving
       state.settings.nudgeSnoozedUntil = Date.now() + 18 * 3600 * 1000;
       saveSettings(state.settings);
-      render();
-      toast("Snoozed for today");
+      // Close the banner's slot first so the journal slides up into it,
+      // then render without it.
+      const done = () => { render(); toast("Snoozed for today"); };
+      if (banner) animateSlot(banner, "out", done);
+      else done();
     });
   });
   // Coping card → jump to underlying entry and expand it.
@@ -5670,6 +5977,7 @@ function bindJournal() {
       requestAnimationFrame(() => {
         const node = document.getElementById("entry-" + id);
         smoothScrollIntoView(node, { behavior: "smooth", block: "start" });
+        spotlight(node);
       });
     };
     el.addEventListener("click", open);
@@ -5739,7 +6047,10 @@ function bindJournal() {
     });
   });
   document.querySelectorAll('[data-action="filter"]').forEach(el => {
-    el.addEventListener("click", () => setState({ filter: el.dataset.value }));
+    el.addEventListener("click", () => {
+      setState({ filter: el.dataset.value });
+      markArrival(document.querySelector(".journal-list"));
+    });
   });
   const search = document.querySelector('[data-action="search"]');
   if (search) search.addEventListener("input", () => {
@@ -5793,6 +6104,7 @@ function bindJournal() {
       }
       markOnboarded();
       render();
+      if (!exists) fadeViewIn();
       toast(exists ? "Sample entries already loaded" : "Sample entries loaded — tap any to expand");
     });
   });
@@ -5842,6 +6154,7 @@ function bindJournal() {
       }
       persist();
       render();
+      fadeViewIn();
       toast("Sample entries removed", {
         ms: 6000,
         countdown: true,
@@ -5870,6 +6183,7 @@ function bindJournal() {
             });
             persist();
             render();
+            fadeViewIn();
             toast("Restored");
           },
         },
@@ -5914,7 +6228,9 @@ function bindJournal() {
       entry.resolvedAt = new Date().toISOString();
       touchEntry(entry);
       persist();
-      render();
+      // Resolving the last due worry removes the worry-time banner above
+      // the list; keep the card the user is looking at in place.
+      renderAnchored(document.getElementById("entry-" + entry.id));
       toast("Worry let go.");
     });
   });
@@ -5930,7 +6246,7 @@ function bindJournal() {
       entry.postponeCount = (entry.postponeCount || 0) + 1;
       touchEntry(entry);
       persist();
-      render();
+      renderAnchored(document.getElementById("entry-" + entry.id));
       toast("Postponed to the next worry window.");
     });
   });
@@ -6080,13 +6396,15 @@ function bindCapture() {
       const variants = family ? (EMOTION_FAMILIES[family] || []) : [];
       const variant = variants[0] || "";
       state.draft.moods = state.draft.moods || [];
-      state.draft.moods.push(normalizeMood({
+      const added = normalizeMood({
         family,
         variant,
         intensity: 45,
-      }));
+      });
+      state.draft.moods.push(added);
       saveDraft(state.draft);
       render();
+      growIn(document.querySelector(`[data-row-id="${added.id}"]`));
     });
   });
 
@@ -6261,6 +6579,7 @@ function bindCapture() {
       state.draft.thoughts.push(added);
       saveDraft(state.draft);
       render();
+      growIn(document.querySelector(`[data-list="thoughts"] [data-row-id="${added.id}"]`));
       // The new row lands where the button was, often right at the sticky
       // footer. Put the caret in it; focusForUser also lifts it into view.
       const ta = document.querySelector(`[data-action="edit-thought-text"][data-id="${added.id}"]`);
@@ -6276,7 +6595,9 @@ function bindCapture() {
       // Re-assign hot if we removed the hot thought.
       if (wasHot && state.draft.thoughts.length) state.draft.thoughts[0].isHot = true;
       saveDraft(state.draft);
+      const gap = measureForGap(el.closest(".row-card"));
       render();
+      closeGapAfterRender(gap);
     });
   });
 
@@ -6332,16 +6653,20 @@ function bindCapture() {
       saveDraft(state.draft);
       render();
       // Nothing to type into (the row opens on a select), so just make sure
-      // the new row isn't sitting under the sticky footer.
+      // the new row isn't sitting under the sticky footer — once it has
+      // finished growing open, so the measurement sees its full height.
       const row = document.querySelector(`[data-list="moods"] [data-row-id="${added.id}"]`);
-      if (row) requestAnimationFrame(() => revealInView(row));
+      growIn(row);
+      if (row) setTimeout(() => revealInView(row), motionMs("--dur-medium") + 20);
     });
   });
   document.querySelectorAll('[data-action="remove-mood"]').forEach(el => {
     el.addEventListener("click", () => {
       state.draft.moods = (state.draft.moods || []).filter(m => m.id !== el.dataset.id);
       saveDraft(state.draft);
+      const gap = measureForGap(el.closest(".row-card"));
       render();
+      closeGapAfterRender(gap);
     });
   });
 
@@ -6458,7 +6783,20 @@ function bindCapture() {
         }
       }
       saveDraft(state.draft);
+      // On Step 3 the distortion grid (~600px) sits right under this tile
+      // and comes or goes with it: open or close its space rather than
+      // snapping everything below by that much.
+      const gridGroup = () => {
+        const g = document.querySelector(".capture-screen .distortion-grid");
+        return g && g.closest(".field-group");
+      };
+      const before = gridGroup();
+      const gridH = before ? before.getBoundingClientRect().height + (parseFloat(getComputedStyle(before).marginBottom) || 0) : 0;
       render();
+      const tile = document.querySelector('.capture-screen [data-action="toggle-accurate"]');
+      const tileBox = tile && tile.parentElement;
+      if (turningOn && gridH && tileBox) closeGap(tileBox.parentElement, tileBox.nextElementSibling, gridH);
+      else if (!turningOn) growIn(gridGroup());
     });
   });
 
@@ -6474,7 +6812,6 @@ function bindCapture() {
       state.captureStep = step;
       flushDraft();
       render();
-      smoothScrollTo({ top: 0, behavior: "smooth" });
     });
   });
 
@@ -6492,7 +6829,6 @@ function bindCapture() {
     saveDraft(state.draft);
     flushDraft();
     render();
-    smoothScrollTo({ top: 0, behavior: "smooth" });
   });
 
   const prev = document.querySelector('[data-action="prev-step"]');
@@ -6500,7 +6836,6 @@ function bindCapture() {
     state.captureStep--;
     flushDraft();
     render();
-    smoothScrollTo({ top: 0, behavior: "smooth" });
   });
 
   const save = document.querySelector('[data-action="save-entry"]');
@@ -6611,7 +6946,7 @@ function closeModal() {
   // explicit Cancel button already clears this; doing it here too
   // keeps the state clean for every close path.
   state.pendingModeSwitch = null;
-  // Drop the Tab trap now (the overlay lingers 200ms for its exit animation)
+  // Drop the Tab trap now (the overlay lingers for its exit animation)
   // but leave the opener bookkeeping for renderModal(): it returns focus
   // AFTER render() has rebuilt #view, so an opener inside the view is
   // re-resolved instead of being focused and then destroyed.
@@ -6623,7 +6958,20 @@ function closeModal() {
   }
   if (overlay.classList.contains("is-closing")) return; // double-tap guard
   overlay.classList.add("is-closing");
-  setTimeout(() => setState({ modal: null }), 200);
+  // Unmount when the overlay's own exit animation ends (animationend bubbles
+  // up from the dialog's modalOut too, hence the target check), with a timer
+  // one frame past the token as the net for a detached overlay or a browser
+  // that never fires the event.
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    overlay.removeEventListener("animationend", onEnd);
+    setState({ modal: null });
+  };
+  const onEnd = (e) => { if (e.target === overlay) finish(); };
+  overlay.addEventListener("animationend", onEnd);
+  setTimeout(finish, motionMs("--dur-short") + 50);
 }
 
 function bindModal() {
@@ -6757,8 +7105,7 @@ function bindModal() {
     el.addEventListener("click", () => {
       state.settings.theme = el.dataset.value;
       saveSettings(state.settings);
-      applyTheme();
-      render();
+      switchThemeSmoothly(() => { applyTheme(); render(); });
     });
   });
   document.querySelectorAll('[data-action="set-reminder"]').forEach(el => {
@@ -6971,6 +7318,7 @@ function bindModal() {
     }
     markOnboarded();
     setState({ modal: null });
+    if (!exists) fadeViewIn();
     toast(exists ? "Sample entries already loaded" : "Sample entries loaded — tap any to expand");
   });
   const onboardBegin = mq('[data-action="onboard-begin"]');
@@ -7069,7 +7417,14 @@ function bindModal() {
     // entry on the next P2P merge.
     if (typeof syncRecordEntryDeletion === "function") syncRecordEntryDeletion(id);
     persist();
+    // Measure the card before the render drops it (or its whole date group,
+    // when it was that day's only entry) so its space closes smoothly.
+    const goneCard = document.getElementById("entry-" + id);
+    const goneGroup = goneCard && goneCard.closest(".date-group");
+    const goneWhole = !!(goneGroup && goneGroup.querySelectorAll(".entry-card").length === 1);
+    const gap = measureForGap(goneWhole ? goneGroup : goneCard);
     setState({ modal: null });
+    closeGapAfterRender(gap, goneWhole ? "" : "gap-closer--card");
     toast("Entry deleted", {
       ms: 6000,
       countdown: true,
@@ -7112,6 +7467,7 @@ function bindModal() {
           }
           persist();
           render();
+          growEntry(removed.id);
           toast("Restored");
         },
       },
@@ -7224,6 +7580,7 @@ function processImportFile(file, mode) {
       // failure persist() has already surfaced the blocking quota-error modal.
       if (!persist()) return;
       setState({ modal: null });
+      if (importedCount > 0) fadeViewIn();
       toast(importedCount === 0
         ? "Nothing new to import — every entry was already in the journal"
         : "Imported " + importedCount + (importedCount === 1 ? " entry" : " entries"));
@@ -7274,8 +7631,12 @@ document.querySelectorAll(".nav-item").forEach(b => {
         state.captureStep = 1;
       }
     }
+    // A different view jumps to the top as it renders (see render()). The
+    // tab already showing scrolls back up smoothly instead: there's nothing
+    // new arriving, so the motion is the whole feedback for the tap.
+    const sameView = state.view === v;
     setView(v);
-    smoothScrollTo({ top: 0, behavior: "smooth" });
+    if (sameView) smoothScrollTo({ top: 0, behavior: "smooth" });
   });
 });
 // Static-topbar buttons. Bound once at startup so we don't stack listeners
@@ -7453,7 +7814,7 @@ document.addEventListener("keydown", e => {
     }
   };
   // Look twice: once the focus ring has painted, and again after the
-  // keyboard and the chrome sliding out of its way (180–200ms transitions)
+  // keyboard and the chrome sliding out of its way (--dur-short transitions)
   // have settled. The second look is free when the first one sufficed.
   let settleTimer = 0;
   const scheduleReveal = settleMs => {

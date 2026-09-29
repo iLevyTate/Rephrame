@@ -112,6 +112,37 @@
     } catch(_) {}
   }
 
+  // The system banners below are built here, before app.js runs, but styled
+  // in styles.css (.sys-banner) so they follow the theme and the app's type
+  // instead of a fixed dark palette in system-ui.
+  function _bannerButton(label, kind, onClick){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sys-banner-btn sys-banner-btn--' + kind;
+    b.textContent = label;
+    b.onclick = onClick;
+    return b;
+  }
+  // Buttons travel as one group, so on a narrow screen they wrap under the
+  // message together instead of splitting across two lines.
+  function _bannerActions(...buttons){
+    const row = document.createElement('div');
+    row.className = 'sys-banner-actions';
+    buttons.forEach(b => row.appendChild(b));
+    return row;
+  }
+  // Slide a banner away, then remove it. Removes at once when there's no
+  // exit animation to wait for.
+  function _dismissBanner(el){
+    if (el.classList.contains('is-leaving')) return;
+    el.classList.add('is-leaving');
+    let name = 'none';
+    try { name = getComputedStyle(el).animationName; } catch(_) {}
+    if (!name || name === 'none') { el.remove(); return; }
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+    setTimeout(() => el.remove(), 800);
+  }
+
   // Listen for SW precache-incomplete reports so we can warn the user that
   // offline mode may be partial rather than failing silently.
   try{
@@ -124,28 +155,18 @@
       if(!banner){
         banner = document.createElement('div');
         banner.id = 'swPrecacheBanner';
-        banner.className = 'sw-precache-banner';
+        banner.className = 'sys-banner sw-precache-banner';
         banner.setAttribute('role', 'status');
-        banner.style.cssText = 'position:fixed;top:12px;left:12px;right:12px;z-index:9999;background:#2a2521;color:#f5efe6;border:1px solid #b8552c;border-radius:8px;padding:12px 14px;font:14px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 12px 36px rgba(0,0,0,0.48);';
         document.body.appendChild(banner);
       }
       banner.replaceChildren();
       const msg = document.createElement('span');
-      msg.style.flex = '1 1 auto';
+      msg.className = 'sys-banner-text';
       msg.textContent = '⚠ Offline cache incomplete — ' + failed.length + ' of ' + (ev.data.total || '?') + ' assets failed to load. Online use is fine; offline mode may be partial.';
       banner.appendChild(msg);
-      const refresh = document.createElement('button');
-      refresh.type = 'button';
-      refresh.style.cssText = 'background:#b8552c;color:#1a1715;border:none;border-radius:6px;padding:6px 12px;font:inherit;font-weight:600;cursor:pointer;';
-      refresh.textContent = 'Reload';
-      refresh.onclick = () => location.reload();
-      banner.appendChild(refresh);
-      const close = document.createElement('button');
-      close.type = 'button';
-      close.style.cssText = 'background:transparent;color:#c9bdac;border:1px solid #5a4f43;border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer;';
-      close.textContent = 'Dismiss';
-      close.onclick = () => banner.remove();
-      banner.appendChild(close);
+      banner.appendChild(_bannerActions(
+        _bannerButton('Reload', 'primary', () => location.reload()),
+        _bannerButton('Dismiss', 'ghost', () => _dismissBanner(banner))));
     });
   }catch(_){ /* BroadcastChannel unavailable */ }
 
@@ -162,29 +183,19 @@
     if (document.getElementById('swUpdateBanner')) return;
     const banner = document.createElement('div');
     banner.id = 'swUpdateBanner';
-    banner.className = 'sw-update-banner';
+    banner.className = 'sys-banner sw-update-banner';
     banner.setAttribute('role', 'status');
-    banner.style.cssText = 'position:fixed;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;z-index:9998;max-width:520px;margin:0 auto;background:#221e1b;color:#f5efe6;border:1px solid rgba(184,85,44,0.32);border-left:3px solid #b8552c;border-radius:10px;padding:12px 14px;font:14px/1.5 system-ui,sans-serif;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 12px 36px rgba(0,0,0,0.48);';
     const text = document.createElement('div');
-    text.style.cssText = 'flex:1 1 200px;min-width:0;';
-    text.innerHTML = '<strong style="display:block;font-family:Georgia,serif;font-size:15px;color:#b8552c;">A new version is ready.</strong><span style="font-size:13px;color:#c9bdac;">Reload to pick up the latest improvements. Your entries stay where they are.</span>';
+    text.className = 'sys-banner-text';
+    text.innerHTML = '<strong class="sys-banner-title">A new version is ready.</strong><span class="sys-banner-body">Reload to pick up the latest improvements. Your entries stay where they are.</span>';
     banner.appendChild(text);
-    const reload = document.createElement('button');
-    reload.type = 'button';
-    reload.style.cssText = 'background:#b8552c;color:#1a1715;border:none;border-radius:6px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;';
-    reload.textContent = 'Reload';
-    reload.onclick = () => {
-      if (!reg || !reg.waiting) { location.reload(); return; }
-      _updateRequested = true;
-      reg.waiting.postMessage({type: 'SKIP_WAITING'});
-    };
-    banner.appendChild(reload);
-    const later = document.createElement('button');
-    later.type = 'button';
-    later.style.cssText = 'background:transparent;color:#c9bdac;border:1px solid #5a4f43;border-radius:6px;padding:8px 12px;font:inherit;cursor:pointer;';
-    later.textContent = 'Later';
-    later.onclick = () => banner.remove();
-    banner.appendChild(later);
+    banner.appendChild(_bannerActions(
+      _bannerButton('Reload', 'primary', () => {
+        if (!reg || !reg.waiting) { location.reload(); return; }
+        _updateRequested = true;
+        reg.waiting.postMessage({type: 'SKIP_WAITING'});
+      }),
+      _bannerButton('Later', 'ghost', () => _dismissBanner(banner))));
     document.body.appendChild(banner);
   }
 
@@ -334,7 +345,6 @@
       panel.className = 'install-help-panel';
       panel.setAttribute('role', 'region');
       panel.setAttribute('aria-label', 'How to install');
-      panel.style.cssText = 'position:fixed;left:12px;right:12px;bottom:88px;z-index:9999;background:#221e1b;color:#f5efe6;border:1px solid rgba(184,85,44,0.32);border-radius:12px;padding:16px;font:14px/1.5 system-ui,sans-serif;box-shadow:0 12px 36px rgba(0,0,0,0.48);max-width:520px;margin:0 auto;';
       document.body.appendChild(panel);
     }
     if(!panel.hidden && panel.dataset.title === title){
@@ -345,24 +355,18 @@
     panel.dataset.title = title;
     panel.replaceChildren();
     const h = document.createElement('div');
-    h.style.cssText = 'font-family:Georgia,serif;font-size:17px;font-weight:600;margin-bottom:10px;color:#b8552c;';
+    h.className = 'install-help-title';
     h.textContent = title;
     panel.appendChild(h);
     const ol = document.createElement('ol');
-    ol.style.cssText = 'margin:0 0 12px 0;padding-left:20px;';
+    ol.className = 'install-help-steps';
     steps.forEach(s => {
       const li = document.createElement('li');
-      li.style.cssText = 'margin-bottom:6px;';
       li.textContent = s;
       ol.appendChild(li);
     });
     panel.appendChild(ol);
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.style.cssText = 'background:#b8552c;color:#1a1715;border:none;border-radius:6px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;';
-    close.textContent = 'Got it';
-    close.onclick = () => { panel.hidden = true; };
-    panel.appendChild(close);
+    panel.appendChild(_bannerButton('Got it', 'primary', () => { panel.hidden = true; }));
   }
 
   window.installPWA = function(){

@@ -93,6 +93,29 @@
 //      saved and exported, a worry postponed twice suggests working it
 //      through, a stored "Jealousy" mood migrates to "Jealousy & envy", and
 //      the activity types include work/study and meaning.
+//  33. A collapsed entry card is just its head. The grid-rows collapse held
+//      two padded children, so every "collapsed" card showed a strip of body
+//      and a full, inert Edit / Copy / Delete bar.
+//  34. Switching from one dialog to another (Settings → Set PIN) keeps the
+//      overlay mounted: its fade-in used to restart from 0, blinking the
+//      page through between the dialogs. Focus moves into the new dialog.
+//  35. The Undo countdown bar runs. Its end state was set before the bar
+//      had ever been styled, so it sat at scaleX(0), invisible, from the
+//      first frame. It also sits inside the pill's rounded ends now.
+//  36. When a toast leaves, the toasts above glide into its space instead
+//      of dropping a whole toast-height in one frame.
+//  37. Pinning the first coping card (or unpinning the last) holds the tapped
+//      card still while the ~300px strip appears or goes above it.
+//  38. A view change lands at the top of the new view under its fade-in,
+//      instead of smooth-scrolling through it; re-tapping the current tab
+//      still scrolls up smoothly.
+//  39. Patterns charts draw in when the view opens, and a background
+//      re-render doesn't replay them.
+//  40. The PIN field shakes once per failed try (not again on "Forgot PIN?"),
+//      and unlocking fades the lock screen off without leaving its PIN field
+//      findable.
+//  41. Deleting an entry holds its space with a placeholder that closes, so
+//      the entries below move up instead of snapping.
 //
 // Runs in CI (.github/workflows/smoke.yml) and locally via `npm run regressions`
 // after `npm run serve` in another shell.
@@ -1500,6 +1523,255 @@ try {
     assert.match(w.text, /postponed 2 times/, 'A twice-postponed worry suggests working it through');
     noErrors(errors, 'follow-through pieces');
     log('PASS — accuracy after evidence, new feelings, prediction, postpone count, family and category updates.');
+    await ctx.close();
+  }
+
+  // Blocks 33+ run against the bundled sample journal: seven entries across
+  // several days, enough for the list to scroll and for Patterns to chart.
+  // Page-side names used inside page.evaluate below:
+  /* global makeSampleEntries, DOMMatrix */
+  const loadSamples = (page) => page.evaluate(() => {
+    state.entries = makeSampleEntries()
+      .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+    state.entries.forEach(e => { e.isFavorite = false; });
+    persist();
+    render();
+  });
+
+  // ── 33. A collapsed entry card shows only its head ─────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await loadSamples(page);
+    const heights = await page.evaluate(() =>
+      [...document.querySelectorAll('.entry-card')].map(c => c.querySelector('.entry-body-wrap').getBoundingClientRect().height));
+    assert.ok(heights.length > 3, 'Sample journal rendered (precondition)');
+    assert.ok(heights.every(h => h === 0), 'Every collapsed card body is 0px tall, not a strip plus a dead action bar: ' + JSON.stringify(heights));
+    const id = await page.evaluate(() => document.querySelector('.entry-card').id);
+    await page.locator('#' + id + ' .entry-card-head').click();
+    await page.waitForTimeout(500);
+    const open = await page.evaluate(id => document.querySelector('#' + id + ' .entry-body-wrap').getBoundingClientRect().height, id);
+    assert.ok(open > 50, 'An expanded card shows its body (' + open + 'px)');
+    await page.locator('#' + id + ' .entry-card-head').click();
+    await page.waitForTimeout(500);
+    const shut = await page.evaluate(id => document.querySelector('#' + id + ' .entry-body-wrap').getBoundingClientRect().height, id);
+    assert.equal(shut, 0, 'Collapsing it again returns the body to 0px');
+    noErrors(errors, 'collapsed card');
+    log('PASS — collapsed cards show only their head.');
+    await ctx.close();
+  }
+
+  // ── 34. One dialog handing over to another keeps the backdrop ──────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.locator('[data-action="open-settings"]').first().click();
+    await page.waitForSelector('.modal-overlay [data-action="open-set-pin"]', { timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => { document.querySelector('.modal-overlay').dataset.tag = 'ov-1'; });
+    await page.locator('[data-action="open-set-pin"]').click();
+    await page.waitForSelector('#pinNew', { timeout: 5000 });
+    await page.waitForTimeout(120);
+    const r = await page.evaluate(() => {
+      const o = document.querySelector('.modal-overlay');
+      return {
+        tag: o.dataset.tag,
+        overlayAnimations: o.getAnimations().length,
+        opacity: +getComputedStyle(o).opacity,
+        focusInside: document.querySelector('.modal').contains(document.activeElement),
+      };
+    });
+    assert.equal(r.tag, 'ov-1', 'The overlay survives the switch to a different dialog');
+    assert.equal(r.overlayAnimations, 0, 'Its fade-in does not restart (the page behind used to blink through)');
+    assert.equal(r.opacity, 1, 'The backdrop stays fully opaque');
+    assert.equal(r.focusInside, true, 'Focus moves into the new dialog');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.modal-overlay'), null, { timeout: 5000 });
+    assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.dataset.action), 'open-settings',
+      'Closing returns focus to what opened the first dialog');
+    noErrors(errors, 'modal swap');
+    log('PASS — switching dialogs keeps the backdrop and moves focus in.');
+    await ctx.close();
+  }
+
+  // ── 35. The Undo countdown bar actually counts down ────────────────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.evaluate(() => toast('Entry deleted', { ms: 6000, countdown: true, action: { label: 'Undo', onClick() {} } }));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const bar = document.querySelector('.toast-countdown');
+      const t = bar.closest('.toast').getBoundingClientRect();
+      const b = bar.getBoundingClientRect();
+      return { scale: new DOMMatrix(getComputedStyle(bar).transform).a, inset: b.left - t.left };
+    });
+    // It used to be at scaleX(0) from the first frame: the transition's end
+    // state was set before the bar had ever been styled.
+    assert.ok(r.scale > 0.55 && r.scale < 0.95, 'About a quarter of the way through a 6s toast, the bar is about three quarters full (' + r.scale.toFixed(2) + ')');
+    assert.ok(r.inset >= 20, 'The bar starts inside the pill\'s rounded end (' + r.inset + 'px in)');
+    noErrors(errors, 'toast countdown');
+    log('PASS — the Undo countdown bar runs, inside the pill.');
+    await ctx.close();
+  }
+
+  // ── 36. Toasts above one that leaves glide down instead of dropping ────
+  {
+    const { ctx, page, errors } = await openApp();
+    const r = await page.evaluate(async () => {
+      toast('Older', { ms: 60000 });
+      await new Promise(res => setTimeout(res, 500));
+      const older = document.querySelector('.toast');
+      const alone = older.getBoundingClientRect().top;
+      const newer = toast('Newer', { ms: 60000 });
+      await new Promise(res => setTimeout(res, 600));
+      const stacked = older.getBoundingClientRect().top;
+      newer.dismiss();
+      const tops = [];
+      const t0 = performance.now();
+      await new Promise(res => {
+        const tick = () => { tops.push(older.getBoundingClientRect().top); if (performance.now() - t0 < 600) requestAnimationFrame(tick); else res(); };
+        requestAnimationFrame(tick);
+      });
+      return { alone, stacked, tops, left: document.querySelectorAll('.toast').length };
+    });
+    const span = r.alone - r.stacked;
+    assert.ok(span > 20, 'The newer toast pushed the older one up (precondition)');
+    const between = r.tops.filter(t => t > r.stacked + 4 && t < r.alone - 4);
+    assert.ok(between.length >= 2, 'The older toast passes through in-between positions as the newer one leaves: ' + JSON.stringify(r.tops.map(Math.round)));
+    assert.ok(Math.abs(r.tops[r.tops.length - 1] - r.alone) <= 1, 'It settles where it sat alone');
+    assert.equal(r.left, 1, 'The dismissed toast is removed');
+    noErrors(errors, 'toast stack');
+    log('PASS — the toast stack glides when one leaves.');
+    await ctx.close();
+  }
+
+  // ── 37. Pinning the first coping card doesn't move the card you tapped ─
+  {
+    const { ctx, page, errors } = await openApp();
+    await loadSamples(page);
+    const r = await page.evaluate(async () => {
+      const card = document.querySelectorAll('.entry-card')[2];
+      card.scrollIntoView({ block: 'center' });
+      await new Promise(res => setTimeout(res, 100));
+      const id = card.id;
+      const before = card.getBoundingClientRect().top;
+      card.querySelector('[data-action="toggle-favorite"]').click();
+      const pinned = document.getElementById(id).getBoundingClientRect().top;
+      await new Promise(res => setTimeout(res, 500));
+      const strip = !!document.querySelector('.coping-strip');
+      document.getElementById(id).querySelector('[data-action="toggle-favorite"]').click();
+      const unpinned = document.getElementById(id).getBoundingClientRect().top;
+      return { before, pinned, unpinned, strip, stripAfter: !!document.querySelector('.coping-strip') };
+    });
+    assert.equal(r.strip, true, 'The first pin adds the coping strip above the list (precondition)');
+    assert.ok(Math.abs(r.pinned - r.before) <= 1, `The starred card stays put as the strip appears (${Math.round(r.before)} → ${Math.round(r.pinned)})`);
+    assert.equal(r.stripAfter, false, 'Unpinning the last card removes the strip (precondition)');
+    assert.ok(Math.abs(r.unpinned - r.before) <= 1, `…and stays put as it goes (${Math.round(r.before)} → ${Math.round(r.unpinned)})`);
+    noErrors(errors, 'pin anchoring');
+    log('PASS — pinning / unpinning holds the tapped card still.');
+    await ctx.close();
+  }
+
+  // ── 38. A new view starts at its top; re-tapping the tab scrolls up ────
+  {
+    const { ctx, page, errors } = await openApp();
+    await loadSamples(page);
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    await page.waitForTimeout(100);
+    const jumped = await page.evaluate(() => {
+      document.querySelector('[data-nav="patterns"]').click();
+      return window.scrollY;
+    });
+    // It used to smooth-scroll from 1200 up through the new view while that
+    // view was still fading in.
+    assert.equal(jumped, 0, 'Switching view lands at the top in the same frame');
+    await page.waitForTimeout(500);
+    await page.evaluate(() => window.scrollTo(0, 600));
+    await page.waitForTimeout(100);
+    const r = await page.evaluate(async () => {
+      const start = window.scrollY;
+      document.querySelector('[data-nav="patterns"]').click();
+      await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+      return { start, soon: window.scrollY };
+    });
+    assert.ok(r.start > 300, 'Patterns scrolls (precondition)');
+    assert.ok(r.soon > 0, 'Re-tapping the current tab scrolls up smoothly rather than jumping');
+    await page.waitForFunction(() => window.scrollY === 0, null, { timeout: 3000 });
+    noErrors(errors, 'view scroll');
+    log('PASS — new views start at the top; re-tapping the tab scrolls smoothly.');
+    await ctx.close();
+  }
+
+  // ── 39. Patterns charts draw in on arrival, not on a background render ─
+  {
+    const { ctx, page, errors } = await openApp();
+    await loadSamples(page);
+    await page.locator('[data-nav="patterns"]').click();
+    await page.waitForTimeout(60);
+    const entering = await page.evaluate(() => getComputedStyle(document.querySelector('.bar-fill')).animationName);
+    assert.equal(entering, 'barGrow', 'Bars grow in when Patterns opens');
+    await page.waitForTimeout(1300);
+    await page.evaluate(() => render());
+    const again = await page.evaluate(() => getComputedStyle(document.querySelector('.bar-fill')).animationName);
+    assert.equal(again, 'none', 'A background re-render (sync merge, another tab) does not replay them');
+    noErrors(errors, 'patterns draw-in');
+    log('PASS — Patterns charts draw in once per visit.');
+    await ctx.close();
+  }
+
+  // ── 40. Lock screen shakes once per failed try and fades off on unlock ─
+  {
+    const { ctx, page, errors } = await openApp();
+    await page.evaluate(async () => { await setStoredPin('2468'); sessionStorage.removeItem('reframe-unlocked'); });
+    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#lockPinInput', { timeout: 10000 });
+    await page.locator('#lockPinInput').fill('1111');
+    await page.locator('#lockForm button[type="submit"]').click();
+    await page.waitForSelector('.lock-error', { timeout: 5000 });
+    assert.match(await page.locator('#lockPinInput').getAttribute('class'), /is-shaking/, 'A wrong PIN shakes the field');
+    await page.locator('[data-action="lock-forgot"]').click();
+    assert.doesNotMatch(await page.locator('#lockPinInput').getAttribute('class'), /is-shaking/,
+      'Opening "Forgot PIN?" re-renders the lock screen without shaking again');
+    await page.locator('#lockPinInput').fill('2468');
+    await page.locator('#lockForm button[type="submit"]').click();
+    await page.waitForFunction(() => !document.body.classList.contains('is-locked'), null, { timeout: 5000 });
+    assert.equal(await page.locator('#lockPinInput').count(), 0, 'The PIN field is gone the moment the journal unlocks');
+    await page.waitForTimeout(600);
+    assert.equal(await page.locator('.lock-screen').count(), 0, 'The fading lock screen is removed afterwards');
+    noErrors(errors, 'lock screen motion');
+    log('PASS — the lock screen shakes once per failure and fades off on unlock.');
+    await ctx.close();
+  }
+
+  // ── 41. Deleting an entry closes its space instead of snapping ─────────
+  {
+    const { ctx, page, errors } = await openApp();
+    await loadSamples(page);
+    const r = await page.evaluate(async () => {
+      const cards = [...document.querySelectorAll('.entry-card')];
+      const victim = cards[3];
+      const nextId = cards[4].id;
+      victim.querySelector('.entry-card-head').click();
+      await new Promise(res => setTimeout(res, 400));
+      victim.querySelector('[data-action="delete"]').click();
+      await new Promise(res => setTimeout(res, 400));
+      const topBefore = document.getElementById(nextId).getBoundingClientRect().top;
+      document.querySelector('[data-action="confirm-delete"]').click();
+      const ghost = document.querySelectorAll('.gap-closer').length;
+      const topNow = document.getElementById(nextId).getBoundingClientRect().top;
+      await new Promise(res => setTimeout(res, 600));
+      return {
+        ghost, topBefore, topNow,
+        topAfter: document.getElementById(nextId).getBoundingClientRect().top,
+        ghostsLeft: document.querySelectorAll('.gap-closer').length,
+        gone: !document.getElementById(victim.id),
+      };
+    });
+    assert.equal(r.gone, true, 'The entry is deleted at once (precondition)');
+    assert.equal(r.ghost, 1, 'Its space is held by a closing placeholder');
+    assert.ok(Math.abs(r.topNow - r.topBefore) <= 1, 'The card below has not jumped yet on the frame of the delete');
+    assert.ok(r.topAfter < r.topBefore - 50, 'It then moves up into the space');
+    assert.equal(r.ghostsLeft, 0, 'The placeholder removes itself');
+    noErrors(errors, 'delete gap');
+    log('PASS — a deleted entry\'s space closes smoothly.');
     await ctx.close();
   }
 
