@@ -129,7 +129,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: { ...nodeGlobals, ...browserGlobals, Document: 'readonly', CSSStyleSheet: 'readonly', innerHeight: 'readonly' },
+      globals: { ...nodeGlobals, ...browserGlobals, Document: 'readonly', Crypto: 'readonly', CSSStyleSheet: 'readonly', innerHeight: 'readonly' },
     },
     rules: sharedRules,
   },
