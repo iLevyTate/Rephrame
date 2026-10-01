@@ -123,6 +123,17 @@ export default [
     rules: sharedRules,
   },
   {
+    // The promo recorder is Node driving Playwright, with callbacks that run
+    // in the page, so like the tests it sees both global sets.
+    files: ['tools/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...nodeGlobals, ...browserGlobals, Document: 'readonly', CSSStyleSheet: 'readonly', innerHeight: 'readonly' },
+    },
+    rules: sharedRules,
+  },
+  {
     files: ['eslint.config.js'],
     languageOptions: {
       ecmaVersion: 2022,
