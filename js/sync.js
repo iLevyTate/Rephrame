@@ -621,6 +621,14 @@ function syncRecordEntryDeletion(id) {
   if (typeof syncBroadcast === "function") syncBroadcast();
 }
 
+// Called from app.js import: a restored entry needs a fresh updatedAt so it
+// beats the tombstone the paired device still holds.
+function syncHasEntryDeletion(id) {
+  if (!id) return false;
+  const map = _loadEntryDels();
+  return map[id] != null;
+}
+
 // Called from app.js when a delete is undone, so the restored entry isn't
 // re-deleted on the next merge.
 function syncClearEntryDeletion(id) {
@@ -1761,6 +1769,7 @@ if (typeof window !== "undefined") {
   window.syncBroadcast          = syncBroadcast;
   window.syncRecordEntryDeletion = syncRecordEntryDeletion;
   window.syncClearEntryDeletion  = syncClearEntryDeletion;
+  window.syncHasEntryDeletion    = syncHasEntryDeletion;
 
   // Pure-logic hooks for the headless test walks (tests/sync.mjs,
   // tests/regressions.mjs) and the Node crypto test (tests/sync-crypto.test.mjs).

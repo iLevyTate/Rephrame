@@ -817,6 +817,21 @@ const WORRY_RESOLUTIONS = ["dissolved", "escalated", "postponed"];
 // rename keep their old labels in localStorage; remap on read so dropdowns
 // can re-select them and reference views show the new wording. Empty / new
 // values pass through unchanged.
+// Ingress coercion for hand-edited backups and peers. A non-string scalar
+// in a text field (`"body": 123`) used to pass the `|| ""` check, get
+// persisted, and then throw inside render on every load (`.replace is not a
+// function`), leaving the journal blank with no way to reach Settings. A
+// number outside its scale (`"intensity": 1e400` → Infinity) rendered
+// literally and poisoned every Patterns average.
+const _str = v => (typeof v === "string" ? v : (v == null || typeof v === "object" || typeof v === "function") ? "" : String(v));
+const _num = (v, lo, hi, dflt) => {
+  const n = typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+};
+// Rename maps are plain objects: a key like "constructor" from a crafted
+// backup resolved to Object and put a function in the entry.
+const _renamed = (map, v) => (typeof v === "string" && Object.prototype.hasOwnProperty.call(map, v)) ? map[v] : v;
+
 const DISTORTION_RENAME = {
   "Mental Filtering": "Mental Filter",
   // Burns's item is two-way (blow up the bad, shrink the good); "Minimization"
@@ -864,88 +879,90 @@ function normalizeEntry(e) {
     // so it would beat every genuine later edit forever and block deletions.
     updatedAt: e.updatedAt ? clampDate(e.updatedAt) : undefined,
 
-    trigger: e.trigger || "",
+    trigger: _str(e.trigger),
 
     moods: Array.isArray(e.moods) ? e.moods.map(normalizeMood) : [],
     thoughts: Array.isArray(e.thoughts) ? e.thoughts.map(normalizeThought) : [],
 
-    bodyCheck: e.bodyCheck || "",
+    bodyCheck: _str(e.bodyCheck),
     bodyInferred: !!e.bodyInferred,
 
-    distortions: Array.isArray(e.distortions) ? e.distortions.map(n => DISTORTION_RENAME[n] || n) : [],
-    distortionNote: e.distortionNote || "",
+    distortions: Array.isArray(e.distortions)
+      ? e.distortions.filter(n => typeof n === "string" && n).map(n => _renamed(DISTORTION_RENAME, n))
+      : [],
+    distortionNote: _str(e.distortionNote),
     // "I looked at the thought and it actually feels accurate to me" — a
     // valid CBT outcome that the workflow needs to permit explicitly,
     // otherwise users in real grief / valid distress get nudged into
     // pathologizing healthy reactions.
     thoughtsAccurate: !!e.thoughtsAccurate,
 
-    evidenceFor: e.evidenceFor || "",
-    evidenceAgainst: e.evidenceAgainst || "",
-    socraticType: SOCRATIC_RENAME[e.socraticType] || e.socraticType || "",
-    socraticQuestion: e.socraticQuestion || "",
+    evidenceFor: _str(e.evidenceFor),
+    evidenceAgainst: _str(e.evidenceAgainst),
+    socraticType: _renamed(SOCRATIC_RENAME, _str(e.socraticType)),
+    socraticQuestion: _str(e.socraticQuestion),
     // What the user found when they asked it. A question with no answer is
     // a prompt, not Socratic questioning (Padesky: questions, listening,
     // summary, then a synthesizing question).
-    socraticAnswer: e.socraticAnswer || "",
+    socraticAnswer: _str(e.socraticAnswer),
 
-    reframeMethod: REFRAME_RENAME[e.reframeMethod] || e.reframeMethod || "",
-    newThought: e.newThought || "",
+    reframeMethod: _renamed(REFRAME_RENAME, _str(e.reframeMethod)),
+    newThought: _str(e.newThought),
     // Belief is re-rated in both the original hot thought (Beck's Outcome
     // column; lives on the thought row as beliefAfter) and the NEW balanced
     // thought (Mind Over Mood's alternative-thought rating). The latter is a
     // separate scalar so it survives multi-thought edits.
-    newThoughtBelief: typeof e.newThoughtBelief === "number" ? e.newThoughtBelief : null,
+    newThoughtBelief: _num(e.newThoughtBelief, 0, 100, null),
     // Feelings that showed up after the reframe (relief, calm, hope).
     // Mind Over Mood's last column re-rates the original moods "as well as
     // any new moods". Kept as words, not rated rows: every mood statistic
     // treats a falling number as progress, which a rising "relief" is not.
-    newFeelings: e.newFeelings || "",
+    newFeelings: _str(e.newFeelings),
 
-    pivot: e.pivot || "",
+    pivot: _str(e.pivot),
     pivotDone: !!e.pivotDone,
-    pivotDoneAt: e.pivotDoneAt || "",
-    pivotReflection: e.pivotReflection || "",
+    pivotDoneAt: _str(e.pivotDoneAt),
+    pivotReflection: _str(e.pivotReflection),
     // Written before acting, so the outcome has something to be checked
     // against: the prediction that turns the pivot into a small behavioral
     // experiment (Mind Over Mood, ch. 11).
-    pivotPrediction: e.pivotPrediction || "",
+    pivotPrediction: _str(e.pivotPrediction),
     outcomeRecorded: !!e.outcomeRecorded,
 
     // Free-form (kind: "freeform") fields — title is optional, body is the
     // long-form text. Moods + distortions remain reusable on free-form too.
-    body: e.body || "",
+    body: _str(e.body),
 
     // Behavioral-activation (kind: "activity") fields. Pleasure + Mastery
     // are rated 0–10, as in Beck et al.'s (1979) activity scheduling and the
     // Beck Institute worksheets ("predict, then measure"). predicted* are set when
     // planning; actual* + completedAt are set on log-completion.
-    category: e.category || "",          // connection|movement|creation|work|meaning|self-care|chore|rest|other
-    plannedFor: e.plannedFor || "",      // ISO datetime
-    predictedP: typeof e.predictedP === "number" ? e.predictedP : null,
-    predictedM: typeof e.predictedM === "number" ? e.predictedM : null,
-    completedAt: e.completedAt || "",
-    actualP: typeof e.actualP === "number" ? e.actualP : null,
-    actualM: typeof e.actualM === "number" ? e.actualM : null,
-    activityNotes: e.activityNotes || "",
+    category: _str(e.category),          // connection|movement|creation|work|meaning|self-care|chore|rest|other
+    plannedFor: _str(e.plannedFor),      // ISO datetime
+    predictedP: _num(e.predictedP, 0, 10, null),
+    predictedM: _num(e.predictedM, 0, 10, null),
+    completedAt: _str(e.completedAt),
+    actualP: _num(e.actualP, 0, 10, null),
+    actualM: _num(e.actualM, 0, 10, null),
+    activityNotes: _str(e.activityNotes),
 
     // Worry (kind: "worry") fields. urgency 0–10. resolution null until the
     // worry-window pass; "dissolved" means user marked it gone without
     // further work, "escalated" means it got converted to a thought-record,
     // "postponed" pushes scheduledFor forward another window.
-    worryText: e.worryText || "",
-    urgency: typeof e.urgency === "number" ? e.urgency : null,
-    parkedAt: e.parkedAt || "",
-    scheduledFor: e.scheduledFor || "",
+    worryText: _str(e.worryText),
+    urgency: _num(e.urgency, 0, 10, null),
+    parkedAt: _str(e.parkedAt),
+    scheduledFor: _str(e.scheduledFor),
     // Whitelisted: the value is interpolated into a class attribute by the
     // worry card, so an arbitrary string from an imported backup or a synced
     // peer must not reach the markup.
     resolution: WORRY_RESOLUTIONS.includes(e.resolution) ? e.resolution : null,
-    resolvedAt: e.resolvedAt || "",
+    resolvedAt: _str(e.resolvedAt),
     // How many times this worry has been pushed to another window. Past two,
     // postponing has stopped being postponement and started being avoidance.
     postponeCount: Number.isInteger(e.postponeCount) && e.postponeCount > 0 ? Math.min(e.postponeCount, 999) : 0,
-    linkedEntryId: e.linkedEntryId || "",
+    linkedEntryId: typeof e.linkedEntryId === "string" ? e.linkedEntryId : "",
 
     isQuick: !!e.isQuick,
     // "Just venting" quick captures: named, saved, deliberately not taken
@@ -999,21 +1016,21 @@ function normalizeMood(m) {
   m = m || {};
   return {
     id: safeId(m.id),
-    family: MOOD_FAMILY_RENAME[m.family] || m.family || "",
-    variant: m.variant || "",
-    intensity: typeof m.intensity === "number" ? m.intensity : 40,
+    family: _renamed(MOOD_FAMILY_RENAME, _str(m.family)),
+    variant: _str(m.variant),
+    intensity: _num(m.intensity, 0, 100, 40),
     estimated: !!m.estimated,
-    intensityAfterReframe: typeof m.intensityAfterReframe === "number" ? m.intensityAfterReframe : null,
-    intensityAfterPivot:   typeof m.intensityAfterPivot   === "number" ? m.intensityAfterPivot   : null,
+    intensityAfterReframe: _num(m.intensityAfterReframe, 0, 100, null),
+    intensityAfterPivot:   _num(m.intensityAfterPivot, 0, 100, null),
   };
 }
 function normalizeThought(t) {
   t = t || {};
   return {
     id: safeId(t.id),
-    text: t.text || "",
-    beliefBefore: typeof t.beliefBefore === "number" ? t.beliefBefore : null,
-    beliefAfter:  typeof t.beliefAfter  === "number" ? t.beliefAfter  : null,
+    text: _str(t.text),
+    beliefBefore: _num(t.beliefBefore, 0, 100, null),
+    beliefAfter:  _num(t.beliefAfter, 0, 100, null),
     isHot: !!t.isHot,
   };
 }
@@ -1182,8 +1199,19 @@ function _saveDraftNow(d) {
   try {
     if (hasDraftContent(d)) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
     else localStorage.removeItem(DRAFT_KEY);
-  } catch (_) { /* draft autosave is best-effort */ }
+    _draftSaveFailed = false;
+  } catch (_) {
+    // Best-effort, but not silent: with storage full every keystroke's
+    // autosave was swallowed and a long free write evaporated on a tab
+    // discard with nothing on screen to warn about it. One notice per
+    // failure streak.
+    if (!_draftSaveFailed) {
+      _draftSaveFailed = true;
+      try { toast("Your draft isn't being autosaved — storage is full. Save or export soon.", { variant: "error", persist: true }); } catch (_e) { /* no DOM yet */ }
+    }
+  }
 }
+let _draftSaveFailed = false;
 let _saveDraftTimer = null;
 let _pendingDraft = null;
 function saveDraft(d) {
@@ -2122,6 +2150,7 @@ function persist() {
 // stale state. We can't merge drafts safely (last-writer-wins for the
 // in-progress one), so for a remote draft change we surface a toast
 // instead of overwriting whatever the user is currently typing.
+let _draftTabToastUntil = 0;
 window.addEventListener("storage", (e) => {
   if (_persistingLocally) return;
   if (!e.key) return;  // null key = storage.clear() — ignore
@@ -2135,14 +2164,26 @@ window.addEventListener("storage", (e) => {
   if (e.key === STORAGE_KEY) {
     state.entries = loadEntries();
     if (!typing) render();
+    // Only one tab holds the peer link; a save made in the other tab sat
+    // unsynced until this tab happened to save something itself.
+    if (typeof syncBroadcast === "function") syncBroadcast();
   } else if (e.key === SETTINGS_KEY) {
     state.settings = loadSettings();
+    // A theme picked in the other tab updated state here but never the
+    // document attribute / theme-color meta, so this tab stayed on the old
+    // theme until reload.
+    applyTheme();
     if (!typing) render();
   } else if (e.key === DRAFT_KEY) {
     // If the local user has typed into the draft, they'd lose work if
-    // we overwrote. Just warn and let them decide.
+    // we overwrote. Just warn and let them decide. The other tab autosaves
+    // on a 300 ms trailing edge, so this fires once per write while they
+    // type — show one notice at a time, not a stack of twenty.
     if (hasDraftContent(state.draft)) {
-      toast("Draft edited in another tab — refresh to see the latest.", { ms: 6000 });
+      if (!_draftTabToastUntil || Date.now() > _draftTabToastUntil) {
+        _draftTabToastUntil = Date.now() + 6000;
+        toast("This draft is also open in another tab — the last tab to type wins.", { ms: 6000 });
+      }
     } else {
       const incoming = loadDraft();
       if (incoming) state.draft = incoming;
@@ -4492,7 +4533,7 @@ function bindOutcome() {
     entry.outcomeRecorded = true;
     touchEntry(entry);
     clearTimeout(_outcomePersistTimer);
-    persist();
+    if (!persist()) return;
     state.outcomeEntryId = null;
     state.expandedIds.add(entry.id);
     setView("journal");
@@ -4543,8 +4584,13 @@ function renderPatterns() {
   }
 
   const total = thoughtRecords.length;
-  const pivotsDone = thoughtRecords.filter(e => e.pivotDone).length;
-  const pivotPct = total > 0 ? Math.round((pivotsDone / total) * 100) : 0;
+  // A record saved without a pivot (step 6 is optional) can never be
+  // "followed through"; counting it in the denominator under-reported the
+  // ring for everyone who skips the step sometimes.
+  const withPivot = thoughtRecords.filter(e => (e.pivot || "").trim());
+  const pivotsDone = withPivot.filter(e => e.pivotDone).length;
+  const pivotTotal = withPivot.length;
+  const pivotPct = pivotTotal > 0 ? Math.round((pivotsDone / pivotTotal) * 100) : 0;
 
   // Headline: average mood-intensity drop *per mood* across re-rated moods.
   // Multi-mood entries contribute multiple data points — each mood's drop
@@ -4713,7 +4759,7 @@ function renderPatterns() {
                 stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" stroke-linecap="round"/>
             </svg>
             <div class="pivot-ring-label">
-              <div class="pivot-ring-pct display">${pivotsDone}<span class="small">/${total}</span></div>
+              <div class="pivot-ring-pct display">${pivotsDone}<span class="small">/${pivotTotal}</span></div>
             </div>
           </div>
           <div class="pivot-ring-detail">
@@ -5594,7 +5640,7 @@ function renderSettingsModal() {
       <p class="settings-section-help">When parked worries reappear for review. Worry time starts at this time and lasts 20 minutes. Keep it the same every day, and not close to bedtime. If the time has already passed today, parking a new worry schedules it for tomorrow.</p>
       <label class="settings-time-row">
         <span class="settings-time-label">Time of day</span>
-        <input type="time" class="settings-time-input" data-action="set-worry-window-time" value="${esc(s.worryWindowTime || "18:00")}">
+        <input type="time" class="settings-time-input" data-action="set-worry-window-time" value="${esc(_parseHHMM(s.worryWindowTime).map(n => String(n).padStart(2, "0")).join(":"))}">
       </label>
     </div>
 
@@ -6962,6 +7008,8 @@ function bindCapture() {
   if (save) save.addEventListener("click", () => {
     persistDefaultBeliefsForFilledThoughts(state.draft);
     const now = new Date().toISOString();
+    const entriesBefore = state.entries;
+    let savedToast;
     let savedId;
     if (state.editingId) {
       savedId = state.editingId;
@@ -6979,7 +7027,7 @@ function bindCapture() {
         state.entries.sort((a, b) =>
           (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
       }
-      toast("Entry updated");
+      savedToast = "Entry updated";
     } else {
       // Honor a pre-assigned draft.id (used by worry-escalate to set up
       // bidirectional linking before the new entry exists). Otherwise mint
@@ -6993,7 +7041,7 @@ function bindCapture() {
       entry = finalizeWorryEntry(entry, now);
       entry = finalizeActivityEntry(entry);
       state.entries = [entry, ...state.entries];
-      toast("Entry saved");
+      savedToast = "Entry saved";
     }
     // Finalize a deferred worry-escalation: now that the thought-record
     // is real, point the original worry at it and mark it resolved. The
@@ -7011,18 +7059,39 @@ function bindCapture() {
     // honoring it there stamped the worry as "worked through" and linked it
     // to whatever unrelated entry happened to be saved next.
     const escalateWorryId = (!state.editingId && state.draft.linkedEntryId) || null;
+    let worryNote = null;
+    let worryRollback = null;
     if (escalateWorryId) {
       const w = state.entries.find(x => x.id === escalateWorryId && x.kind === "worry");
       if (w && !w.resolution) {
+        worryRollback = { w, resolution: w.resolution, resolvedAt: w.resolvedAt, linkedEntryId: w.linkedEntryId, updatedAt: w.updatedAt };
         w.resolution = "escalated";
         w.resolvedAt = now;
         w.linkedEntryId = savedId;
+        // Stamp the change or it never reaches a paired device: the merge is
+        // last-write-wins on updatedAt, and the peer's copy carried the same
+        // stamp, so it kept showing the worry as parked forever.
+        touchEntry(w);
       } else if (!w) {
-        toast("Original worry was deleted — thought record saved separately.");
+        worryNote = "Original worry was deleted — thought record saved separately.";
       }
     }
     state.pendingEscalateFromWorryId = null;
-    persist();
+    // Only claim success, clear the autosaved draft and leave Capture once
+    // the write reached disk. On a quota failure persist() has shown the
+    // blocking quota-error modal; wiping the draft at that point would have
+    // left the entry in memory only — gone on the next reload.
+    if (!persist()) {
+      state.entries = entriesBefore;
+      if (worryRollback) {
+        const r = worryRollback;
+        r.w.resolution = r.resolution; r.w.resolvedAt = r.resolvedAt;
+        r.w.linkedEntryId = r.linkedEntryId; r.w.updatedAt = r.updatedAt;
+      }
+      return;
+    }
+    toast(savedToast);
+    if (worryNote) toast(worryNote);
     // Saving an EDIT must not clear the stashed new-entry draft (edits are
     // never autosaved to DRAFT_KEY); reload it so its resume banner returns.
     const wasEditing = !!state.editingId;
@@ -7502,6 +7571,7 @@ function bindModal() {
       if (e.kind === "worry" && e.linkedEntryId === id) {
         relinkOnUndo.push(e.id);
         e.linkedEntryId = "";
+        touchEntry(e);
       }
     });
     // Record a deletion tombstone so a paired device can't resurrect this
@@ -7660,7 +7730,14 @@ function processImportFile(file, mode) {
       // previously-deleted entry from a backup must not be re-killed by its
       // stale tombstone on the next sync merge.
       if (typeof syncClearEntryDeletion === "function") {
-        dedupedById.forEach(e => syncClearEntryDeletion(e.id));
+        dedupedById.forEach(e => {
+          // The paired device still holds the tombstone, and tombstone merges
+          // are union-only: an entry restored with its backup-era updatedAt
+          // loses to it and vanishes again on the next exchange. Re-stamp the
+          // ones we are resurrecting (same as undo-delete does).
+          if (typeof syncHasEntryDeletion === "function" && syncHasEntryDeletion(e.id)) touchEntry(e);
+          syncClearEntryDeletion(e.id);
+        });
       }
       // Restore the newest-first invariant the journal grouping, sparkline
       // slice and undo-splice logic all rely on — a merged backup's entries

@@ -75,7 +75,10 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      // Cache Storage is per-origin, not per-scope: on a shared
+      // <user>.github.io origin a bare "delete everything else" wiped sibling
+      // projects' caches (and theirs wiped ours). Only retire our own buckets.
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME && k.startsWith('reframe-')).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

@@ -1,8 +1,8 @@
 name: Smoke
 
 # Static sanity + a headless Playwright walk of the 7-step thought-record
-# flow. Runs on every PR and on pushes to main. Bot commits (the cache
-# bumper) skip it — they don't touch app logic.
+# flow. Runs on every PR and on pushes to main. The Pages deploy waits for
+# this workflow to pass on main (see pages.yml).
 on:
   pull_request:
   push:
@@ -17,7 +17,6 @@ concurrency:
 
 jobs:
   smoke:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
