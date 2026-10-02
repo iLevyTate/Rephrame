@@ -84,7 +84,7 @@ seconds before it sticks. Click Undo to restore the entry to its
 original position in the list.
 
 **Privacy lock (PIN).** Optional 4–8 digit PIN gated on each new tab
-session. Stored as a SHA-256 hash on the device only. The entries
+session. Stored as a salted PBKDF2-SHA256 hash on the device only. The entries
 themselves aren't encrypted — this is a soft lock that stops casual
 snooping on a shared phone, not an attacker with developer-tools
 access. There's no PIN recovery: if you forget, the only way back in
@@ -267,9 +267,15 @@ crisis**, and reachable from a link in every empty-state and capture modal.
   (deletion tombstones) and `rephrame_sync_enabled` — nothing that came
   from a pairing code. Disabling sync removes the pairing record and the
   keys.
-- A one-time onboarding flag lives under `reframe-onboarded-v1`.
+- A one-time onboarding flag lives under `reframe-onboarded-v1`. The PIN
+  lockout counter lives under `reframe-pin-lockout`. If the journal blob
+  ever fails to parse it is stashed, untouched, under
+  `reframe-journal-v1-unreadable` so nothing is lost; clearing site data
+  removes it along with everything else.
 - The unlock token (`reframe-unlocked`) lives in `sessionStorage` and clears
-  when the tab closes, so the PIN gate re-arms on each new session.
+  when the tab closes, so the PIN gate re-arms on each new session. Browsers
+  copy `sessionStorage` when you duplicate a tab or restore a closed one, so
+  those cases reopen unlocked.
 - The Import / Export buttons in the top-right round-trip the full journal as
   JSON. Use Export to back up, and Import (Replace or Merge) to restore on a
   new device.

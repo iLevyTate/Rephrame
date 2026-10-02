@@ -1,13 +1,17 @@
 name: Deploy Pages
 
-# Explicit GitHub Pages deploy on every push to main. Replaces the implicit
-# "deploy from branch" mode.
+# Explicit GitHub Pages deploy for main. Replaces the implicit
+# "deploy from branch" mode. Runs after the Smoke workflow finishes on main
+# and only deploys when it passed, so a push that breaks lint or the
+# Playwright walk never goes live.
 #
 # ONE-TIME SETUP: in repo Settings → Pages, switch the source from
 # "Deploy from a branch" to "GitHub Actions". Until that's done this workflow
 # runs green but the live site keeps serving from the branch.
 on:
-  push:
+  workflow_run:
+    workflows: [Smoke]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -23,12 +27,16 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Deploy the commit Smoke tested, not whatever main is at by now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # Stamp a unique SW cache version into the deployed sw.js. Doing this at
       # deploy time (instead of a bot commit that bumps the file in-repo) means

@@ -39,6 +39,7 @@ const appProvides = {
 const syncProvides = {
   renderSyncPanel: 'readonly', syncBroadcast: 'readonly',
   syncRecordEntryDeletion: 'readonly', syncClearEntryDeletion: 'readonly',
+  syncHasEntryDeletion: 'readonly',
 };
 const pwaProvides = {
   installPWA: 'readonly', refreshPWAInstallUI: 'readonly',
@@ -74,6 +75,22 @@ const sharedRules = {
 
 export default [
   { ignores: ['js/vendor/**', 'node_modules/**', 'smoke-shots/**'] },
+  // Catch-all first: in flat config a file matched by no block gets zero
+  // rules, so a new js/*.js shipped with a typo'd global passed "lint" in CI.
+  // The per-file blocks below override the globals for the known files.
+  {
+    files: ['**/*.{js,mjs}'],
+    // The known files get their own blocks; keeping them out of this one
+    // stops the globals merging (ESLint unions globals across matching
+    // blocks, which would mark every shared function as a redeclaration).
+    ignores: ['app.js', 'js/pwa.js', 'js/sync.js', 'sw.js', 'tests/**', 'eslint.config.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: browserGlobals,
+    },
+    rules: sharedRules,
+  },
   {
     files: ['app.js'],
     languageOptions: {
